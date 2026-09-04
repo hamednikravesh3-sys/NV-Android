@@ -6,6 +6,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.TrafficSummary
@@ -45,9 +47,19 @@ fun OnlineIranMap(
         onDispose { holder.destroy() }
     }
 
+    val drivingMapModifier = if (navigationActive) {
+        modifier.graphicsLayer {
+            rotationX = 34f
+            scaleX = 1.16f
+            scaleY = 1.34f
+            transformOrigin = TransformOrigin(0.5f, 0.78f)
+            clip = false
+        }
+    } else modifier
+
     AndroidView(
         factory = { holder.mapView },
-        modifier = modifier,
+        modifier = drivingMapModifier,
         update = {
             it.setOnTouchListener { _, event ->
                 if (navigationActive && event.actionMasked == MotionEvent.ACTION_MOVE) {
@@ -126,16 +138,24 @@ private class OnlineMapHolder(context: Context) {
             val result = routes[index]
             if (result.points.size < 2) return@forEach
             val color = when {
-                // The selected route must remain visually stable. Traffic severity is
-                // shown by the dedicated traffic rail until segment geometry exists.
                 index == selectedRouteIndex -> intArrayOf(24, 212, 255)
                 index % 2 == 0 -> intArrayOf(215, 255, 91)
                 else -> intArrayOf(150, 160, 174)
             }
             if (index == selectedRouteIndex) {
+                val shadowPaint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+                    setColor(AndroidGraphicFactory.INSTANCE.createColor(150, 3, 20, 33))
+                    setStrokeWidth(30f * mapView.model.displayModel.scaleFactor)
+                    setStyle(Style.STROKE)
+                }
+                Polyline(shadowPaint, AndroidGraphicFactory.INSTANCE).also { shadow ->
+                    shadow.setPoints(result.points.map { LatLong(it.latitude, it.longitude) })
+                    mapView.layerManager.layers.add(shadow)
+                    routeLayers += shadow
+                }
                 val glowPaint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                    setColor(AndroidGraphicFactory.INSTANCE.createColor(82, color[0], color[1], color[2]))
-                    setStrokeWidth(24f * mapView.model.displayModel.scaleFactor)
+                    setColor(AndroidGraphicFactory.INSTANCE.createColor(105, color[0], color[1], color[2]))
+                    setStrokeWidth(22f * mapView.model.displayModel.scaleFactor)
                     setStyle(Style.STROKE)
                 }
                 Polyline(glowPaint, AndroidGraphicFactory.INSTANCE).also { glow ->
@@ -146,7 +166,7 @@ private class OnlineMapHolder(context: Context) {
             }
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
                 setColor(AndroidGraphicFactory.INSTANCE.createColor(255, color[0], color[1], color[2]))
-                setStrokeWidth((if (index == selectedRouteIndex) 11f else 7f) * mapView.model.displayModel.scaleFactor)
+                setStrokeWidth((if (index == selectedRouteIndex) 10f else 6f) * mapView.model.displayModel.scaleFactor)
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
@@ -164,9 +184,7 @@ private class OnlineMapHolder(context: Context) {
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { connector ->
-                connector.setPoints(
-                    route.points.take(2).map { LatLong(it.latitude, it.longitude) }
-                )
+                connector.setPoints(route.points.take(2).map { LatLong(it.latitude, it.longitude) })
                 mapView.layerManager.layers.add(connector)
                 routeLayers += connector
             }
@@ -184,12 +202,7 @@ private class OnlineMapHolder(context: Context) {
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
-                line.setPoints(
-                    listOf(
-                        LatLong(segment.start.latitude, segment.start.longitude),
-                        LatLong(segment.end.latitude, segment.end.longitude)
-                    )
-                )
+                line.setPoints(listOf(LatLong(segment.start.latitude, segment.start.longitude), LatLong(segment.end.latitude, segment.end.longitude)))
                 mapView.layerManager.layers.add(line)
                 routeLayers += line
             }
@@ -228,7 +241,7 @@ private class OnlineMapHolder(context: Context) {
         if (follow || (navigationActive && recenterToken != lastRecenterToken)) {
             mapView.model.mapViewPosition.mapPosition = MapPosition(
                 point,
-                if (navigationActive) navigationZoomLevel.coerceIn(15, 19).toByte() else BROWSE_LOCATION_ZOOM
+                if (navigationActive) navigationZoomLevel.coerceIn(16, 19).toByte() else BROWSE_LOCATION_ZOOM
             )
             lastRecenterToken = recenterToken
         }
@@ -245,7 +258,7 @@ private class OnlineMapHolder(context: Context) {
             setStrokeWidth(5f * mapView.model.displayModel.scaleFactor)
             setStyle(Style.STROKE)
         }
-        return Circle(point, 15f, fill, stroke)
+        return Circle(point, 16f, fill, stroke)
     }
 
     fun destroy() {
