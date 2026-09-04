@@ -970,7 +970,7 @@ fun PlaceCodeDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(place?.name ?: "ابتدا یک مکان را انتخاب کنید", fontWeight = FontWeight.Black)
                 if (shareCode != null) {
-                    Text("کد عمومی ثابت: ${place.code}")
+                    Text("کد عمومی ثابت: ${shareCode.substringAfter(':')}")
                     Text("اشتراک: $shareCode", color = MaterialTheme.colorScheme.primary)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { place?.let(onShare) }) {
