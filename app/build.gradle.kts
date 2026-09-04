@@ -8,11 +8,14 @@ android {
     compileSdk = 35
 
     defaultConfig {
+        val trafficApiKey = System.getenv("NV_TRAFFIC_API_KEY").orEmpty()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -29,11 +32,21 @@ android {
             "WEATHER_API_URL",
             "\"https://api.open-meteo.com/v1/forecast\""
         )
-        buildConfigField("String", "TRAFFIC_API_KEY", "\"\"")
+        buildConfigField("String", "TRAFFIC_API_KEY", "\"$trafficApiKey\"")
+        buildConfigField(
+            "String",
+            "TRAFFIC_API_URL",
+            "\"https://api.tomtom.com\""
+        )
         buildConfigField(
             "String",
             "GEOCODING_API_URL",
             "\"https://photon.komoot.io/api\""
+        )
+        buildConfigField(
+            "String",
+            "GEOCODING_FALLBACK_API_URL",
+            "\"https://nominatim.openstreetmap.org\""
         )
         buildConfigField(
             "String",

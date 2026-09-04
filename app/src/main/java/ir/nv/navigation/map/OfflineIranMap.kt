@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.TrafficSummary
 import ir.nv.navigation.core.Coordinate
 import org.mapsforge.core.graphics.Style
 import org.mapsforge.core.model.LatLong
@@ -27,6 +28,7 @@ fun OfflineIranMap(
     mapFile: File,
     routes: List<Route>,
     selectedRouteIndex: Int,
+    traffic: TrafficSummary?,
     currentLocation: Coordinate?,
     followLocation: Boolean,
     darkMode: Boolean,
@@ -45,7 +47,7 @@ fun OfflineIranMap(
         modifier = modifier,
         update = {
             holder.setDarkMode(darkMode)
-            holder.showRoutes(routes, selectedRouteIndex)
+            holder.showRoutes(routes, selectedRouteIndex, traffic)
             holder.showLocation(currentLocation, followLocation)
         }
     )
@@ -59,6 +61,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
     private var locationLayer: Circle? = null
     private var renderedRoutes: List<Route> = emptyList()
     private var renderedSelectedRoute = -1
+    private var renderedTraffic: TrafficSummary? = null
     private var darkMode: Boolean? = null
 
     init {
@@ -87,10 +90,11 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
         mapView.layerManager.layers.add(renderer)
     }
 
-    fun showRoutes(routes: List<Route>, selectedRouteIndex: Int) {
-        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex) return
+    fun showRoutes(routes: List<Route>, selectedRouteIndex: Int, traffic: TrafficSummary?) {
+        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex && renderedTraffic == traffic) return
         renderedRoutes = routes
         renderedSelectedRoute = selectedRouteIndex
+        renderedTraffic = traffic
         routeLayers.forEach { mapView.layerManager.layers.remove(it) }
         routeLayers.clear()
         val ordered = routes.indices.sortedBy { if (it == selectedRouteIndex) 1 else 0 }
@@ -99,7 +103,9 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
             if (result.points.size < 2) return@forEach
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
                 val routeColor = when {
-                    index == selectedRouteIndex -> intArrayOf(54, 214, 255)
+                    index == selectedRouteIndex && traffic != null && traffic.delaySeconds >= 900 -> intArrayOf(239, 68, 68)
+                    index == selectedRouteIndex && traffic != null && traffic.delaySeconds >= 300 -> intArrayOf(255, 159, 28)
+                    index == selectedRouteIndex -> intArrayOf(24, 198, 238)
                     index % 2 == 0 -> intArrayOf(215, 255, 91)
                     else -> intArrayOf(150, 160, 174)
                 }

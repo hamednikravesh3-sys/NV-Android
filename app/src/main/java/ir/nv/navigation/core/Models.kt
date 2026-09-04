@@ -37,8 +37,11 @@ data class RouteManeuver(
     val roadName: String?,
     val distanceMeters: Double,
     val direction: Direction,
-    val coordinate: Coordinate? = null
+    val coordinate: Coordinate? = null,
+    val lanes: List<Lane> = emptyList()
 ) {
+    data class Lane(val direction: Direction, val recommended: Boolean)
+
     enum class Direction {
         STRAIGHT,
         SLIGHT_LEFT,
@@ -71,5 +74,5 @@ data class RouteNotice(
     val kind: Kind,
     val placeCode: Long? = null
 ) {
-    enum class Kind { ATTRACTION, WEATHER, TRAFFIC }
+    enum class Kind { ATTRACTION, SERVICE, WEATHER, TRAFFIC }
 }

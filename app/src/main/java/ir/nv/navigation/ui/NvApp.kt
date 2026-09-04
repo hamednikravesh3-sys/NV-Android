@@ -187,8 +187,9 @@ fun NvApp(
                     mapFile = viewModel.mapFile(),
                     routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) },
                     selectedRouteIndex = state.selectedRouteIndex,
+                    traffic = state.traffic,
                     currentLocation = state.currentLocation,
-                    followLocation = state.navigationActive,
+                    followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
                     darkMode = darkMode,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -197,8 +198,9 @@ fun NvApp(
                     context = context,
                     routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) },
                     selectedRouteIndex = state.selectedRouteIndex,
+                    traffic = state.traffic,
                     currentLocation = state.currentLocation,
-                    followLocation = state.navigationActive,
+                    followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
                     darkMode = darkMode,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -218,6 +220,7 @@ fun NvApp(
                             route = activeRoute,
                             maneuverIndex = state.maneuverIndex,
                             distanceToManeuverMeters = state.distanceToNextManeuverMeters,
+                            speedKmh = state.speedKmh,
                             offRoute = state.offRoute,
                             onStop = viewModel::stopNavigation
                         )
@@ -229,6 +232,23 @@ fun NvApp(
                         onToggleTheme = onToggleTheme,
                         onOpenOfflineMaps = { showOfflineMaps = true }
                     )
+                    if (state.route == null && (state.onlineAvailable || state.offlineReady)) {
+                        DestinationSearchBar(
+                            recentPlaces = state.recentPlaces,
+                            onClick = { showSearch = true },
+                            onRecentClick = { place ->
+                                viewModel.selectDestination(place)
+                                showSearch = true
+                            }
+                        )
+                    } else if (state.route != null) {
+                        SelectedRouteHeader(
+                            origin = state.origin,
+                            destination = state.destination,
+                            onEdit = { showSearch = true },
+                            onSwap = viewModel::swapEndpoints
+                        )
+                    }
                     state.message?.let {
                         StatusMessage(text = it, modifier = Modifier.padding(top = 8.dp))
                     }
@@ -266,21 +286,19 @@ fun NvApp(
                     onOpenOfflineMaps = { showOfflineMaps = true },
                     modifier = Modifier.align(Alignment.CenterEnd)
                 )
+            } else if (state.route == null && (state.onlineAvailable || state.offlineReady)) {
+                HomeMapControls(
+                    darkMode = darkMode,
+                    onMyLocation = { requestLocation(LocationAction.ORIGIN) },
+                    onOpenOfflineMaps = { showOfflineMaps = true },
+                    onToggleTheme = onToggleTheme,
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                )
             }
 
             if (state.route == null && !state.onlineAvailable && !state.offlineReady) {
                 OfflinePrompt(
                     onOpenOfflineMaps = { showOfflineMaps = true },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-            } else if (state.route == null) {
-                DestinationSearchBar(
-                    recentPlaces = state.recentPlaces,
-                    onClick = { showSearch = true },
-                    onRecentClick = { place ->
-                        viewModel.selectDestination(place)
-                        showSearch = true
-                    },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
             }

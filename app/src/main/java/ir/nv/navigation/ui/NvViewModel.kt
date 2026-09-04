@@ -10,11 +10,15 @@ import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.TrafficSummary
 import ir.nv.navigation.data.PersonalPlaceStore
+import ir.nv.navigation.data.IranCityIndex
+import ir.nv.navigation.data.PersianText
+import ir.nv.navigation.data.PlaceCodes
 import ir.nv.navigation.data.PlaceRepository
 import ir.nv.navigation.data.RecentPlaceStore
 import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
 import ir.nv.navigation.location.DeviceLocationProvider
+import ir.nv.navigation.location.NavigationFix
 import ir.nv.navigation.network.NetworkMonitor
 import ir.nv.navigation.online.OnlineNavigationService
 import ir.nv.navigation.routing.AStarRouter
@@ -22,6 +26,7 @@ import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.routing.RouteProgressEngine
 import ir.nv.navigation.routing.SqliteRoutingGraph
 import ir.nv.navigation.weather.WeatherAlertService
+import ir.nv.navigation.traffic.LiveTrafficService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -41,6 +46,9 @@ data class NvUiState(
     val destinationQuery: String = "",
     val originSuggestions: List<Place> = emptyList(),
     val destinationSuggestions: List<Place> = emptyList(),
+    val originSearching: Boolean = false,
+    val destinationSearching: Boolean = false,
+    val searchMessage: String? = null,
     val origin: Place? = null,
     val destination: Place? = null,
     val route: Route? = null,
@@ -51,6 +59,8 @@ data class NvUiState(
     val voiceEnabled: Boolean = true,
     val locating: Boolean = false,
     val currentLocation: Coordinate? = null,
+    val speedKmh: Int = 0,
+    val bearingDegrees: Float = 0f,
     val maneuverIndex: Int = 0,
     val distanceToNextManeuverMeters: Double = 0.0,
     val remainingDistanceMeters: Double = 0.0,
@@ -76,6 +86,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private val locationProvider = DeviceLocationProvider(application)
     private val trialManager = TrialManager(application)
     private val weatherAlerts = WeatherAlertService()
+    private val liveTraffic = LiveTrafficService()
     private val mutableState = MutableStateFlow(
         NvUiState(
             packStatus = packManager.status(),
@@ -290,8 +301,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         navigationJob = viewModelScope.launch {
-            locationProvider.updates().collect { coordinate ->
-                updateNavigationProgress(coordinate)
+            locationProvider.updates().collect { fix ->
+                updateNavigationProgress(fix)
             }
         }
     }
@@ -375,11 +386,6 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             } else emptyList()
             val result = results.firstOrNull()
 
-            val notices = if (result == null) emptyList() else withContext(Dispatchers.IO) {
-                val attractions = places?.attractionsAlong(result).orEmpty()
-                val weather = if (networkMonitor.isOnline()) runCatching { weatherAlerts.alertsAhead(result) }.getOrDefault(emptyList()) else emptyList()
-                (weather + attractions).sortedBy { it.distanceAheadMeters }.take(8)
-            }
             mutableState.update {
                 it.copy(
                     routing = false,
@@ -394,7 +400,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     remainingSeconds = result?.travelSeconds ?: 0.0,
                     offRoute = false,
                     routeSource = source,
-                    routeNotices = notices,
+                    routeNotices = emptyList(),
                     traffic = null,
                     message = when {
                         result != null -> null
@@ -405,28 +411,70 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
             }
+            result?.let { loadRouteNotices(it) }
         }
     }
 
     private fun search(query: String, origin: Boolean) {
         searchJob?.cancel()
-        if (query.trim().length < 2) {
-            mutableState.update { if (origin) it.copy(originSuggestions = emptyList()) else it.copy(destinationSuggestions = emptyList()) }
+        if (query.trim().isEmpty()) {
+            mutableState.update {
+                if (origin) {
+                    it.copy(originSuggestions = emptyList(), originSearching = false, searchMessage = null)
+                } else {
+                    it.copy(destinationSuggestions = emptyList(), destinationSearching = false, searchMessage = null)
+                }
+            }
             return
         }
         searchJob = viewModelScope.launch {
-            delay(300)
-            val results = withContext(Dispatchers.IO) {
+            val immediate = withContext(Dispatchers.IO) {
                 val personal = personalPlaces.search(query)
                 val local = places?.search(query).orEmpty()
-                val remote = if (networkMonitor.isOnline() && !mutableState.value.preferOffline) {
-                    runCatching { online.search(query) }.getOrDefault(emptyList())
-                } else emptyList()
-                (personal + remote + local).distinctBy { Triple(it.name, it.coordinate.latitude, it.coordinate.longitude) }.take(30)
+                val cities = IranCityIndex.search(query)
+                combineSearchResults(personal + local + cities)
             }
-            mutableState.update { if (origin) it.copy(originSuggestions = results) else it.copy(destinationSuggestions = results) }
+            mutableState.update {
+                if (origin) {
+                    it.copy(originSuggestions = immediate, originSearching = false, searchMessage = null)
+                } else {
+                    it.copy(destinationSuggestions = immediate, destinationSearching = false, searchMessage = null)
+                }
+            }
+
+            val needsOnline = query.trim().length >= 2 && PlaceCodes.publicCode(query) == null &&
+                networkMonitor.isOnline() && !mutableState.value.preferOffline
+            if (!needsOnline) return@launch
+            delay(220)
+            mutableState.update {
+                if (origin) it.copy(originSearching = true) else it.copy(destinationSearching = true)
+            }
+            val remoteResult = withContext(Dispatchers.IO) { runCatching { online.search(query) } }
+            val activeQuery = if (origin) mutableState.value.originQuery else mutableState.value.destinationQuery
+            if (activeQuery != query) return@launch
+            val combined = combineSearchResults(immediate + remoteResult.getOrDefault(emptyList()))
+            mutableState.update {
+                val warning = remoteResult.exceptionOrNull()?.let {
+                    if (immediate.isEmpty()) "جست‌وجوی آنلاین پاسخ نداد؛ اتصال اینترنت را بررسی کنید" else null
+                }
+                if (origin) {
+                    it.copy(originSuggestions = combined, originSearching = false, searchMessage = warning)
+                } else {
+                    it.copy(destinationSuggestions = combined, destinationSearching = false, searchMessage = warning)
+                }
+            }
         }
     }
+
+    private fun combineSearchResults(values: List<Place>): List<Place> = values
+        .distinctBy {
+            Triple(
+                PersianText.normalize(it.name),
+                (it.coordinate.latitude * 1_000).toInt(),
+                (it.coordinate.longitude * 1_000).toInt()
+            )
+        }
+        .take(30)
 
     private suspend fun openDataPack() = withContext(Dispatchers.IO) {
         runCatching {
@@ -445,22 +493,30 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun loadRouteNotices(route: Route) {
         val notices = withContext(Dispatchers.IO) {
-            val attractions = places?.attractionsAlong(route).orEmpty()
+            val attractions = places?.noticesAlong(route).orEmpty()
             val weather = if (networkMonitor.isOnline()) {
                 runCatching { weatherAlerts.alertsAhead(route) }.getOrDefault(emptyList())
             } else emptyList()
             (weather + attractions).sortedBy { it.distanceAheadMeters }.take(8)
         }
-        mutableState.update { state -> if (state.route === route) state.copy(routeNotices = notices) else state }
+        val traffic = if (networkMonitor.isOnline()) {
+            withContext(Dispatchers.IO) { runCatching { liveTraffic.summary(route) }.getOrNull() }
+        } else null
+        mutableState.update { state ->
+            if (state.route === route) state.copy(routeNotices = notices, traffic = traffic) else state
+        }
     }
 
-    private suspend fun updateNavigationProgress(coordinate: Coordinate) {
+    private suspend fun updateNavigationProgress(fix: NavigationFix) {
+        val coordinate = fix.coordinate
         val snapshot = mutableState.value
         val route = snapshot.route ?: return
         val progress = RouteProgressEngine.calculate(route, coordinate) ?: return
         mutableState.update {
             it.copy(
                 currentLocation = coordinate,
+                speedKmh = fix.speedKmh.toInt().coerceIn(0, 240),
+                bearingDegrees = fix.bearingDegrees,
                 maneuverIndex = progress.maneuverIndex,
                 distanceToNextManeuverMeters = progress.distanceToManeuverMeters,
                 remainingDistanceMeters = progress.remainingDistanceMeters,
@@ -504,6 +560,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 message = "مسیر با موقعیت جدید اصلاح شد"
             )
         }
+        loadRouteNotices(replacement)
     }
 
     override fun onCleared() {

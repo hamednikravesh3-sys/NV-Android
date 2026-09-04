@@ -51,19 +51,19 @@ class DeviceLocationProvider(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun updates(): Flow<Coordinate> = callbackFlow {
+    fun updates(): Flow<NavigationFix> = callbackFlow {
         if (!hasPermission()) {
             close(SecurityException("مجوز موقعیت مکانی داده نشده است"))
             return@callbackFlow
         }
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                trySend(location.toCoordinate())
+                trySend(location.toNavigationFix())
             }
         }
         bestLastKnown()
             ?.takeIf { System.currentTimeMillis() - it.time <= RECENT_LOCATION_MS }
-            ?.let { trySend(it.toCoordinate()) }
+            ?.let { trySend(it.toNavigationFix()) }
         activeProviders().forEach {
             manager.requestLocationUpdates(it, 2_000L, 3f, listener, Looper.getMainLooper())
         }
@@ -84,8 +84,22 @@ class DeviceLocationProvider(private val context: Context) {
 
     private fun Location.toCoordinate() = Coordinate(latitude, longitude)
 
+    private fun Location.toNavigationFix() = NavigationFix(
+        coordinate = toCoordinate(),
+        speedKmh = if (hasSpeed()) (speed * 3.6f).coerceAtLeast(0f) else 0f,
+        bearingDegrees = if (hasBearing()) bearing else 0f,
+        accuracyMeters = if (hasAccuracy()) accuracy else Float.POSITIVE_INFINITY
+    )
+
     private companion object {
         const val FRESH_LOCATION_MS = 2 * 60 * 1_000L
         const val RECENT_LOCATION_MS = 10 * 60 * 1_000L
     }
 }
+
+data class NavigationFix(
+    val coordinate: Coordinate,
+    val speedKmh: Float,
+    val bearingDegrees: Float,
+    val accuracyMeters: Float
+)

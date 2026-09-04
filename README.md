@@ -4,10 +4,11 @@ NV is a Persian-first navigation application for Android 10 and newer. This
 repository replaces the earlier incomplete IranNavApp upload with a standard,
 testable Android project.
 
-## Current architecture (0.5)
+## Current architecture (0.6)
 
 - Android minSdk 29 (Android 10), Kotlin and Jetpack Compose
-- online-first native map, type-ahead Photon search and dual-provider routing
+- online-first native map, instant bundled Iran-city search, Photon plus
+  Nominatim street/place fallback, and dual-provider routing
 - live network monitoring with automatic offline fallback
 - user-initiated Iran-only map download from a dedicated in-app panel
 - offline Mapsforge vector rendering with no online dependency
@@ -23,6 +24,9 @@ testable Android project.
   system day/night mode and an original adaptive NV Fold icon
 - D/F/H/I navigation flow: map-first home, route-choice sheet, distraction-
   minimized driving HUD, and an attractions/services-ahead sheet
+- GPS speed display and OSRM lane guidance in the active-driving HUD
+- real TomTom traffic-flow adapter (enabled only when `NV_TRAFFIC_API_KEY` is
+  provided; NV never invents congestion when live data is unavailable)
 - destination code sharing as `NV:1845623` with an on-device QR code
 - distraction-minimized driving mode with large maneuver HUD, ETA panel,
   live remaining-distance updates, off-route rerouting, floating controls and

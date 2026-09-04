@@ -137,6 +137,15 @@ fun NavigationTopBar(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold
                 )
+                when (val trial = state.trialState) {
+                    is TrialManager.State.Trial -> Text(
+                        "${trial.daysRemaining} روز رایگان",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    TrialManager.State.Paid -> Text("فعال", style = MaterialTheme.typography.labelSmall, color = OnlineGreen)
+                    else -> Unit
+                }
             }
         }
 
@@ -215,8 +224,7 @@ fun DestinationSearchBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(14.dp)
+            .padding(top = 10.dp),
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -229,8 +237,8 @@ fun DestinationSearchBar(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("نام یا کد مکان", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                    Text("مثلاً برج آزادی یا NV:1845623", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("کجا می‌روید؟", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                    Text("شهر، خیابان، مکان یا NV:1845623", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             if (recentPlaces.isNotEmpty()) {
@@ -251,6 +259,51 @@ fun DestinationSearchBar(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun SelectedRouteHeader(
+    origin: Place?,
+    destination: Place?,
+    onEdit: () -> Unit,
+    onSwap: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().padding(top = 8.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        shadowElevation = 7.dp
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(OriginBlue))
+                Box(Modifier.size(10.dp).clip(CircleShape).background(DestinationRed))
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    origin?.name ?: "مبدأ را انتخاب کنید",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                HorizontalDivider()
+                Text(
+                    destination?.name ?: "مقصد را انتخاب کنید",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            IconButton(onClick = onSwap) {
+                Icon(Icons.Rounded.SwapVert, contentDescription = "جابه‌جایی مبدأ و مقصد")
             }
         }
     }
@@ -290,6 +343,7 @@ fun SearchPanel(
                     value = state.originQuery,
                     color = OriginBlue,
                     suggestions = state.originSuggestions,
+                    searching = state.originSearching,
                     onValueChange = onOriginChange,
                     onSelect = onOriginSelect,
                     trailingIcon = {
@@ -308,6 +362,7 @@ fun SearchPanel(
                     value = state.destinationQuery,
                     color = DestinationRed,
                     suggestions = state.destinationSuggestions,
+                    searching = state.destinationSearching,
                     onValueChange = onDestinationChange,
                     onSelect = onDestinationSelect
                 )
@@ -315,6 +370,15 @@ fun SearchPanel(
             IconButton(onClick = onSwap) {
                 Icon(Icons.Rounded.SwapVert, contentDescription = "جابه‌جایی مبدأ و مقصد")
             }
+        }
+
+        state.searchMessage?.let { warning ->
+            Text(
+                warning,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
         }
 
         AnimatedVisibility(state.origin != null || state.destination != null) {
@@ -365,6 +429,7 @@ private fun PlaceSearchField(
     value: String,
     color: Color,
     suggestions: List<Place>,
+    searching: Boolean,
     onValueChange: (String) -> Unit,
     onSelect: (Place) -> Unit,
     trailingIcon: (@Composable () -> Unit)? = null
@@ -376,7 +441,9 @@ private fun PlaceSearchField(
             label = { Text(label) },
             placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingIcon = { Box(Modifier.size(12.dp).clip(CircleShape).background(color)) },
-            trailingIcon = trailingIcon,
+            trailingIcon = if (searching) {
+                { CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) }
+            } else trailingIcon,
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
@@ -406,7 +473,13 @@ private fun PlaceSearchField(
                             Column(Modifier.weight(1f)) {
                                 Text(place.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "${categoryLabel(place.category)}  •  کد ${place.personalCode ?: place.code}",
+                                    buildString {
+                                        append(categoryLabel(place.category))
+                                        when {
+                                            !place.personalCode.isNullOrBlank() -> append("  •  کد ${place.personalCode}")
+                                            place.code > 0 -> append("  •  NV:${place.code}")
+                                        }
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1
@@ -444,6 +517,7 @@ fun NavigationHud(
     route: Route,
     maneuverIndex: Int,
     distanceToManeuverMeters: Double,
+    speedKmh: Int,
     offRoute: Boolean,
     onStop: () -> Unit
 ) {
@@ -490,6 +564,43 @@ fun NavigationHud(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (!offRoute && !maneuver?.lanes.isNullOrEmpty()) {
+                    Row(
+                        modifier = Modifier.padding(top = 7.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        maneuver?.lanes?.forEach { lane ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.onPrimary.copy(
+                                    alpha = if (lane.recommended) 0.25f else 0.08f
+                                )
+                            ) {
+                                Icon(
+                                    maneuverIcon(lane.direction),
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(4.dp).size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimary.copy(
+                                        alpha = if (lane.recommended) 1f else 0.45f
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f)
+            ) {
+                Column(
+                    modifier = Modifier.size(58.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("$speedKmh", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black)
+                    Text("km/h", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
+                }
             }
             IconButton(onClick = onStop) {
                 Text("×", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.headlineMedium)
@@ -516,6 +627,28 @@ fun FloatingNavigationControls(
             if (voiceEnabled) "قطع صدای راهنما" else "فعال‌کردن صدای راهنما",
             onToggleVoice
         )
+        AppIconButton(Icons.Rounded.Map, "نقشه‌های آفلاین", onOpenOfflineMaps)
+        AppIconButton(
+            if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+            if (darkMode) "حالت روز" else "حالت شب",
+            onToggleTheme
+        )
+    }
+}
+
+@Composable
+fun HomeMapControls(
+    darkMode: Boolean,
+    onMyLocation: () -> Unit,
+    onOpenOfflineMaps: () -> Unit,
+    onToggleTheme: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        AppIconButton(Icons.Rounded.MyLocation, "موقعیت من", onMyLocation)
         AppIconButton(Icons.Rounded.Map, "نقشه‌های آفلاین", onOpenOfflineMaps)
         AppIconButton(
             if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
@@ -913,12 +1046,31 @@ fun RoutePlacesSheet(
     onShowCode: () -> Unit,
     onShare: (Place) -> Unit
 ) {
+    var filter by remember { mutableStateOf(RoutePlaceFilter.ALL) }
+    val visibleNotices = notices.filter { notice ->
+        when (filter) {
+            RoutePlaceFilter.ALL -> true
+            RoutePlaceFilter.ATTRACTIONS -> notice.kind == RouteNotice.Kind.ATTRACTION
+            RoutePlaceFilter.SERVICES -> notice.kind == RouteNotice.Kind.SERVICE
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("جاذبه‌ها و امکانات مسیر", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                RoutePlaceFilterButton("همه", filter == RoutePlaceFilter.ALL, Modifier.weight(1f)) {
+                    filter = RoutePlaceFilter.ALL
+                }
+                RoutePlaceFilterButton("دیدنی‌ها", filter == RoutePlaceFilter.ATTRACTIONS, Modifier.weight(1f)) {
+                    filter = RoutePlaceFilter.ATTRACTIONS
+                }
+                RoutePlaceFilterButton("خدمات", filter == RoutePlaceFilter.SERVICES, Modifier.weight(1f)) {
+                    filter = RoutePlaceFilter.SERVICES
+                }
+            }
             destination?.let { place ->
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
                     Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -933,10 +1085,18 @@ fun RoutePlacesSheet(
                     }
                 }
             }
-            notices.take(6).forEach { notice ->
+            visibleNotices.take(8).forEach { notice ->
                 Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (notice.kind == RouteNotice.Kind.ATTRACTION) Icons.Rounded.Explore else Icons.Rounded.Info, null)
+                        Icon(
+                            when (notice.kind) {
+                                RouteNotice.Kind.ATTRACTION -> Icons.Rounded.Explore
+                                RouteNotice.Kind.SERVICE -> Icons.Rounded.DirectionsCar
+                                RouteNotice.Kind.WEATHER -> Icons.Rounded.CloudDone
+                                RouteNotice.Kind.TRAFFIC -> Icons.Rounded.Info
+                            },
+                            null
+                        )
                         Spacer(Modifier.width(9.dp))
                         Column(Modifier.weight(1f)) {
                             Text(notice.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
@@ -946,11 +1106,27 @@ fun RoutePlacesSheet(
                     }
                 }
             }
-            if (notices.isEmpty()) Text("مورد مهمی در ادامه مسیر پیدا نشد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (visibleNotices.isEmpty()) Text("موردی در این دسته در ادامه مسیر پیدا نشد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
         }
     }
 }
+
+@Composable
+private fun RoutePlaceFilterButton(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    if (selected) {
+        Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(text) }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(text) }
+    }
+}
+
+private enum class RoutePlaceFilter { ALL, ATTRACTIONS, SERVICES }
 
 @Composable
 fun PlaceCodeDialog(
@@ -1042,6 +1218,7 @@ private fun categoryLabel(category: String): String = when {
     category == "place:suburb" || category == "place:neighbourhood" -> "محله"
     category.startsWith("personal:") -> "مکان شخصی"
     category.startsWith("online:") -> "نتیجه آنلاین"
+    category == "builtin:city" -> "شهر ایران • آماده بدون اینترنت"
     category.startsWith("tourism:") -> "دیدنی"
     category.startsWith("amenity:") -> "خدمات"
     category.startsWith("shop:") -> "فروشگاه"

@@ -70,7 +70,7 @@ class PlaceRepository(databaseFile: File) : Closeable {
         }
     }
 
-    fun attractionsAlong(route: Route, limit: Int = 6): List<RouteNotice> {
+    fun noticesAlong(route: Route, limit: Int = 8): List<RouteNotice> {
         if (route.points.size < 2) return emptyList()
         val minLatitude = route.points.minOf { it.latitude } - BOUNDS_PADDING_DEGREES
         val maxLatitude = route.points.maxOf { it.latitude } + BOUNDS_PADDING_DEGREES
@@ -81,13 +81,18 @@ class PlaceRepository(databaseFile: File) : Closeable {
             SELECT code, name, latitude, longitude, category
             FROM places
             WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?
-              AND (category LIKE 'tourism:%' OR category LIKE 'historic:%'
-                   OR category LIKE 'natural:%')
+              AND (
+                category LIKE 'tourism:%' OR category LIKE 'historic:%' OR category LIKE 'natural:%'
+                OR category IN (
+                  'amenity:fuel','amenity:parking','amenity:hospital','amenity:clinic',
+                  'amenity:pharmacy','amenity:restaurant','amenity:cafe','amenity:toilets'
+                )
+              )
             LIMIT ?
             """.trimIndent(),
             arrayOf(
                 minLatitude.toString(), maxLatitude.toString(), minLongitude.toString(),
-                maxLongitude.toString(), MAX_ATTRACTION_CANDIDATES.toString()
+                maxLongitude.toString(), MAX_PLACE_CANDIDATES.toString()
             )
         ).use { cursor ->
             buildList {
@@ -103,14 +108,14 @@ class PlaceRepository(databaseFile: File) : Closeable {
                 }
             }
         }
-        return RouteInsightEngine.attractionsAhead(route, candidates, limit)
+        return RouteInsightEngine.placesAhead(route, candidates, limit)
     }
 
     override fun close() = db.close()
 
     private companion object {
         const val BOUNDS_PADDING_DEGREES = 0.06
-        const val MAX_ATTRACTION_CANDIDATES = 3_000
+        const val MAX_PLACE_CANDIDATES = 5_000
     }
 }
 

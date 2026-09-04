@@ -15,6 +15,7 @@ jobs:
       NV_KEYSTORE_PASSWORD: ${{ secrets.NV_KEYSTORE_PASSWORD }}
       NV_KEY_ALIAS: ${{ secrets.NV_KEY_ALIAS }}
       NV_KEY_PASSWORD: ${{ secrets.NV_KEY_PASSWORD }}
+      NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Require signing secrets

@@ -30,6 +30,8 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Unit tests and debug APK
+        env:
+          NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
         run: |
           python -m unittest discover -s tools -p "test_*.py"
           gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug

@@ -13,21 +13,24 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 object RouteInsightEngine {
-    fun attractionsAhead(route: Route, places: List<Place>, limit: Int = 6): List<RouteNotice> {
+    fun placesAhead(route: Route, places: List<Place>, limit: Int = 8): List<RouteNotice> {
         if (route.points.size < 2) return emptyList()
         return places.mapNotNull { place ->
             val projection = project(route.points, place.coordinate) ?: return@mapNotNull null
-            if (projection.offsetMeters > ATTRACTION_CORRIDOR_METERS) return@mapNotNull null
+            if (projection.offsetMeters > PLACE_CORRIDOR_METERS) return@mapNotNull null
             if (projection.progressMeters !in MIN_AHEAD_METERS..MAX_AHEAD_METERS) return@mapNotNull null
             RouteNotice(
                 title = place.displayName,
                 detail = categoryLabel(place.category),
                 distanceAheadMeters = projection.progressMeters,
-                kind = RouteNotice.Kind.ATTRACTION,
+                kind = if (isService(place.category)) RouteNotice.Kind.SERVICE else RouteNotice.Kind.ATTRACTION,
                 placeCode = place.code.takeIf { it > 0 }
             )
         }.sortedBy { it.distanceAheadMeters }.take(limit)
     }
+
+    fun attractionsAhead(route: Route, places: List<Place>, limit: Int = 6): List<RouteNotice> =
+        placesAhead(route, places, limit).filter { it.kind == RouteNotice.Kind.ATTRACTION }
 
     fun summarizeTraffic(segments: List<TrafficSegment>): TrafficSummary = TrafficSummary(
         lengthMeters = segments.sumOf { it.lengthMeters.coerceAtLeast(0.0) },
@@ -71,8 +74,18 @@ object RouteInsightEngine {
         value.startsWith("tourism:") -> "جاذبه گردشگری"
         value.startsWith("historic:") -> "مکان تاریخی"
         value.startsWith("natural:") -> "دیدنی طبیعی"
+        value == "amenity:fuel" -> "جایگاه سوخت"
+        value == "amenity:parking" -> "پارکینگ"
+        value == "amenity:hospital" || value == "amenity:clinic" -> "مرکز درمانی"
+        value == "amenity:pharmacy" -> "داروخانه"
+        value == "amenity:restaurant" || value == "amenity:cafe" -> "غذا و استراحت"
+        value == "amenity:toilets" -> "سرویس بهداشتی"
+        value.startsWith("shop:") -> "خدمات مسیر"
         else -> "دیدنی مسیر"
     }
+
+    private fun isService(category: String): Boolean =
+        category.startsWith("amenity:") || category.startsWith("shop:")
 
     private fun haversine(a: Coordinate, b: Coordinate): Double {
         val lat1 = Math.toRadians(a.latitude)
@@ -86,7 +99,7 @@ object RouteInsightEngine {
 
     private const val EARTH_RADIUS_METERS = 6_371_000.0
     private const val METERS_PER_DEGREE = 111_320.0
-    private const val ATTRACTION_CORRIDOR_METERS = 3_000.0
+    private const val PLACE_CORRIDOR_METERS = 3_000.0
     private const val MIN_AHEAD_METERS = 500.0
     private const val MAX_AHEAD_METERS = 100_000.0
 }
