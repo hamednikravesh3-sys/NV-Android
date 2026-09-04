@@ -23,24 +23,22 @@ object RouteProgressEngine {
         for (index in 1 until route.points.size) {
             cumulative[index] = cumulative[index - 1] + distance(route.points[index - 1], route.points[index])
         }
-        val nearestIndex = route.points.indices.minByOrNull { distance(location, route.points[it]) } ?: return null
-        val offset = distance(location, route.points[nearestIndex])
+        val nearest = nearestSegment(route.points, cumulative, location) ?: return null
         val geometryLength = cumulative.last().coerceAtLeast(1.0)
-        val progressRatio = (cumulative[nearestIndex] / geometryLength).coerceIn(0.0, 1.0)
+        val progressRatio = (nearest.distanceAlongMeters / geometryLength).coerceIn(0.0, 1.0)
         val remainingDistance = route.distanceMeters * (1.0 - progressRatio)
         val remainingSeconds = route.travelSeconds * (1.0 - progressRatio)
 
         val maneuverDistances = route.maneuvers.map { maneuver ->
             val point = maneuver.coordinate ?: return@map Double.POSITIVE_INFINITY
-            val pointIndex = route.points.indices.minByOrNull { distance(point, route.points[it]) } ?: 0
-            cumulative[pointIndex]
+            nearestSegment(route.points, cumulative, point)?.distanceAlongMeters ?: Double.POSITIVE_INFINITY
         }
         val maneuverIndex = maneuverDistances.indices.firstOrNull {
-            maneuverDistances[it] > cumulative[nearestIndex] + MANEUVER_PASSED_TOLERANCE_METERS
+            maneuverDistances[it] > nearest.distanceAlongMeters + MANEUVER_PASSED_TOLERANCE_METERS
         } ?: route.maneuvers.lastIndex.coerceAtLeast(0)
         val maneuverDistance = maneuverDistances.getOrNull(maneuverIndex)
             ?.takeIf { it.isFinite() }
-            ?.minus(cumulative[nearestIndex])
+            ?.minus(nearest.distanceAlongMeters)
             ?.coerceAtLeast(0.0)
             ?: remainingDistance
 
@@ -49,8 +47,48 @@ object RouteProgressEngine {
             distanceToManeuverMeters = maneuverDistance,
             remainingDistanceMeters = remainingDistance,
             remainingSeconds = remainingSeconds,
-            offRoute = offset > OFF_ROUTE_METERS
+            offRoute = nearest.distanceFromRouteMeters > OFF_ROUTE_METERS
         )
+    }
+
+    private fun nearestSegment(
+        points: List<Coordinate>,
+        cumulative: DoubleArray,
+        location: Coordinate
+    ): SegmentMatch? {
+        if (points.size < 2) return null
+        val referenceLatitude = Math.toRadians(location.latitude)
+        var best: SegmentMatch? = null
+        for (index in 0 until points.lastIndex) {
+            val start = points[index]
+            val end = points[index + 1]
+            val startX = Math.toRadians(start.longitude - location.longitude) *
+                EARTH_RADIUS_METERS * cos(referenceLatitude)
+            val startY = Math.toRadians(start.latitude - location.latitude) * EARTH_RADIUS_METERS
+            val endX = Math.toRadians(end.longitude - location.longitude) *
+                EARTH_RADIUS_METERS * cos(referenceLatitude)
+            val endY = Math.toRadians(end.latitude - location.latitude) * EARTH_RADIUS_METERS
+            val deltaX = endX - startX
+            val deltaY = endY - startY
+            val lengthSquared = deltaX * deltaX + deltaY * deltaY
+            val fraction = if (lengthSquared <= 0.0) {
+                0.0
+            } else {
+                (-(startX * deltaX + startY * deltaY) / lengthSquared).coerceIn(0.0, 1.0)
+            }
+            val projectionX = startX + fraction * deltaX
+            val projectionY = startY + fraction * deltaY
+            val distanceFromRoute = sqrt(projectionX * projectionX + projectionY * projectionY)
+            val segmentMeters = cumulative[index + 1] - cumulative[index]
+            val match = SegmentMatch(
+                distanceFromRouteMeters = distanceFromRoute,
+                distanceAlongMeters = cumulative[index] + segmentMeters * fraction
+            )
+            if (best == null || match.distanceFromRouteMeters < best.distanceFromRouteMeters) {
+                best = match
+            }
+        }
+        return best
     }
 
     private fun distance(a: Coordinate, b: Coordinate): Double {
@@ -66,4 +104,9 @@ object RouteProgressEngine {
     private const val EARTH_RADIUS_METERS = 6_371_000.0
     private const val OFF_ROUTE_METERS = 80.0
     private const val MANEUVER_PASSED_TOLERANCE_METERS = 15.0
+
+    private data class SegmentMatch(
+        val distanceFromRouteMeters: Double,
+        val distanceAlongMeters: Double
+    )
 }
