@@ -268,7 +268,23 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun swapEndpoints() {
-        mutableState.update { it.copy(message = "مبدأ NV همیشه موقعیت فعلی GPS شماست") }
+        mutableState.update { state ->
+            val origin = state.origin
+            val destination = state.destination
+            if (origin == null || destination == null) {
+                state.copy(message = "ابتدا مبدأ و مقصد را انتخاب کنید")
+            } else {
+                state.copy(
+                    origin = destination,
+                    destination = origin,
+                    originQuery = destination.name,
+                    destinationQuery = origin.name,
+                    originSuggestions = emptyList(),
+                    destinationSuggestions = emptyList(),
+                    message = null
+                )
+            }
+        }
     }
 
     fun clearRoute() {
@@ -382,7 +398,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     code = CURRENT_LOCATION_CODE,
                     name = "موقعیت فعلی من",
                     coordinate = coordinate,
-                    category = "device:location"
+                    category = DEVICE_LOCATION_CATEGORY
                 )
                 mutableState.update {
                     it.copy(
@@ -417,39 +433,51 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun calculateRoute() {
-        val destination = mutableState.value.destination
+        val initialState = mutableState.value
+        val originSelection = initialState.origin
+        val destination = initialState.destination
+        if (originSelection == null) {
+            mutableState.update { it.copy(message = "ابتدا مبدأ را انتخاب کنید") }
+            return
+        }
         if (destination == null) {
             mutableState.update { it.copy(message = "ابتدا مقصد را انتخاب کنید") }
             return
         }
-        if (!locationProvider.hasPermission()) {
+        val currentLocationOrigin = originSelection.category == DEVICE_LOCATION_CATEGORY
+        if (currentLocationOrigin && !locationProvider.hasPermission()) {
             mutableState.update { it.copy(message = "برای تعیین مبدأ، دسترسی موقعیت مکانی را فعال کنید") }
             return
         }
         viewModelScope.launch {
-            mutableState.update { it.copy(routing = true, locating = true, message = "در حال دریافت مبدأ از GPS…") }
-            val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
-            if (coordinate == null) {
-                mutableState.update {
-                    it.copy(routing = false, locating = false, message = "مبدأ از GPS دریافت نشد؛ GPS را روشن کنید")
+            var origin = originSelection
+            if (currentLocationOrigin) {
+                mutableState.update { it.copy(routing = true, locating = true, message = "در حال دریافت مبدأ از GPS…") }
+                val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
+                if (coordinate == null) {
+                    mutableState.update {
+                        it.copy(routing = false, locating = false, message = "مبدأ از GPS دریافت نشد؛ GPS را روشن کنید")
+                    }
+                    return@launch
                 }
-                return@launch
-            }
-            val origin = Place(
-                code = CURRENT_LOCATION_CODE,
-                name = "موقعیت فعلی من",
-                coordinate = coordinate,
-                category = "device:location"
-            )
-            mutableState.update {
-                it.copy(
-                    locating = false,
-                    currentLocation = coordinate,
-                    origin = origin,
-                    originQuery = origin.name,
-                    originSuggestions = emptyList(),
-                    message = null
+                origin = Place(
+                    code = CURRENT_LOCATION_CODE,
+                    name = "موقعیت فعلی من",
+                    coordinate = coordinate,
+                    category = DEVICE_LOCATION_CATEGORY
                 )
+                mutableState.update {
+                    it.copy(
+                        locating = false,
+                        currentLocation = coordinate,
+                        origin = origin,
+                        originQuery = origin.name,
+                        originSuggestions = emptyList(),
+                        message = null
+                    )
+                }
+            } else {
+                mutableState.update { it.copy(routing = true, locating = false, message = null) }
             }
             val snapshot = mutableState.value
             val preferredSource = NavigationModeResolver.preferredSource(
@@ -711,6 +739,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         const val CURRENT_LOCATION_CODE = -9_000_000_001L
+        const val DEVICE_LOCATION_CATEGORY = "device:location"
         const val MIN_NAVIGATION_ZOOM = 15
         const val DEFAULT_NAVIGATION_ZOOM = 18
         const val MAX_NAVIGATION_ZOOM = 19

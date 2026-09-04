@@ -88,9 +88,6 @@ fun NvApp(
             )
         }
     }
-    LaunchedEffect(Unit) {
-        requestLocation(LocationAction.ORIGIN)
-    }
     val sharePlace: (Place) -> Unit = { place ->
         (place.personalCode?.let { "کد شخصی NV: $it" } ?: PlaceCodes.shareCode(place.code))?.let { code ->
             val message = "${place.name}\n$code"

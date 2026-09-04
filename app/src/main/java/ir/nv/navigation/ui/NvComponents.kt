@@ -35,7 +35,6 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.LightMode
-import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.GpsFixed
@@ -434,7 +433,9 @@ fun SelectedRouteHeader(
                     }
                 }
             }
-            Icon(Icons.Rounded.MyLocation, contentDescription = "مبدأ ثابت از GPS", tint = NvCyan)
+            IconButton(onClick = onSwap) {
+                Icon(Icons.Rounded.SwapVert, contentDescription = "جابجایی مبدأ و مقصد", tint = NvCyan)
+            }
         }
     }
 }
@@ -467,31 +468,40 @@ fun SearchPanel(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().clickable(enabled = !state.locating, onClick = onUseCurrentLocation),
-                shape = RoundedCornerShape(16.dp),
-                color = NvPanelHigh,
-                border = BorderStroke(1.dp, OriginBlue.copy(alpha = 0.7f))
+            PlaceSearchField(
+                label = "مبدأ",
+                placeholder = "نام، کد مکان یا انتخاب موقعیت فعلی",
+                value = state.originQuery,
+                color = OriginBlue,
+                suggestions = state.originSuggestions,
+                searching = state.originSearching,
+                onValueChange = onOriginChange,
+                onSelect = onOriginSelect,
+                trailingIcon = {
+                    IconButton(onClick = onUseCurrentLocation, enabled = !state.locating) {
+                        if (state.locating) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = NvCyan)
+                        } else {
+                            Icon(Icons.Rounded.MyLocation, contentDescription = "موقعیت فعلی من")
+                        }
+                    }
+                }
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                TextButton(onClick = onUseCurrentLocation, enabled = !state.locating) {
+                    Icon(Icons.Rounded.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("استفاده از موقعیت فعلی من")
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = onSwap,
+                    enabled = state.origin != null && state.destination != null
                 ) {
-                    if (state.locating) {
-                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = NvCyan)
-                    } else {
-                        Icon(Icons.Rounded.MyLocation, contentDescription = null, tint = OriginBlue)
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("مبدأ ثابت", color = NvMuted, style = MaterialTheme.typography.labelMedium)
-                        Text(
-                            if (state.currentLocation != null) "موقعیت فعلی من • GPS آماده" else "برای دریافت موقعیت لمس کنید",
-                            color = NvText,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Icon(Icons.Rounded.Lock, contentDescription = "مبدأ قابل تغییر نیست", tint = NvCyan)
+                    Icon(Icons.Rounded.SwapVert, contentDescription = "جابجایی مبدأ و مقصد", tint = NvCyan)
                 }
             }
             PlaceSearchField(
@@ -505,7 +515,7 @@ fun SearchPanel(
                 onSelect = onDestinationSelect
             )
             Text(
-                "مبدأ در لحظه مسیریابی دوباره از GPS خوانده می‌شود.",
+                "مبدأ می‌تواند موقعیت فعلی شما یا هر مکان جست‌وجوشده باشد.",
                 color = NvMuted,
                 style = MaterialTheme.typography.labelSmall
             )
@@ -540,7 +550,7 @@ fun SearchPanel(
                     Spacer(Modifier.weight(1f))
                     Button(
                         onClick = onRoute,
-                        enabled = state.destination != null && !state.routing,
+                        enabled = state.origin != null && state.destination != null && !state.routing,
                         shape = RoundedCornerShape(16.dp),
                         contentPadding = ButtonDefaults.ContentPadding,
                         colors = ButtonDefaults.buttonColors(containerColor = NvCyan, contentColor = NvInk)

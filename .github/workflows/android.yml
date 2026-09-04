@@ -41,7 +41,7 @@ jobs:
           name: NV-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-      - name: Capture real app screenshot
+      - name: Install and verify NV launch
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -49,14 +49,22 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
+            adb wait-for-device
+            adb shell settings put global hide_error_dialogs 1
             adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell settings put system accelerometer_rotation 0
-            adb shell settings put system user_rotation 0
+            adb shell pm grant ir.nv.navigation.debug android.permission.ACCESS_FINE_LOCATION
+            adb logcat -c
             adb shell am force-stop ir.nv.navigation.debug
-            adb shell am start -n ir.nv.navigation.debug/ir.nv.navigation.MainActivity
-            sleep 60
+            adb shell am start -W -n ir.nv.navigation.debug/ir.nv.navigation.MainActivity
+            sleep 20
+            FOREGROUND="$(adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' || true)"
+            echo "$FOREGROUND"
+            echo "$FOREGROUND" | grep 'ir.nv.navigation.debug'
+            if adb logcat -d | grep -E 'FATAL EXCEPTION.*ir\.nv\.navigation|Process: ir\.nv\.navigation\.debug'; then
+              exit 1
+            fi
             adb exec-out screencap -p > nv-real-home.png
-      - name: Upload real screenshot
+      - name: Upload verified NV screenshot
         uses: actions/upload-artifact@v4
         with:
           name: NV-real-screenshot
