@@ -20,6 +20,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -27,7 +30,9 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Unit tests and debug APK
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+        run: |
+          python -m unittest discover -s tools -p "test_*.py"
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:

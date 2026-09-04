@@ -26,46 +26,57 @@ class TrialManager(
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun state(isPaid: Boolean = false): State {
-        if (isPaid) return State.Paid
         val now = clock.instant()
         val first = prefs.getLong(KEY_FIRST_USE, 0L)
-        if (first == 0L) return createTrial(now)
+        if (first == 0L) {
+            if (isPaid) {
+                persist(now.toEpochMilli(), now.toEpochMilli(), paid = true)
+                return State.Paid
+            }
+            return createTrial(now)
+        }
 
         val last = prefs.getLong(KEY_LAST_SEEN, 0L)
+        val locallyPaid = prefs.getBoolean(KEY_PAID, false)
         val signature = prefs.getString(KEY_SIGNATURE, null) ?: return State.Tampered
-        if (!verify(first, last, signature)) return State.Tampered
+        if (!verify(first, last, locallyPaid, signature)) return State.Tampered
         if (now.toEpochMilli() + CLOCK_ROLLBACK_TOLERANCE_MS < last) return State.Tampered
+        if (isPaid || locallyPaid) {
+            persist(first, now.toEpochMilli(), paid = true)
+            return State.Paid
+        }
 
         val elapsed = Duration.between(Instant.ofEpochMilli(first), now)
         if (elapsed >= TRIAL_DURATION) return State.Expired
         val daysRemaining = TRIAL_DURATION.minus(elapsed).toDays().coerceAtLeast(0) + 1
-        persist(first, now.toEpochMilli())
+        persist(first, now.toEpochMilli(), paid = false)
         return State.Trial(daysRemaining)
     }
 
     private fun createTrial(now: Instant): State {
-        persist(now.toEpochMilli(), now.toEpochMilli())
+        persist(now.toEpochMilli(), now.toEpochMilli(), paid = false)
         return State.Trial(TRIAL_DURATION.toDays())
     }
 
-    private fun persist(first: Long, last: Long) {
+    private fun persist(first: Long, last: Long, paid: Boolean) {
         prefs.edit()
             .putLong(KEY_FIRST_USE, first)
             .putLong(KEY_LAST_SEEN, last)
-            .putString(KEY_SIGNATURE, sign(first, last))
+            .putBoolean(KEY_PAID, paid)
+            .putString(KEY_SIGNATURE, sign(first, last, paid))
             .apply()
     }
 
-    private fun sign(first: Long, last: Long): String {
+    private fun sign(first: Long, last: Long, paid: Boolean): String {
         val mac = Mac.getInstance(ALGORITHM)
         mac.init(secretKey())
-        val result = mac.doFinal((first.toString() + ":" + last.toString()).toByteArray())
+        val result = mac.doFinal("$first:$last:$paid".toByteArray())
         return Base64.encodeToString(result, Base64.NO_WRAP)
     }
 
-    private fun verify(first: Long, last: Long, signature: String): Boolean =
+    private fun verify(first: Long, last: Long, paid: Boolean, signature: String): Boolean =
         runCatching {
-            val expected = Base64.decode(sign(first, last), Base64.NO_WRAP)
+            val expected = Base64.decode(sign(first, last, paid), Base64.NO_WRAP)
             val actual = Base64.decode(signature, Base64.NO_WRAP)
             java.security.MessageDigest.isEqual(expected, actual)
         }.getOrDefault(false)
@@ -90,6 +101,7 @@ class TrialManager(
         const val PREFS_NAME = "nv_entitlement"
         const val KEY_FIRST_USE = "first_use"
         const val KEY_LAST_SEEN = "last_seen"
+        const val KEY_PAID = "paid"
         const val KEY_SIGNATURE = "signature"
         const val KEY_ALIAS = "nv_trial_hmac_v1"
         const val ANDROID_KEY_STORE = "AndroidKeyStore"

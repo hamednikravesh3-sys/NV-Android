@@ -34,6 +34,11 @@ data class TrafficSegment(
     val delaySeconds: Double
 )
 
+data class TrafficSummary(
+    val lengthMeters: Double,
+    val delaySeconds: Double
+)
+
 data class RouteNotice(
     val title: String,
     val detail: String,

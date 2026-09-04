@@ -11,5 +11,5 @@ captures/
 *.apk
 *.aab
 iran.nvpack
-iran.mbtiles
+iran.map
 *.db

@@ -7,6 +7,7 @@ import android.os.Environment
 import ir.nv.navigation.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -101,6 +102,7 @@ class IranPackManager(private val context: Context) {
             check(required.all { staging.resolve(it).isFile }) {
                 "بسته ایران ناقص است: " + required.filterNot { staging.resolve(it).isFile }
             }
+            verifyManifest(staging)
 
             installDirectory.deleteRecursively()
             check(staging.renameTo(installDirectory)) { "جابه‌جایی بسته نصب‌شده ناموفق بود" }
@@ -133,6 +135,32 @@ class IranPackManager(private val context: Context) {
         check(actual == expected) { "امضای SHA-256 بسته ایران صحیح نیست" }
     }
 
+    private fun verifyManifest(directory: File) {
+        val manifest = JSONObject(directory.resolve(MANIFEST_FILE).readText())
+        check(manifest.optInt("schemaVersion") == SUPPORTED_SCHEMA_VERSION) {
+            "نسخه بسته داده پشتیبانی نمی‌شود"
+        }
+        val files = manifest.getJSONObject("files")
+        listOf(MAP_FILE, PLACES_FILE, ROUTING_FILE).forEach { name ->
+            val expected = files.getJSONObject(name).getString("sha256").lowercase()
+            val actual = sha256(directory.resolve(name))
+            check(actual == expected) { "فایل $name ناقص یا دستکاری شده است" }
+        }
+    }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     private fun unzipSafely(source: File, target: File) {
         val canonicalTarget = target.canonicalFile
         ZipInputStream(FileInputStream(source).buffered()).use { zip ->
@@ -161,8 +189,9 @@ class IranPackManager(private val context: Context) {
         const val PACK_FILE_NAME = "iran.nvpack"
         const val INSTALL_DIRECTORY = "iran-pack"
         const val MANIFEST_FILE = "manifest.json"
-        const val MAP_FILE = "iran.mbtiles"
+        const val MAP_FILE = "iran.map"
         const val PLACES_FILE = "places.db"
         const val ROUTING_FILE = "routing.db"
+        const val SUPPORTED_SCHEMA_VERSION = 2
     }
 }

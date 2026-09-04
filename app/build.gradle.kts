@@ -11,8 +11,8 @@ android {
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -24,6 +24,11 @@ android {
         )
         buildConfigField("String", "IRAN_PACK_SHA256", "\"\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
+        buildConfigField(
+            "String",
+            "WEATHER_API_URL",
+            "\"https://api.open-meteo.com/v1/forecast\""
+        )
         buildConfigField("String", "TRAFFIC_API_KEY", "\"\"")
     }
 
@@ -90,7 +95,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("org.mapsforge:mapsforge-map-android:0.25.0")
+    implementation("org.mapsforge:mapsforge-themes:0.25.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.android.billingclient:billing-ktx:7.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

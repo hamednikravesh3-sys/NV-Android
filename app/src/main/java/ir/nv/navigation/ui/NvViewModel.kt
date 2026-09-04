@@ -5,11 +5,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.RouteNotice
+import ir.nv.navigation.core.TrafficSummary
 import ir.nv.navigation.data.PlaceRepository
 import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
 import ir.nv.navigation.routing.AStarRouter
 import ir.nv.navigation.routing.SqliteRoutingGraph
+import ir.nv.navigation.weather.WeatherAlertService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +32,8 @@ data class NvUiState(
     val origin: Place? = null,
     val destination: Place? = null,
     val route: Route? = null,
+    val routeNotices: List<RouteNotice> = emptyList(),
+    val traffic: TrafficSummary? = null,
     val routing: Boolean = false,
     val message: String? = null,
     val trialState: TrialManager.State = TrialManager.State.Trial(30)
@@ -37,6 +42,7 @@ data class NvUiState(
 class NvViewModel(application: Application) : AndroidViewModel(application) {
     private val packManager = IranPackManager(application)
     private val trialManager = TrialManager(application)
+    private val weatherAlerts = WeatherAlertService()
     private val mutableState = MutableStateFlow(
         NvUiState(trialState = runCatching { trialManager.state() }
             .getOrDefault(TrialManager.State.Tampered))
@@ -100,6 +106,12 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshEntitlement(isPaid: Boolean) {
+        val entitlement = runCatching { trialManager.state(isPaid) }
+            .getOrDefault(TrialManager.State.Tampered)
+        mutableState.update { it.copy(trialState = entitlement) }
+    }
+
     fun updateOriginQuery(query: String) {
         mutableState.update { it.copy(originQuery = query, origin = null) }
         search(query, true)
@@ -140,10 +152,17 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             val result = withContext(Dispatchers.Default) {
                 activeRouter.route(origin.coordinate, destination.coordinate)
             }
+            val notices = if (result == null) emptyList() else withContext(Dispatchers.IO) {
+                val attractions = places?.attractionsAlong(result).orEmpty()
+                val weather = runCatching { weatherAlerts.alertsAhead(result) }.getOrDefault(emptyList())
+                (weather + attractions).sortedBy { notice -> notice.distanceAheadMeters }.take(8)
+            }
             mutableState.update {
                 it.copy(
                     routing = false,
                     route = result,
+                    routeNotices = notices,
+                    traffic = null,
                     message = if (result == null) "برای این دو نقطه مسیر پیدا نشد" else null
                 )
             }

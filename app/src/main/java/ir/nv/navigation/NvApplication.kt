@@ -1,15 +1,11 @@
 package ir.nv.navigation
 
 import android.app.Application
-import org.osmdroid.config.Configuration
+import org.mapsforge.map.android.graphics.AndroidGraphicFactory
 
 class NvApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        Configuration.getInstance().apply {
-            userAgentValue = packageName
-            osmdroidBasePath = cacheDir.resolve("osmdroid")
-            osmdroidTileCache = cacheDir.resolve("osmdroid/tiles")
-        }
+        AndroidGraphicFactory.createInstance(this)
     }
 }

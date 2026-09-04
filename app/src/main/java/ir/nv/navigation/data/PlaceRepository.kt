@@ -3,6 +3,9 @@ package ir.nv.navigation.data
 import android.database.sqlite.SQLiteDatabase
 import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Place
+import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.RouteNotice
+import ir.nv.navigation.routing.RouteInsightEngine
 import java.io.Closeable
 import java.io.File
 
@@ -52,7 +55,48 @@ class PlaceRepository(databaseFile: File) : Closeable {
         }
     }
 
+    fun attractionsAlong(route: Route, limit: Int = 6): List<RouteNotice> {
+        if (route.points.size < 2) return emptyList()
+        val minLatitude = route.points.minOf { it.latitude } - BOUNDS_PADDING_DEGREES
+        val maxLatitude = route.points.maxOf { it.latitude } + BOUNDS_PADDING_DEGREES
+        val minLongitude = route.points.minOf { it.longitude } - BOUNDS_PADDING_DEGREES
+        val maxLongitude = route.points.maxOf { it.longitude } + BOUNDS_PADDING_DEGREES
+        val candidates = db.rawQuery(
+            """
+            SELECT code, name, latitude, longitude, category
+            FROM places
+            WHERE latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?
+              AND (category LIKE 'tourism:%' OR category LIKE 'historic:%'
+                   OR category LIKE 'natural:%')
+            LIMIT ?
+            """.trimIndent(),
+            arrayOf(
+                minLatitude.toString(), maxLatitude.toString(), minLongitude.toString(),
+                maxLongitude.toString(), MAX_ATTRACTION_CANDIDATES.toString()
+            )
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(
+                        Place(
+                            code = cursor.getLong(0),
+                            name = cursor.getString(1),
+                            coordinate = Coordinate(cursor.getDouble(2), cursor.getDouble(3)),
+                            category = cursor.getString(4)
+                        )
+                    )
+                }
+            }
+        }
+        return RouteInsightEngine.attractionsAhead(route, candidates, limit)
+    }
+
     override fun close() = db.close()
+
+    private companion object {
+        const val BOUNDS_PADDING_DEGREES = 0.06
+        const val MAX_ATTRACTION_CANDIDATES = 3_000
+    }
 }
 
 object PersianText {
