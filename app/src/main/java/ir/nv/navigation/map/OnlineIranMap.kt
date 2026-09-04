@@ -29,6 +29,7 @@ fun OnlineIranMap(
     traffic: TrafficSummary?,
     currentLocation: Coordinate?,
     followLocation: Boolean,
+    navigationActive: Boolean,
     darkMode: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -44,7 +45,7 @@ fun OnlineIranMap(
         update = {
             holder.setDarkMode(darkMode)
             holder.showRoutes(routes, selectedRouteIndex, traffic)
-            holder.showLocation(currentLocation, followLocation)
+            holder.showLocation(currentLocation, followLocation, navigationActive)
         }
     )
 }
@@ -97,8 +98,8 @@ private class OnlineMapHolder(context: Context) {
             val result = routes[index]
             if (result.points.size < 2) return@forEach
             val color = when {
-                index == selectedRouteIndex && traffic != null && traffic.delaySeconds >= 900 -> intArrayOf(239, 68, 68)
-                index == selectedRouteIndex && traffic != null && traffic.delaySeconds >= 300 -> intArrayOf(255, 159, 28)
+                // The selected route must remain visually stable. Traffic severity is
+                // shown by the dedicated traffic rail until segment geometry exists.
                 index == selectedRouteIndex -> intArrayOf(24, 212, 255)
                 index % 2 == 0 -> intArrayOf(215, 255, 91)
                 else -> intArrayOf(150, 160, 174)
@@ -143,7 +144,7 @@ private class OnlineMapHolder(context: Context) {
         mapView.applyNightDisplay(enabled)
     }
 
-    fun showLocation(location: Coordinate?, follow: Boolean) {
+    fun showLocation(location: Coordinate?, follow: Boolean, navigationActive: Boolean) {
         if (location == null) return
         val point = LatLong(location.latitude, location.longitude)
         val marker = locationLayer ?: createLocationMarker(point).also {
@@ -152,7 +153,10 @@ private class OnlineMapHolder(context: Context) {
         }
         marker.setLatLong(point)
         if (follow) {
-            mapView.model.mapViewPosition.mapPosition = MapPosition(point, 16)
+            mapView.model.mapViewPosition.mapPosition = MapPosition(
+                point,
+                if (navigationActive) NAVIGATION_ZOOM else BROWSE_LOCATION_ZOOM
+            )
         }
         mapView.layerManager.redrawLayers()
     }
@@ -184,5 +188,7 @@ private class OnlineMapHolder(context: Context) {
 
     private companion object {
         val IRAN_CENTER = LatLong(32.4279, 53.6880)
+        const val BROWSE_LOCATION_ZOOM: Byte = 16
+        const val NAVIGATION_ZOOM: Byte = 18
     }
 }

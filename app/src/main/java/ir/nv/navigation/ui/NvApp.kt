@@ -213,6 +213,7 @@ fun NvApp(
                     traffic = state.traffic,
                     currentLocation = state.currentLocation,
                     followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
+                    navigationActive = state.navigationActive,
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -224,6 +225,7 @@ fun NvApp(
                     traffic = state.traffic,
                     currentLocation = state.currentLocation,
                     followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
+                    navigationActive = state.navigationActive,
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -299,6 +301,10 @@ fun NvApp(
             }
 
             if (state.navigationActive) {
+                NavigationVehicleMarker(
+                    bearingDegrees = state.bearingDegrees,
+                    modifier = Modifier.align(Alignment.Center)
+                )
                 NavigationTrafficRail(
                     traffic = state.traffic,
                     modifier = Modifier.align(Alignment.CenterStart)

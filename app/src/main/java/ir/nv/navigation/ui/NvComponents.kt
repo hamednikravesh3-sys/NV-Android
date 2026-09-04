@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material.icons.rounded.OfflinePin
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Save
@@ -84,6 +85,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.LocalContentColor
@@ -592,7 +594,13 @@ fun NavigationHud(
     offRoute: Boolean,
     onStop: () -> Unit
 ) {
-    val maneuver = route.maneuvers.getOrNull(maneuverIndex)
+    val displayManeuverIndex = route.displayManeuverIndex(maneuverIndex)
+    val maneuver = route.maneuvers.getOrNull(displayManeuverIndex)
+    val displayDistance = when {
+        displayManeuverIndex != maneuverIndex -> maneuver?.distanceMeters
+        distanceToManeuverMeters > 0.0 -> distanceToManeuverMeters
+        else -> maneuver?.distanceMeters
+    } ?: route.distanceMeters
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -620,11 +628,7 @@ fun NavigationHud(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    formatDistance(
-                        distanceToManeuverMeters.takeIf { it > 0.0 }
-                            ?: maneuver?.distanceMeters
-                            ?: route.distanceMeters
-                    ),
+                    formatDistance(displayDistance),
                     color = NvText,
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Black
@@ -682,6 +686,17 @@ fun NavigationHud(
             }
         }
     }
+}
+
+private fun Route.displayManeuverIndex(currentIndex: Int): Int {
+    val current = maneuvers.getOrNull(currentIndex) ?: return currentIndex
+    val normalized = current.instruction.lowercase()
+    val departure = currentIndex == 0 && (
+        normalized.contains("حرکت را آغاز") ||
+            normalized.contains("شروع حرکت") ||
+            normalized.contains("depart")
+        )
+    return if (departure && maneuvers.size > 1) 1 else currentIndex
 }
 
 @Composable
@@ -758,6 +773,35 @@ fun NavigationWeatherCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun NavigationVehicleMarker(
+    bearingDegrees: Float,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier.size(76.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(70.dp)
+                .clip(CircleShape)
+                .background(NvCyan.copy(alpha = 0.16f))
+        )
+        Surface(
+            modifier = Modifier.size(52.dp),
+            shape = CircleShape,
+            color = NvNavy.copy(alpha = 0.95f),
+            border = BorderStroke(2.dp, Color.White),
+            shadowElevation = 12.dp
+        ) {
+            Icon(
+                Icons.Rounded.Navigation,
+                contentDescription = "موقعیت و جهت حرکت",
+                modifier = Modifier.padding(8.dp).rotate(bearingDegrees),
+                tint = NvCyan
+            )
         }
     }
 }

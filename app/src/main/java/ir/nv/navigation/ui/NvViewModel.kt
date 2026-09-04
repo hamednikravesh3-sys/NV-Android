@@ -25,6 +25,7 @@ import ir.nv.navigation.online.OnlinePlacesService
 import ir.nv.navigation.routing.AStarRouter
 import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.routing.RouteProgressEngine
+import ir.nv.navigation.routing.RouteOriginConnector
 import ir.nv.navigation.routing.SqliteRoutingGraph
 import ir.nv.navigation.weather.WeatherAlertService
 import ir.nv.navigation.traffic.LiveTrafficService
@@ -392,7 +393,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             )
             var source = RouteSource.NONE
             var onlineError: String? = null
-            val results: List<Route> = if (preferredSource == RouteSource.OFFLINE) {
+            val rawResults: List<Route> = if (preferredSource == RouteSource.OFFLINE) {
                 val activeRouter = router
                 if (activeRouter == null) emptyList() else listOfNotNull(withContext(Dispatchers.Default) {
                     activeRouter.route(origin.coordinate, destination.coordinate)
@@ -407,6 +408,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                             .also { if (it.isNotEmpty()) source = RouteSource.OFFLINE }
                     }.orEmpty()
             } else emptyList()
+            val results = rawResults.map { RouteOriginConnector.attach(origin.coordinate, it) }
             val result = results.firstOrNull()
 
             mutableState.update {
@@ -576,13 +578,14 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun rerouteFrom(coordinate: Coordinate) {
         val snapshot = mutableState.value
         val destination = snapshot.destination ?: return
-        val replacement = if (snapshot.onlineAvailable) {
+        val rawReplacement = if (snapshot.onlineAvailable) {
             runCatching { online.route(coordinate, destination.coordinate) }.getOrNull()
         } else {
             router?.let { active ->
                 withContext(Dispatchers.Default) { active.route(coordinate, destination.coordinate) }
             }
         } ?: return
+        val replacement = RouteOriginConnector.attach(coordinate, rawReplacement)
         mutableState.update {
             it.copy(
                 route = replacement,
