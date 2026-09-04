@@ -74,7 +74,7 @@ private class OnlineMapHolder(context: Context) {
             1f,
             mapView.model.frameBufferModel.overdrawFactor
         )
-        OpenStreetMapMapnik.INSTANCE.setUserAgent("NV-Android/0.6 (hamednikravesh3@gmail.com)")
+        OpenStreetMapMapnik.INSTANCE.setUserAgent("NV-Android/0.8 (hamednikravesh3@gmail.com)")
         downloadLayer = TileDownloadLayer(
             tileCache,
             mapView.model.mapViewPosition,
@@ -96,16 +96,28 @@ private class OnlineMapHolder(context: Context) {
         ordered.forEach { index ->
             val result = routes[index]
             if (result.points.size < 2) return@forEach
-            val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                val color = when {
-                    index == selectedRouteIndex && traffic != null && traffic.delaySeconds >= 900 -> intArrayOf(239, 68, 68)
-                    index == selectedRouteIndex && traffic != null && traffic.delaySeconds >= 300 -> intArrayOf(255, 159, 28)
-                    index == selectedRouteIndex -> intArrayOf(24, 198, 238)
-                    index % 2 == 0 -> intArrayOf(215, 255, 91)
-                    else -> intArrayOf(150, 160, 174)
+            val color = when {
+                index == selectedRouteIndex && traffic != null && traffic.delaySeconds >= 900 -> intArrayOf(239, 68, 68)
+                index == selectedRouteIndex && traffic != null && traffic.delaySeconds >= 300 -> intArrayOf(255, 159, 28)
+                index == selectedRouteIndex -> intArrayOf(24, 212, 255)
+                index % 2 == 0 -> intArrayOf(215, 255, 91)
+                else -> intArrayOf(150, 160, 174)
+            }
+            if (index == selectedRouteIndex) {
+                val glowPaint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+                    setColor(AndroidGraphicFactory.INSTANCE.createColor(82, color[0], color[1], color[2]))
+                    setStrokeWidth(24f * mapView.model.displayModel.scaleFactor)
+                    setStyle(Style.STROKE)
                 }
+                Polyline(glowPaint, AndroidGraphicFactory.INSTANCE).also { glow ->
+                    glow.setPoints(result.points.map { LatLong(it.latitude, it.longitude) })
+                    mapView.layerManager.layers.add(glow)
+                    routeLayers += glow
+                }
+            }
+            val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
                 setColor(AndroidGraphicFactory.INSTANCE.createColor(255, color[0], color[1], color[2]))
-                setStrokeWidth((if (index == selectedRouteIndex) 12f else 8f) * mapView.model.displayModel.scaleFactor)
+                setStrokeWidth((if (index == selectedRouteIndex) 11f else 7f) * mapView.model.displayModel.scaleFactor)
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
@@ -147,15 +159,15 @@ private class OnlineMapHolder(context: Context) {
 
     private fun createLocationMarker(point: LatLong): Circle {
         val fill = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-            setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 18, 104, 232))
+            setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 24, 212, 255))
             setStyle(Style.FILL)
         }
         val stroke = AndroidGraphicFactory.INSTANCE.createPaint().apply {
             setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 255, 255, 255))
-            setStrokeWidth(4f * mapView.model.displayModel.scaleFactor)
+            setStrokeWidth(5f * mapView.model.displayModel.scaleFactor)
             setStyle(Style.STROKE)
         }
-        return Circle(point, 12f, fill, stroke)
+        return Circle(point, 15f, fill, stroke)
     }
 
     fun destroy() {

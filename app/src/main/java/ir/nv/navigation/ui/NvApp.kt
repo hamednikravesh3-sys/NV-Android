@@ -108,6 +108,7 @@ fun NvApp(
         offlineReady = state.offlineReady,
         preferOffline = state.preferOffline
     )
+    val mapDarkMode = darkMode || state.route != null || state.navigationActive
     val entitlementBlocked = state.trialState is TrialManager.State.Expired ||
         state.trialState is TrialManager.State.Tampered
 
@@ -212,7 +213,7 @@ fun NvApp(
                     traffic = state.traffic,
                     currentLocation = state.currentLocation,
                     followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
-                    darkMode = darkMode,
+                    darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -223,7 +224,7 @@ fun NvApp(
                     traffic = state.traffic,
                     currentLocation = state.currentLocation,
                     followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
-                    darkMode = darkMode,
+                    darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -248,15 +249,12 @@ fun NvApp(
                         )
                     }
                 } else {
-                    NavigationTopBar(
-                        state = state,
-                        darkMode = darkMode,
-                        onToggleTheme = onToggleTheme,
-                        onOpenOfflineMaps = { showOfflineMaps = true }
-                    )
                     if (state.route == null && (state.onlineAvailable || state.offlineReady)) {
                         DestinationSearchBar(
                             recentPlaces = state.recentPlaces,
+                            personalPlaces = state.personalPlaces,
+                            onlineAvailable = state.onlineAvailable,
+                            offlineReady = state.offlineReady,
                             onClick = { showSearch = true },
                             onRecentClick = { place ->
                                 viewModel.selectDestination(place)
@@ -301,13 +299,22 @@ fun NvApp(
             }
 
             if (state.navigationActive) {
+                NavigationTrafficRail(
+                    traffic = state.traffic,
+                    modifier = Modifier.align(Alignment.CenterStart)
+                )
+                NavigationWeatherCard(
+                    notice = state.routeNotices.firstOrNull { it.kind == ir.nv.navigation.core.RouteNotice.Kind.WEATHER },
+                    onClick = { showRoutePlaces = true },
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                )
                 FloatingNavigationControls(
                     voiceEnabled = state.voiceEnabled,
                     darkMode = darkMode,
                     onToggleVoice = viewModel::toggleVoice,
                     onToggleTheme = onToggleTheme,
                     onOpenOfflineMaps = { showOfflineMaps = true },
-                    modifier = Modifier.align(Alignment.CenterEnd)
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 104.dp)
                 )
             } else if (state.route == null && (state.onlineAvailable || state.offlineReady)) {
                 HomeMapControls(
@@ -315,7 +322,7 @@ fun NvApp(
                     onMyLocation = { requestLocation(LocationAction.ORIGIN) },
                     onOpenOfflineMaps = { showOfflineMaps = true },
                     onToggleTheme = onToggleTheme,
-                    modifier = Modifier.align(Alignment.CenterEnd)
+                    modifier = Modifier.align(Alignment.CenterStart)
                 )
             }
 

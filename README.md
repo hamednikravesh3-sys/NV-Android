@@ -4,7 +4,7 @@ NV is a Persian-first navigation application for Android 10 and newer. This
 repository replaces the earlier incomplete IranNavApp upload with a standard,
 testable Android project.
 
-## Current architecture (0.7)
+## Current architecture (0.8)
 
 - Android minSdk 29 (Android 10), Kotlin and Jetpack Compose
 - online-first native map, instant bundled Iran-city search, Photon plus
@@ -21,8 +21,9 @@ testable Android project.
 - turn-restriction enforcement using incoming-edge routing state
 - up to three online route alternatives with visual selection, route distance,
   travel time and ETA
-- map-first Persian Material interface with a persistent one-hand dock, destination
-  bottom sheets, automatic system day/night mode and the approved green NV icon
+- reference-matched D/F/H/I interface: bright map-first home, automatic navy
+  route-selection and driving surfaces, cyan glow route, glass-like cards,
+  one-hand dock, destination bottom sheets and the approved green NV icon
 - D/F/H/I navigation flow: map-first home, route-choice sheet, distraction-
   minimized driving HUD, and an always-active attractions/services-ahead sheet
 - online OpenStreetMap attractions and services for the next 10 km, with automatic

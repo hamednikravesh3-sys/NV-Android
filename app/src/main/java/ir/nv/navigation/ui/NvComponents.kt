@@ -3,7 +3,10 @@ package ir.nv.navigation.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +31,8 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MyLocation
@@ -58,25 +63,30 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -101,6 +111,15 @@ private val OnlineGreen = Color(0xFF00A884)
 private val OfflineAmber = Color(0xFFFFA000)
 private val OriginBlue = Color(0xFF2979FF)
 private val DestinationRed = Color(0xFFFF4D67)
+private val NvNavy = Color(0xF2071526)
+private val NvPanel = Color(0xFF0B2035)
+private val NvPanelHigh = Color(0xFF102C45)
+private val NvCyan = Color(0xFF18D4FF)
+private val NvLime = Color(0xFFD7FF5B)
+private val NvText = Color(0xFFF4FAFF)
+private val NvMuted = Color(0xFF91A9BC)
+private val NvOutline = Color(0xFF25445E)
+private val NvInk = Color(0xFF031421)
 
 @Composable
 fun NavigationTopBar(
@@ -163,14 +182,14 @@ fun NavigationTopBar(
 }
 
 @Composable
-private fun AppIconButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+private fun AppIconButton(icon: ImageVector, description: String, onClick: () -> Unit, dark: Boolean = false) {
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        color = if (dark) NvPanel.copy(alpha = 0.96f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
         shadowElevation = 5.dp
     ) {
         IconButton(onClick = onClick) {
-            Icon(icon, contentDescription = description, tint = MaterialTheme.colorScheme.onSurface)
+            Icon(icon, contentDescription = description, tint = if (dark) NvText else MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -189,7 +208,12 @@ fun SearchSheet(
     onUseCurrentLocation: () -> Unit,
     onSaveCode: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = NvNavy,
+        contentColor = NvText,
+        dragHandle = { Box(Modifier.padding(vertical = 10.dp).width(42.dp).height(4.dp).clip(CircleShape).background(NvMuted.copy(alpha = 0.6f))) }
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -219,49 +243,68 @@ fun SearchSheet(
 @Composable
 fun DestinationSearchBar(
     recentPlaces: List<Place>,
+    personalPlaces: List<Place>,
+    onlineAvailable: Boolean,
+    offlineReady: Boolean,
     onClick: () -> Unit,
     onRecentClick: (Place) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 10.dp
-    ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                    Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.padding(9.dp), tint = MaterialTheme.colorScheme.primary)
-                }
-                Spacer(Modifier.width(12.dp))
+    val shortcuts = (personalPlaces + recentPlaces).distinctBy { it.personalCode ?: it.code.toString() }.take(2)
+    Column(modifier.fillMaxWidth().padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+            shape = RoundedCornerShape(22.dp),
+            color = Color.White.copy(alpha = 0.97f),
+            shadowElevation = 12.dp
+        ) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Search, contentDescription = null, tint = Color(0xFF102A3C), modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("کجا می‌روید؟", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                    Text("شهر، خیابان، مکان یا NV:1845623", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("نام یا کد مکان", color = Color(0xFF102A3C), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                    Text("شهر، خیابان یا کد عددی NV", color = Color(0xFF617789), style = MaterialTheme.typography.bodySmall)
+                }
+                Box(Modifier.size(9.dp).clip(CircleShape).background(if (onlineAvailable) OnlineGreen else OfflineAmber))
+                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Rounded.Mic, contentDescription = "جست‌وجوی صوتی", tint = Color(0xFF29445A))
+            }
+        }
+        shortcuts.forEachIndexed { index, place ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.58f).clickable { onRecentClick(place) },
+                shape = RoundedCornerShape(14.dp),
+                color = Color.White.copy(alpha = 0.93f),
+                shadowElevation = 5.dp
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (index == 0) Icons.Rounded.History else Icons.Rounded.Place, null, tint = Color(0xFF2A5770), modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        place.name,
+                        Modifier.weight(1f),
+                        color = Color(0xFF122C3F),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        place.personalCode ?: place.code.takeIf { it > 0 }?.toString().orEmpty(),
+                        color = Color(0xFF127B95),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Black
+                    )
                 }
             }
-            if (recentPlaces.isNotEmpty()) {
-                Spacer(Modifier.height(11.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    recentPlaces.take(2).forEach { place ->
-                        AssistChip(
-                            onClick = { onRecentClick(place) },
-                            label = {
-                                Text(
-                                    if (!place.personalCode.isNullOrBlank()) "${place.name} • ${place.personalCode}"
-                                    else if (place.code > 0) "${place.name} • ${place.code}" else place.name,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            leadingIcon = { Icon(Icons.Rounded.Place, null, Modifier.size(17.dp)) }
-                        )
-                    }
-                }
-            }
+        }
+        if (shortcuts.isEmpty()) {
+            Text(
+                if (offlineReady) "نقشه آفلاین آماده است" else "برای شروع مقصد را جست‌وجو کنید",
+                modifier = Modifier.padding(horizontal = 12.dp),
+                color = Color(0xFF24475C),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -277,7 +320,8 @@ fun SelectedRouteHeader(
     Surface(
         modifier = modifier.fillMaxWidth().padding(top = 8.dp),
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        color = NvNavy,
+        contentColor = NvText,
         shadowElevation = 7.dp
     ) {
         Row(
@@ -294,18 +338,26 @@ fun SelectedRouteHeader(
                     origin?.name ?: "مبدأ را انتخاب کنید",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NvMuted
                 )
-                HorizontalDivider()
+                HorizontalDivider(color = NvOutline)
                 Text(
                     destination?.name ?: "مقصد را انتخاب کنید",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = NvText
                 )
+                destination?.let { place ->
+                    val code = place.personalCode ?: place.code.takeIf { it > 0 }?.toString()
+                    code?.let {
+                        Text("NV $it", color = NvCyan, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
             IconButton(onClick = onSwap) {
-                Icon(Icons.Rounded.SwapVert, contentDescription = "جابه‌جایی مبدأ و مقصد")
+                Icon(Icons.Rounded.SwapVert, contentDescription = "جابه‌جایی مبدأ و مقصد", tint = NvCyan)
             }
         }
     }
@@ -330,7 +382,8 @@ fun SearchPanel(
             .animateContentSize(),
         shape = RoundedCornerShape(25.dp),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+            containerColor = NvPanel,
+            contentColor = NvText
         ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 7.dp)
     ) {
@@ -353,7 +406,7 @@ fun SearchPanel(
                             if (state.locating) {
                                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             } else {
-                                Icon(Icons.Rounded.MyLocation, contentDescription = "استفاده از موقعیت فعلی")
+                                Icon(Icons.Rounded.MyLocation, contentDescription = "استفاده از موقعیت فعلی", tint = NvCyan)
                             }
                         }
                     }
@@ -370,7 +423,7 @@ fun SearchPanel(
                 )
             }
             IconButton(onClick = onSwap) {
-                Icon(Icons.Rounded.SwapVert, contentDescription = "جابه‌جایی مبدأ و مقصد")
+                Icon(Icons.Rounded.SwapVert, contentDescription = "جابه‌جایی مبدأ و مقصد", tint = NvCyan)
             }
         }
 
@@ -385,7 +438,7 @@ fun SearchPanel(
 
         AnimatedVisibility(state.origin != null || state.destination != null) {
             Column {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(color = NvOutline)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -393,7 +446,8 @@ fun SearchPanel(
                 ) {
                     TextButton(
                         onClick = onSaveCode,
-                        enabled = state.origin != null || state.destination != null
+                        enabled = state.origin != null || state.destination != null,
+                        colors = ButtonDefaults.textButtonColors(contentColor = NvCyan)
                     ) {
                         Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(5.dp))
@@ -404,13 +458,14 @@ fun SearchPanel(
                         onClick = onRoute,
                         enabled = state.origin != null && state.destination != null && !state.routing,
                         shape = RoundedCornerShape(16.dp),
-                        contentPadding = ButtonDefaults.ContentPadding
+                        contentPadding = ButtonDefaults.ContentPadding,
+                        colors = ButtonDefaults.buttonColors(containerColor = NvCyan, contentColor = NvInk)
                     ) {
                         if (state.routing) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(19.dp),
                                 strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
+                                color = NvInk
                             )
                         } else {
                             Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
@@ -448,13 +503,27 @@ private fun PlaceSearchField(
             } else trailingIcon,
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = NvText,
+                unfocusedTextColor = NvText,
+                focusedBorderColor = NvCyan,
+                unfocusedBorderColor = NvOutline,
+                cursorColor = NvCyan,
+                focusedLabelColor = NvCyan,
+                unfocusedLabelColor = NvMuted,
+                focusedPlaceholderColor = NvMuted,
+                unfocusedPlaceholderColor = NvMuted,
+                focusedTrailingIconColor = NvCyan,
+                unfocusedTrailingIconColor = NvMuted
+            )
         )
         AnimatedVisibility(suggestions.isNotEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp).heightIn(max = 230.dp),
                 shape = RoundedCornerShape(15.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                colors = CardDefaults.cardColors(containerColor = NvPanelHigh, contentColor = NvText),
+                border = BorderStroke(1.dp, NvOutline)
             ) {
                 Column {
                     suggestions.take(6).forEachIndexed { index, place ->
@@ -468,12 +537,12 @@ private fun PlaceSearchField(
                             Icon(
                                 Icons.Rounded.Place,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = NvCyan,
                                 modifier = Modifier.size(21.dp)
                             )
                             Spacer(Modifier.width(9.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(place.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                                Text(place.name, color = NvText, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     buildString {
                                         append(categoryLabel(place.category))
@@ -483,13 +552,13 @@ private fun PlaceSearchField(
                                         }
                                     },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = NvMuted,
                                     maxLines = 1
                                 )
                             }
                         }
                         if (index < suggestions.take(6).lastIndex) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp), color = NvOutline)
                         }
                     }
                 }
@@ -526,9 +595,11 @@ fun NavigationHud(
     val maneuver = route.maneuvers.getOrNull(maneuverIndex)
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = if (offRoute) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-        shadowElevation = 9.dp
+        shape = RoundedCornerShape(20.dp),
+        color = if (offRoute) Color(0xFF8E2634) else NvNavy,
+        contentColor = NvText,
+        border = BorderStroke(1.dp, if (offRoute) Color(0xFFFF7185) else NvOutline),
+        shadowElevation = 12.dp
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 13.dp, vertical = 14.dp),
@@ -536,13 +607,14 @@ fun NavigationHud(
         ) {
             Surface(
                 shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f)
+                color = NvCyan.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, NvCyan.copy(alpha = 0.45f))
             ) {
                 Icon(
                     imageVector = maneuverIcon(maneuver?.direction),
                     contentDescription = null,
                     modifier = Modifier.padding(10.dp).size(43.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary
+                    tint = NvCyan
                 )
             }
             Spacer(Modifier.width(12.dp))
@@ -553,14 +625,14 @@ fun NavigationHud(
                             ?: maneuver?.distanceMeters
                             ?: route.distanceMeters
                     ),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    style = MaterialTheme.typography.headlineMedium,
+                    color = NvText,
+                    style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Black
                 )
                 Text(
                     if (offRoute) "از مسیر خارج شده‌اید؛ مسیر جدید در حال محاسبه است"
                     else maneuver?.instruction ?: "مستقیم به سمت مقصد ادامه دهید",
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = NvText,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
@@ -574,7 +646,7 @@ fun NavigationHud(
                         maneuver?.lanes?.forEach { lane ->
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.onPrimary.copy(
+                                color = NvCyan.copy(
                                     alpha = if (lane.recommended) 0.25f else 0.08f
                                 )
                             ) {
@@ -582,7 +654,7 @@ fun NavigationHud(
                                     maneuverIcon(lane.direction),
                                     contentDescription = null,
                                     modifier = Modifier.padding(4.dp).size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimary.copy(
+                                    tint = NvText.copy(
                                         alpha = if (lane.recommended) 1f else 0.45f
                                     )
                                 )
@@ -593,19 +665,98 @@ fun NavigationHud(
             }
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f)
+                color = NvPanelHigh,
+                border = BorderStroke(2.dp, NvLime)
             ) {
                 Column(
                     modifier = Modifier.size(58.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text("$speedKmh", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Black)
-                    Text("km/h", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
+                    Text("$speedKmh", color = NvLime, fontWeight = FontWeight.Black)
+                    Text("km/h", color = NvMuted, style = MaterialTheme.typography.labelSmall)
                 }
             }
             IconButton(onClick = onStop) {
-                Text("×", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.headlineMedium)
+                Text("×", color = NvText, style = MaterialTheme.typography.headlineMedium)
+            }
+        }
+    }
+}
+
+@Composable
+fun NavigationTrafficRail(
+    traffic: TrafficSummary?,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.padding(start = 12.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = NvNavy,
+        contentColor = NvText,
+        border = BorderStroke(1.dp, NvOutline),
+        shadowElevation = 10.dp
+    ) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                Modifier.width(10.dp).clip(RoundedCornerShape(6.dp)),
+                verticalArrangement = Arrangement.spacedBy(1.dp)
+            ) {
+                Box(Modifier.fillMaxWidth().height(25.dp).background(Color(0xFFE64045)))
+                Box(Modifier.fillMaxWidth().height(25.dp).background(Color(0xFFFFB52E)))
+                Box(Modifier.fillMaxWidth().height(25.dp).background(Color(0xFF64D66D)))
+            }
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(
+                    when {
+                        traffic == null -> "نامشخص"
+                        traffic.delaySeconds > 0 -> "${(traffic.delaySeconds / 60).roundToInt()} دقیقه"
+                        else -> "روان"
+                    },
+                    color = when {
+                        traffic == null -> NvMuted
+                        traffic.delaySeconds > 0 -> Color(0xFFFFB52E)
+                        else -> Color(0xFF64D66D)
+                    },
+                    fontWeight = FontWeight.Black
+                )
+                Text(
+                    traffic?.lengthMeters?.takeIf { it > 0 }?.let { "${formatDistance(it)} ترافیک" } ?: "وضعیت مسیر",
+                    color = NvMuted,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun NavigationWeatherCard(
+    notice: RouteNotice?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.padding(end = 12.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = NvNavy,
+        contentColor = NvText,
+        border = BorderStroke(1.dp, NvOutline),
+        shadowElevation = 10.dp
+    ) {
+        Row(Modifier.padding(horizontal = 11.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.CloudDone, null, tint = NvCyan)
+            Spacer(Modifier.width(7.dp))
+            Column(Modifier.width(124.dp)) {
+                Text("هوای ۱۰ کیلومتر جلوتر", color = NvText, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    notice?.detail ?: "در حال دریافت اطلاعات واقعی",
+                    color = if (notice?.title?.startsWith("هشدار") == true) Color(0xFFFFB52E) else NvMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -627,13 +778,15 @@ fun FloatingNavigationControls(
         AppIconButton(
             if (voiceEnabled) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
             if (voiceEnabled) "قطع صدای راهنما" else "فعال‌کردن صدای راهنما",
-            onToggleVoice
+            onToggleVoice,
+            dark = true
         )
-        AppIconButton(Icons.Rounded.Map, "نقشه‌های آفلاین", onOpenOfflineMaps)
+        AppIconButton(Icons.Rounded.Map, "نقشه‌های آفلاین", onOpenOfflineMaps, dark = true)
         AppIconButton(
             if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
             if (darkMode) "حالت روز" else "حالت شب",
-            onToggleTheme
+            onToggleTheme,
+            dark = true
         )
     }
 }
@@ -672,20 +825,23 @@ fun NvHomeDock(
     Surface(
         modifier = modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        color = if (darkMode) NvNavy else Color.White.copy(alpha = 0.98f),
+        contentColor = if (darkMode) NvText else Color(0xFF102A3C),
+        border = BorderStroke(1.dp, if (darkMode) NvOutline else Color(0xFFD7E2E9)),
         shadowElevation = 12.dp
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 7.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            DockAction("مسیر", Icons.Rounded.DirectionsCar, true, onRoute)
-            DockAction("کدهای من", Icons.Rounded.Save, false, onCodes)
-            DockAction("نقشه آفلاین", Icons.Rounded.Download, false, onOfflineMaps)
+            DockAction("مسیر", Icons.Rounded.DirectionsCar, true, darkMode, onRoute)
+            DockAction("کدهای من", Icons.Rounded.Save, false, darkMode, onCodes)
+            DockAction("نقشه آفلاین", Icons.Rounded.Download, false, darkMode, onOfflineMaps)
             DockAction(
                 if (darkMode) "حالت روز" else "حالت شب",
                 if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
                 false,
+                darkMode,
                 onToggleTheme
             )
         }
@@ -697,6 +853,7 @@ private fun DockAction(
     label: String,
     icon: ImageVector,
     selected: Boolean,
+    dark: Boolean,
     onClick: () -> Unit
 ) {
     Column(
@@ -706,19 +863,23 @@ private fun DockAction(
     ) {
         Surface(
             shape = RoundedCornerShape(13.dp),
-            color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+            color = if (selected) NvCyan.copy(alpha = 0.14f) else Color.Transparent
         ) {
             Icon(
                 icon,
                 contentDescription = label,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp).size(22.dp),
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (selected) {
+                    if (dark) NvCyan else Color(0xFF007C91)
+                } else if (dark) NvMuted else Color(0xFF536B7C)
             )
         }
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (selected) {
+                if (dark) NvCyan else Color(0xFF007C91)
+            } else if (dark) NvMuted else Color(0xFF536B7C),
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1
         )
@@ -773,28 +934,30 @@ fun RouteSummaryCard(
             .padding(12.dp)
             .shadow(10.dp, RoundedCornerShape(26.dp)),
         shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = NvNavy, contentColor = NvText),
+        border = BorderStroke(1.dp, NvOutline)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                FilledIconButton(
+                IconButton(
                     onClick = if (navigationActive) onStop else onClose,
                     modifier = Modifier.size(36.dp)
                 ) {
-                    Text("×", style = MaterialTheme.typography.titleLarge)
+                    Text("×", style = MaterialTheme.typography.titleLarge, color = NvText)
                 }
                 Spacer(Modifier.weight(1f))
-                AssistChip(
-                    onClick = {},
-                    label = { Text(if (source == RouteSource.OFFLINE) "مسیر آفلاین" else "مسیر آنلاین") },
-                    leadingIcon = {
+                Surface(shape = RoundedCornerShape(12.dp), color = NvPanelHigh, border = BorderStroke(1.dp, NvOutline)) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             if (source == RouteSource.OFFLINE) Icons.Rounded.OfflinePin else Icons.Rounded.CloudDone,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(17.dp),
+                            tint = if (source == RouteSource.OFFLINE) NvLime else NvCyan
                         )
+                        Spacer(Modifier.width(5.dp))
+                        Text(if (source == RouteSource.OFFLINE) "مسیر آفلاین" else "مسیر آنلاین", color = NvText, style = MaterialTheme.typography.labelMedium)
                     }
-                )
+                }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 RouteMetric("مسافت", "%.1f km".format(shownDistance / 1000.0))
@@ -818,31 +981,41 @@ fun RouteSummaryCard(
                 Text(
                     "ترافیک: %.1f کیلومتر • ${traffic.delaySeconds.div(60).roundToInt()} دقیقه تأخیر"
                         .format(traffic.lengthMeters / 1000.0),
-                    color = MaterialTheme.colorScheme.error,
+                    color = Color(0xFFFF7185),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
             }
             notices.firstOrNull { it.kind == RouteNotice.Kind.WEATHER }?.let { notice ->
-                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                Surface(shape = RoundedCornerShape(14.dp), color = NvPanelHigh, border = BorderStroke(1.dp, NvOutline)) {
                     Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.CloudDone, contentDescription = null)
+                        Icon(Icons.Rounded.CloudDone, contentDescription = null, tint = NvCyan)
                         Spacer(Modifier.width(8.dp))
                         Column {
-                            Text(notice.title, fontWeight = FontWeight.Bold, maxLines = 1)
-                            Text(notice.detail, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                            Text(notice.title, fontWeight = FontWeight.Bold, maxLines = 1, color = NvText)
+                            Text(notice.detail, style = MaterialTheme.typography.bodySmall, maxLines = 2, color = NvMuted)
                         }
                     }
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onOpenPlaces, modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    onClick = onOpenPlaces,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, NvOutline),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NvCyan)
+                ) {
                     if (insightsLoading) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Rounded.Explore, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(5.dp))
                     Text(if (insightsLoading) "در حال بررسی" else "جاذبه‌ها و هوا")
                 }
-                OutlinedButton(onClick = onOpenCode, modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    onClick = onOpenCode,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, NvOutline),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NvText)
+                ) {
                     Icon(Icons.Rounded.QrCode2, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(5.dp))
                     Text("کد مقصد")
@@ -851,7 +1024,8 @@ fun RouteSummaryCard(
             Button(
                 onClick = onStart,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = NvCyan, contentColor = NvInk)
             ) {
                 Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -866,12 +1040,16 @@ private fun RouteChoiceCard(route: Route, index: Int, selected: Boolean, onClick
     Surface(
         modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = if (selected) NvPanelHigh else NvPanel,
+        contentColor = NvText,
+        border = BorderStroke(1.dp, if (selected) NvCyan else NvOutline),
+        shadowElevation = if (selected) 8.dp else 0.dp
     ) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(if (index == 0) "پیشنهادی" else "مسیر ${index + 1}", style = MaterialTheme.typography.labelMedium)
-            Text("${(route.travelSeconds / 60).roundToInt()} دقیقه", fontWeight = FontWeight.Black)
-            Text("%.1f km".format(route.distanceMeters / 1000), style = MaterialTheme.typography.labelSmall)
+            Text(if (index == 0) "پیشنهادی" else "مسیر ${index + 1}", color = if (selected) NvCyan else NvMuted, style = MaterialTheme.typography.labelMedium)
+            Text("${(route.travelSeconds / 60).roundToInt()} دقیقه", color = NvText, fontWeight = FontWeight.Black)
+            Text("%.1f km".format(route.distanceMeters / 1000), color = NvMuted, style = MaterialTheme.typography.labelSmall)
+            Box(Modifier.padding(top = 5.dp).fillMaxWidth(0.55f).height(3.dp).clip(CircleShape).background(if (selected) NvCyan else NvLime.copy(alpha = 0.55f)))
         }
     }
 }
@@ -892,7 +1070,9 @@ private fun ActiveNavigationBar(
             .navigationBarsPadding()
             .padding(12.dp),
         shape = RoundedCornerShape(25.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        color = NvNavy,
+        contentColor = NvText,
+        border = BorderStroke(1.dp, NvOutline),
         shadowElevation = 11.dp
     ) {
         Row(
@@ -901,19 +1081,20 @@ private fun ActiveNavigationBar(
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(eta, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                Text("زمان رسیدن", style = MaterialTheme.typography.labelSmall)
+                Text(eta, color = NvText, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                Text("زمان رسیدن", color = NvMuted, style = MaterialTheme.typography.labelSmall)
             }
             Column(Modifier.weight(1f)) {
                 Text(
                     "${(seconds / 60.0).roundToInt()} دقیقه  •  ${formatDistance(distanceMeters)}",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.ExtraBold,
+                    color = NvText
                 )
                 destinationCode?.let {
                     Text(
                         "مقصد  NV:$it",
-                        color = MaterialTheme.colorScheme.primary,
+                        color = NvCyan,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -925,16 +1106,20 @@ private fun ActiveNavigationBar(
                         "حرکت در مسیر انتخاب‌شده"
                     },
                     color = if (traffic != null && traffic.delaySeconds > 0) {
-                        MaterialTheme.colorScheme.error
+                        Color(0xFFFF7185)
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        NvMuted
                     },
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp)) {
-                Text("×", style = MaterialTheme.typography.headlineSmall)
+            FilledIconButton(
+                onClick = onStop,
+                modifier = Modifier.size(44.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = NvPanelHigh, contentColor = NvText)
+            ) {
+                Text("×", style = MaterialTheme.typography.headlineSmall, color = NvText)
             }
         }
     }
@@ -959,8 +1144,8 @@ private fun formatDistance(meters: Double): String = when {
 @Composable
 private fun RouteMetric(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, color = NvText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = NvMuted)
     }
 }
 
@@ -1128,13 +1313,20 @@ fun RoutePlacesSheet(
             RoutePlaceFilter.WEATHER -> notice.kind == RouteNotice.Kind.WEATHER
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = NvNavy,
+        contentColor = NvText,
+        dragHandle = {
+            Box(Modifier.padding(vertical = 10.dp).width(42.dp).height(4.dp).clip(CircleShape).background(NvMuted.copy(alpha = 0.6f)))
+        }
+    ) {
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().heightIn(max = 470.dp).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("جلوتر در مسیر", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            Text("دیدنی‌ها، خدمات و آب‌وهوای ۱۰ کیلومتر جلوتر", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("دیدنی‌ها، خدمات و آب‌وهوای ۱۰ کیلومتر جلوتر", color = NvMuted)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 RoutePlaceFilterButton("همه", filter == RoutePlaceFilter.ALL, Modifier.weight(1f)) {
                     filter = RoutePlaceFilter.ALL
@@ -1150,29 +1342,31 @@ fun RoutePlacesSheet(
                 }
             }
             destination?.let { place ->
-                Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Surface(shape = RoundedCornerShape(18.dp), color = NvPanelHigh, contentColor = NvText, border = BorderStroke(1.dp, NvOutline)) {
                     Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Place, null)
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
                             Text(place.name, fontWeight = FontWeight.Black)
-                            Text(if (place.code > 0) "کد عمومی NV: ${place.code}" else "مکان آنلاین", style = MaterialTheme.typography.bodySmall)
+                            Text(if (place.code > 0) "کد عمومی NV: ${place.code}" else "مکان آنلاین", color = NvMuted, style = MaterialTheme.typography.bodySmall)
                         }
-                        IconButton(onClick = onShowCode) { Icon(Icons.Rounded.QrCode2, "نمایش کد") }
-                        IconButton(onClick = { onShare(place) }, enabled = place.code > 0) { Icon(Icons.Rounded.Share, "اشتراک") }
+                        IconButton(onClick = onShowCode) { Icon(Icons.Rounded.QrCode2, "نمایش کد", tint = NvCyan) }
+                        IconButton(onClick = { onShare(place) }, enabled = place.code > 0) { Icon(Icons.Rounded.Share, "اشتراک", tint = NvText) }
                     }
                 }
             }
             if (loading) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text("در حال دریافت اطلاعات واقعی مسیر…", style = MaterialTheme.typography.bodySmall)
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = NvCyan, trackColor = NvPanelHigh)
+                Text("در حال دریافت اطلاعات واقعی مسیر…", color = NvMuted, style = MaterialTheme.typography.bodySmall)
             }
             visibleNotices.take(12).forEach { notice ->
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = if (notice.kind == RouteNotice.Kind.WEATHER) {
-                        MaterialTheme.colorScheme.tertiaryContainer
-                    } else MaterialTheme.colorScheme.surfaceContainerHigh
+                        Color(0xFF153B4C)
+                    } else NvPanelHigh,
+                    contentColor = NvText,
+                    border = BorderStroke(1.dp, NvOutline)
                 ) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -1182,14 +1376,20 @@ fun RoutePlacesSheet(
                                 RouteNotice.Kind.WEATHER -> Icons.Rounded.CloudDone
                                 RouteNotice.Kind.TRAFFIC -> Icons.Rounded.Info
                             },
-                            null
+                            null,
+                            tint = when (notice.kind) {
+                                RouteNotice.Kind.ATTRACTION -> NvLime
+                                RouteNotice.Kind.SERVICE -> NvCyan
+                                RouteNotice.Kind.WEATHER -> Color(0xFFFFB52E)
+                                RouteNotice.Kind.TRAFFIC -> Color(0xFFFF7185)
+                            }
                         )
                         Spacer(Modifier.width(9.dp))
                         Column(Modifier.weight(1f)) {
                             Text(notice.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
-                            Text("${formatDistance(notice.distanceAheadMeters)} جلوتر • ${notice.detail}", style = MaterialTheme.typography.bodySmall)
+                            Text("${formatDistance(notice.distanceAheadMeters)} جلوتر • ${notice.detail}", color = NvMuted, style = MaterialTheme.typography.bodySmall)
                         }
-                        notice.placeCode?.let { Text("NV:$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+                        notice.placeCode?.let { Text("NV:$it", style = MaterialTheme.typography.labelSmall, color = NvCyan) }
                     }
                 }
             }
@@ -1201,16 +1401,33 @@ fun RoutePlacesSheet(
                             filter == RoutePlaceFilter.WEATHER && !onlineAvailable -> "هواشناسی زنده فقط هنگام اتصال اینترنت نمایش داده می‌شود."
                             else -> "موردی در این دسته در ۱۰ کیلومتر جلوتر پیدا نشد."
                         },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = NvMuted
                     )
                     if (!offlineReady) {
-                        OutlinedButton(onClick = onOpenOfflineMaps) {
+                        OutlinedButton(
+                            onClick = onOpenOfflineMaps,
+                            border = BorderStroke(1.dp, NvOutline),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NvCyan)
+                        ) {
                             Icon(Icons.Rounded.Download, null)
                             Spacer(Modifier.width(6.dp))
                             Text("دانلود نقشه آفلاین ایران")
                         }
                     }
                 }
+            }
+            HorizontalDivider(color = NvOutline)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                RoutePlaceDockAction("مسیر", Icons.Rounded.DirectionsCar, filter == RoutePlaceFilter.ALL) {
+                    filter = RoutePlaceFilter.ALL
+                }
+                RoutePlaceDockAction("دیدنی‌ها", Icons.Rounded.Explore, filter == RoutePlaceFilter.ATTRACTIONS) {
+                    filter = RoutePlaceFilter.ATTRACTIONS
+                }
+                RoutePlaceDockAction("هشدارها", Icons.Rounded.Info, filter == RoutePlaceFilter.WEATHER) {
+                    filter = RoutePlaceFilter.WEATHER
+                }
+                RoutePlaceDockAction("کد مقصد", Icons.Rounded.Save, false, onShowCode)
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -1225,9 +1442,39 @@ private fun RoutePlaceFilterButton(
     onClick: () -> Unit
 ) {
     if (selected) {
-        Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(text) }
+        Button(
+            onClick = onClick,
+            modifier = modifier,
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = NvCyan, contentColor = NvInk),
+            contentPadding = ButtonDefaults.ContentPadding
+        ) { Text(text, maxLines = 1) }
     } else {
-        OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(text) }
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, NvOutline),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = NvMuted),
+            contentPadding = ButtonDefaults.ContentPadding
+        ) { Text(text, maxLines = 1) }
+    }
+}
+
+@Composable
+private fun RoutePlaceDockAction(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Icon(icon, contentDescription = label, tint = if (selected) NvCyan else NvMuted, modifier = Modifier.size(22.dp))
+        Text(label, color = if (selected) NvCyan else NvMuted, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -1243,7 +1490,12 @@ fun PersonalCodesSheet(
     onDelete: (String) -> Unit,
     onShare: (Place) -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = NvNavy,
+        contentColor = NvText,
+        dragHandle = { Box(Modifier.padding(vertical = 10.dp).width(42.dp).height(4.dp).clip(CircleShape).background(NvMuted.copy(alpha = 0.6f))) }
+    ) {
         Column(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1251,9 +1503,9 @@ fun PersonalCodesSheet(
             Text("کدهای عددی من", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             Text(
                 "برای هر مکان یک عدد دلخواه تعریف کنید و بعداً همان عدد را در جست‌وجو وارد کنید.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = NvMuted
             )
-            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+            Surface(shape = RoundedCornerShape(18.dp), color = NvPanelHigh, contentColor = NvText, border = BorderStroke(1.dp, NvOutline)) {
                 Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Place, null)
                     Spacer(Modifier.width(8.dp))
@@ -1261,32 +1513,36 @@ fun PersonalCodesSheet(
                         Text(selectedPlace?.name ?: "هنوز مکانی انتخاب نشده", fontWeight = FontWeight.Bold)
                         Text(
                             if (selectedPlace == null) "ابتدا یک مکان را از جست‌وجو انتخاب کنید" else "برای این مکان کد عددی بسازید",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = NvMuted
                         )
                     }
-                    Button(onClick = onAddCode) { Text(if (selectedPlace == null) "انتخاب" else "تعریف کد") }
+                    Button(
+                        onClick = onAddCode,
+                        colors = ButtonDefaults.buttonColors(containerColor = NvCyan, contentColor = NvInk)
+                    ) { Text(if (selectedPlace == null) "انتخاب" else "تعریف کد") }
                 }
             }
             if (savedPlaces.isEmpty()) {
-                Text("هنوز کد شخصی ذخیره نشده است.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("هنوز کد شخصی ذخیره نشده است.", color = NvMuted)
             } else {
                 Text("کدهای ذخیره‌شده", fontWeight = FontWeight.Black)
                 savedPlaces.take(10).forEach { place ->
-                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Surface(shape = RoundedCornerShape(16.dp), color = NvPanelHigh, contentColor = NvText, border = BorderStroke(1.dp, NvOutline)) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primary) {
+                            Surface(shape = RoundedCornerShape(10.dp), color = NvCyan) {
                                 Text(
                                     place.personalCode.orEmpty(),
                                     Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    color = NvInk,
                                     fontWeight = FontWeight.Black
                                 )
                             }
                             Spacer(Modifier.width(9.dp))
                             Text(place.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            IconButton(onClick = { onShare(place) }) { Icon(Icons.Rounded.Share, "اشتراک") }
+                            IconButton(onClick = { onShare(place) }) { Icon(Icons.Rounded.Share, "اشتراک", tint = NvCyan) }
                             IconButton(onClick = { place.personalCode?.let(onDelete) }) {
-                                Icon(Icons.Rounded.DeleteOutline, "حذف", tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.Rounded.DeleteOutline, "حذف", tint = Color(0xFFFF7185))
                             }
                         }
                     }
