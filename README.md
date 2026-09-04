@@ -4,21 +4,26 @@ NV is a Persian-first navigation application for Android 10 and newer. This
 repository replaces the earlier incomplete IranNavApp upload with a standard,
 testable Android project.
 
-## Current architecture (0.4)
+## Current architecture (0.5)
 
 - Android minSdk 29 (Android 10), Kotlin and Jetpack Compose
 - online-first native map, type-ahead Photon search and dual-provider routing
 - live network monitoring with automatic offline fallback
 - user-initiated Iran-only map download from a dedicated in-app panel
 - offline Mapsforge vector rendering with no online dependency
-- deterministic place codes 1…N and search by Persian name or numeric code
+- stable public place codes, optional personal codes, recent destinations and
+  search by Persian name, Persian/Latin digits, numeric code or `NV:code`
 - origin and destination dropdowns
 - an on-device A* routing engine
 - directed edges for one-way roads
 - turn-restriction enforcement using incoming-edge routing state
-- route distance, travel time and ETA
+- up to three online route alternatives with visual selection, route distance,
+  travel time and ETA
 - map-first Persian Material interface with a destination bottom sheet, automatic
   system day/night mode and an original adaptive NV Fold icon
+- D/F/H/I navigation flow: map-first home, route-choice sheet, distraction-
+  minimized driving HUD, and an attractions/services-ahead sheet
+- destination code sharing as `NV:1845623` with an on-device QR code
 - distraction-minimized driving mode with large maneuver HUD, ETA panel,
   live remaining-distance updates, off-route rerouting, floating controls and
   Persian voice guidance
@@ -38,8 +43,9 @@ launch it downloads one Iran-only archive from the map-v1 GitHub Release:
       routing.db
 
 The exact schemas and integrity rules are documented in docs/DATA_PACK.md.
-tools/build_places.py assigns a sequential code to every named OSM feature in a
-deterministic order.
+tools/build_places.py assigns the initial sequential codes to named OSM
+features. Pass `--registry place-codes.json` on every later build to keep each
+public code stable when OpenStreetMap adds or renames places.
 
 The `map-v1` asset is published by the Iran data workflow. It is downloaded
 only after the user taps the download action. When connectivity is lost, NV

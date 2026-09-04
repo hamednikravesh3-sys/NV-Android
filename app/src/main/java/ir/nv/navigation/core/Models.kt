@@ -68,7 +68,8 @@ data class RouteNotice(
     val title: String,
     val detail: String,
     val distanceAheadMeters: Double,
-    val kind: Kind
+    val kind: Kind,
+    val placeCode: Long? = null
 ) {
     enum class Kind { ATTRACTION, WEATHER, TRAFFIC }
 }

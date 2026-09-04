@@ -25,7 +25,8 @@ import java.io.File
 fun OfflineIranMap(
     context: Context,
     mapFile: File,
-    route: Route?,
+    routes: List<Route>,
+    selectedRouteIndex: Int,
     currentLocation: Coordinate?,
     followLocation: Boolean,
     darkMode: Boolean,
@@ -44,7 +45,7 @@ fun OfflineIranMap(
         modifier = modifier,
         update = {
             holder.setDarkMode(darkMode)
-            holder.showRoute(route)
+            holder.showRoutes(routes, selectedRouteIndex)
             holder.showLocation(currentLocation, followLocation)
         }
     )
@@ -54,9 +55,10 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
     val mapView = MapView(context)
     private val mapData = MapFile(mapFile)
     private val tileCache: TileCache
-    private var routeLayer: Polyline? = null
+    private val routeLayers = mutableListOf<Polyline>()
     private var locationLayer: Circle? = null
-    private var renderedRoute: Route? = null
+    private var renderedRoutes: List<Route> = emptyList()
+    private var renderedSelectedRoute = -1
     private var darkMode: Boolean? = null
 
     init {
@@ -85,19 +87,30 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
         mapView.layerManager.layers.add(renderer)
     }
 
-    fun showRoute(route: Route?) {
-        if (renderedRoute === route) return
-        renderedRoute = route
-        routeLayer?.let { mapView.layerManager.layers.remove(it) }
-        routeLayer = route?.takeIf { it.points.size >= 2 }?.let { result ->
+    fun showRoutes(routes: List<Route>, selectedRouteIndex: Int) {
+        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex) return
+        renderedRoutes = routes
+        renderedSelectedRoute = selectedRouteIndex
+        routeLayers.forEach { mapView.layerManager.layers.remove(it) }
+        routeLayers.clear()
+        val ordered = routes.indices.sortedBy { if (it == selectedRouteIndex) 1 else 0 }
+        ordered.forEach { index ->
+            val result = routes[index]
+            if (result.points.size < 2) return@forEach
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                color = AndroidGraphicFactory.INSTANCE.createColor(255, 0, 166, 126)
-                strokeWidth = 10f * mapView.model.displayModel.scaleFactor
+                val routeColor = when {
+                    index == selectedRouteIndex -> intArrayOf(54, 214, 255)
+                    index % 2 == 0 -> intArrayOf(215, 255, 91)
+                    else -> intArrayOf(150, 160, 174)
+                }
+                color = AndroidGraphicFactory.INSTANCE.createColor(255, routeColor[0], routeColor[1], routeColor[2])
+                strokeWidth = (if (index == selectedRouteIndex) 12f else 8f) * mapView.model.displayModel.scaleFactor
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
                 line.setPoints(result.points.map { LatLong(it.latitude, it.longitude) })
                 mapView.layerManager.layers.add(line)
+                routeLayers += line
             }
         }
         locationLayer?.let { marker ->

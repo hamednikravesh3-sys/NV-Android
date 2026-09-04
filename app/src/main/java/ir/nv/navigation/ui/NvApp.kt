@@ -2,6 +2,7 @@ package ir.nv.navigation.ui
 
 import android.app.Activity
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +35,8 @@ import ir.nv.navigation.map.OfflineIranMap
 import ir.nv.navigation.map.OnlineIranMap
 import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.core.RouteSource
+import ir.nv.navigation.core.Place
+import ir.nv.navigation.data.PlaceCodes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +51,7 @@ fun NvApp(
     val billingState by billing.state.collectAsState()
     var showOfflineMaps by remember { mutableStateOf(false) }
     var showPlaceCode by remember { mutableStateOf(false) }
+    var showRoutePlaces by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf(LocationAction.ORIGIN) }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
@@ -78,6 +82,16 @@ fun NvApp(
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
             )
+        }
+    }
+    val sharePlace: (Place) -> Unit = { place ->
+        PlaceCodes.shareCode(place.code)?.let { code ->
+            val message = "${place.name}\n$code"
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, message)
+            }
+            context.startActivity(Intent.createChooser(intent, "اشتراک کد مکان NV"))
         }
     }
 
@@ -122,7 +136,21 @@ fun NvApp(
                 onSave = { place, code ->
                     viewModel.savePersonalCode(place, code)
                     showPlaceCode = false
-                }
+                },
+                onShare = sharePlace
+            )
+        }
+
+        if (showRoutePlaces) {
+            RoutePlacesSheet(
+                destination = state.destination,
+                notices = state.routeNotices,
+                onDismiss = { showRoutePlaces = false },
+                onShowCode = {
+                    showRoutePlaces = false
+                    showPlaceCode = true
+                },
+                onShare = sharePlace
             )
         }
 
@@ -157,7 +185,8 @@ fun NvApp(
                 mapSource == RouteSource.OFFLINE -> OfflineIranMap(
                     context = context,
                     mapFile = viewModel.mapFile(),
-                    route = state.route,
+                    routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) },
+                    selectedRouteIndex = state.selectedRouteIndex,
                     currentLocation = state.currentLocation,
                     followLocation = state.navigationActive,
                     darkMode = darkMode,
@@ -166,7 +195,8 @@ fun NvApp(
 
                 state.onlineAvailable -> OnlineIranMap(
                     context = context,
-                    route = state.route,
+                    routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) },
+                    selectedRouteIndex = state.selectedRouteIndex,
                     currentLocation = state.currentLocation,
                     followLocation = state.navigationActive,
                     darkMode = darkMode,
@@ -208,6 +238,9 @@ fun NvApp(
             state.route?.let { route ->
                 RouteSummaryCard(
                     route = route,
+                    destination = state.destination,
+                    alternatives = state.routeAlternatives,
+                    selectedRouteIndex = state.selectedRouteIndex,
                     source = state.routeSource,
                     traffic = state.traffic,
                     notices = state.routeNotices,
@@ -215,6 +248,9 @@ fun NvApp(
                     remainingDistanceMeters = state.remainingDistanceMeters,
                     remainingSeconds = state.remainingSeconds,
                     onStart = { requestLocation(LocationAction.NAVIGATE) },
+                    onRouteSelect = viewModel::selectRoute,
+                    onOpenPlaces = { showRoutePlaces = true },
+                    onOpenCode = { showPlaceCode = true },
                     onStop = viewModel::stopNavigation,
                     onClose = viewModel::clearRoute,
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -239,7 +275,12 @@ fun NvApp(
                 )
             } else if (state.route == null) {
                 DestinationSearchBar(
+                    recentPlaces = state.recentPlaces,
                     onClick = { showSearch = true },
+                    onRecentClick = { place ->
+                        viewModel.selectDestination(place)
+                        showSearch = true
+                    },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
             }

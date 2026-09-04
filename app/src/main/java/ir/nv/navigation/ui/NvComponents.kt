@@ -35,6 +35,9 @@ import androidx.compose.material.icons.rounded.OfflinePin
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.QrCode2
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.TurnLeft
 import androidx.compose.material.icons.rounded.TurnRight
@@ -86,6 +89,7 @@ import ir.nv.navigation.core.TrafficSummary
 import ir.nv.navigation.entitlement.BillingState
 import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
+import ir.nv.navigation.data.PlaceCodes
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -202,7 +206,12 @@ fun SearchSheet(
 }
 
 @Composable
-fun DestinationSearchBar(onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun DestinationSearchBar(
+    recentPlaces: List<Place>,
+    onClick: () -> Unit,
+    onRecentClick: (Place) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -213,22 +222,35 @@ fun DestinationSearchBar(onClick: () -> Unit, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 10.dp
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                Icon(
-                    Icons.Rounded.Search,
-                    contentDescription = null,
-                    modifier = Modifier.padding(9.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                    Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.padding(9.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("نام یا کد مکان", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                    Text("مثلاً برج آزادی یا NV:1845623", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("کجا می‌روید؟", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                Text("نام، آدرس یا کد مکان", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (recentPlaces.isNotEmpty()) {
+                Spacer(Modifier.height(11.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    recentPlaces.take(2).forEach { place ->
+                        AssistChip(
+                            onClick = { onRecentClick(place) },
+                            label = {
+                                Text(
+                                    if (!place.personalCode.isNullOrBlank()) "${place.name} • ${place.personalCode}"
+                                    else if (place.code > 0) "${place.name} • ${place.code}" else place.name,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Place, null, Modifier.size(17.dp)) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -506,6 +528,9 @@ fun FloatingNavigationControls(
 @Composable
 fun RouteSummaryCard(
     route: Route,
+    destination: Place?,
+    alternatives: List<Route>,
+    selectedRouteIndex: Int,
     source: RouteSource,
     traffic: TrafficSummary?,
     notices: List<RouteNotice>,
@@ -513,6 +538,9 @@ fun RouteSummaryCard(
     remainingDistanceMeters: Double,
     remainingSeconds: Double,
     onStart: () -> Unit,
+    onRouteSelect: (Int) -> Unit,
+    onOpenPlaces: () -> Unit,
+    onOpenCode: () -> Unit,
     onStop: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -531,6 +559,7 @@ fun RouteSummaryCard(
             seconds = totalSeconds,
             eta = eta,
             traffic = traffic,
+            destinationCode = destination?.code?.takeIf { it > 0 },
             onStop = onStop,
             modifier = modifier
         )
@@ -571,6 +600,19 @@ fun RouteSummaryCard(
                 RouteMetric("زمان", "${(totalSeconds / 60.0).roundToInt()} دقیقه")
                 RouteMetric("رسیدن", eta)
             }
+            if (alternatives.size > 1) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    alternatives.take(3).forEachIndexed { index, candidate ->
+                        RouteChoiceCard(
+                            route = candidate,
+                            index = index,
+                            selected = index == selectedRouteIndex,
+                            onClick = { onRouteSelect(index) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
             if (traffic != null && traffic.delaySeconds > 0) {
                 Text(
                     "ترافیک: %.1f کیلومتر • ${traffic.delaySeconds.div(60).roundToInt()} دقیقه تأخیر"
@@ -592,6 +634,18 @@ fun RouteSummaryCard(
                     }
                 }
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onOpenPlaces, modifier = Modifier.weight(1f), enabled = notices.isNotEmpty()) {
+                    Icon(Icons.Rounded.Explore, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("جاذبه‌های مسیر")
+                }
+                OutlinedButton(onClick = onOpenCode, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Rounded.QrCode2, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("کد مقصد")
+                }
+            }
             Button(
                 onClick = onStart,
                 modifier = Modifier.fillMaxWidth(),
@@ -606,11 +660,27 @@ fun RouteSummaryCard(
 }
 
 @Composable
+private fun RouteChoiceCard(route: Route, index: Int, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Column(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(if (index == 0) "پیشنهادی" else "مسیر ${index + 1}", style = MaterialTheme.typography.labelMedium)
+            Text("${(route.travelSeconds / 60).roundToInt()} دقیقه", fontWeight = FontWeight.Black)
+            Text("%.1f km".format(route.distanceMeters / 1000), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
 private fun ActiveNavigationBar(
     distanceMeters: Double,
     seconds: Double,
     eta: String,
     traffic: TrafficSummary?,
+    destinationCode: Long?,
     onStop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -638,6 +708,14 @@ private fun ActiveNavigationBar(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.ExtraBold
                 )
+                destinationCode?.let {
+                    Text(
+                        "مقصد  NV:$it",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 Text(
                     if (traffic != null && traffic.delaySeconds > 0) {
                         "${traffic.delaySeconds.div(60).roundToInt()} دقیقه تأخیر ترافیک"
@@ -826,20 +904,94 @@ private fun ModeButton(text: String, selected: Boolean, modifier: Modifier, onCl
     else OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(text) }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlaceCodeDialog(place: Place?, onDismiss: () -> Unit, onSave: (Place, String) -> Unit) {
+fun RoutePlacesSheet(
+    destination: Place?,
+    notices: List<RouteNotice>,
+    onDismiss: () -> Unit,
+    onShowCode: () -> Unit,
+    onShare: (Place) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("جاذبه‌ها و امکانات مسیر", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            destination?.let { place ->
+                Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                    Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Place, null)
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(place.name, fontWeight = FontWeight.Black)
+                            Text(if (place.code > 0) "کد عمومی NV: ${place.code}" else "مکان آنلاین", style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = onShowCode) { Icon(Icons.Rounded.QrCode2, "نمایش کد") }
+                        IconButton(onClick = { onShare(place) }, enabled = place.code > 0) { Icon(Icons.Rounded.Share, "اشتراک") }
+                    }
+                }
+            }
+            notices.take(6).forEach { notice ->
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(if (notice.kind == RouteNotice.Kind.ATTRACTION) Icons.Rounded.Explore else Icons.Rounded.Info, null)
+                        Spacer(Modifier.width(9.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(notice.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                            Text("${formatDistance(notice.distanceAheadMeters)} جلوتر • ${notice.detail}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        notice.placeCode?.let { Text("NV:$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+                    }
+                }
+            }
+            if (notices.isEmpty()) Text("مورد مهمی در ادامه مسیر پیدا نشد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+fun PlaceCodeDialog(
+    place: Place?,
+    onDismiss: () -> Unit,
+    onSave: (Place, String) -> Unit,
+    onShare: (Place) -> Unit
+) {
     var code by remember(place) { mutableStateOf("") }
+    var showQr by remember(place) { mutableStateOf(false) }
+    val shareCode = place?.let { PlaceCodes.shareCode(it.code) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Rounded.Save, contentDescription = null) },
-        title = { Text("ذخیره کد شخصی") },
+        title = { Text("کد مکان NV") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(place?.name ?: "ابتدا یک مکان را انتخاب کنید")
+                Text(place?.name ?: "ابتدا یک مکان را انتخاب کنید", fontWeight = FontWeight.Black)
+                if (shareCode != null) {
+                    Text("کد عمومی ثابت: ${place.code}")
+                    Text("اشتراک: $shareCode", color = MaterialTheme.colorScheme.primary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { place?.let(onShare) }) {
+                            Icon(Icons.Rounded.Share, null)
+                            Spacer(Modifier.width(5.dp))
+                            Text("اشتراک")
+                        }
+                        OutlinedButton(onClick = { showQr = !showQr }) {
+                            Icon(Icons.Rounded.QrCode2, null)
+                            Spacer(Modifier.width(5.dp))
+                            Text("QR")
+                        }
+                    }
+                    if (showQr) NvQrCode(shareCode, Modifier.size(190.dp).align(Alignment.CenterHorizontally))
+                } else if (place != null) {
+                    Text("این نتیجه آنلاین است؛ کد عمومی پس از نصب نقشه آفلاین ایران در دسترس است.", style = MaterialTheme.typography.bodySmall)
+                }
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it },
-                    label = { Text("کد کوتاه؛ مثلاً HOME1") },
+                    label = { Text("کد شخصی؛ مثلاً 11 یا HOME") },
                     singleLine = true,
                     enabled = place != null
                 )

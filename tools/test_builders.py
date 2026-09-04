@@ -45,6 +45,41 @@ class PlacesBuilderTest(unittest.TestCase):
             self.assertEqual([(1, "آبادان", "آبادان"), (2, "تهران", "تهران")], rows)
         self.assertEqual("یکی", normalize("  يكي  "))
 
+    def test_registry_keeps_public_codes_when_new_places_are_added(self) -> None:
+        first = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "id": "node/2",
+                    "properties": {"name": "تهران", "place": "city"},
+                    "geometry": {"type": "Point", "coordinates": [51.39, 35.69]},
+                }
+            ],
+        }
+        added_before_alphabetically = {
+            "type": "Feature",
+            "id": "node/3",
+            "properties": {"name": "آبادان", "place": "city"},
+            "geometry": {"type": "Point", "coordinates": [48.29, 30.34]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "places.geojson"
+            output = root / "places.db"
+            registry = root / "place-codes.json"
+            source.write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")
+            build_database(source, output, registry)
+            first_code = json.loads(registry.read_text(encoding="utf-8"))["node/2"]
+
+            first["features"].append(added_before_alphabetically)
+            source.write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")
+            build_database(source, output, registry)
+            with sqlite3.connect(output) as database:
+                codes = dict(database.execute("SELECT name, code FROM places"))
+            self.assertEqual(first_code, codes["تهران"])
+            self.assertGreater(codes["آبادان"], codes["تهران"])
+
 
 class RoutingBuilderTest(unittest.TestCase):
     def test_access_direction_speed_and_distance(self) -> None:

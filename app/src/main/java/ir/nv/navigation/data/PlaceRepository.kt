@@ -19,7 +19,7 @@ class PlaceRepository(databaseFile: File) : Closeable {
     fun search(rawQuery: String, limit: Int = 30): List<Place> {
         val query = rawQuery.trim()
         if (query.isEmpty()) return emptyList()
-        val numericCode = query.toLongOrNull()
+        val numericCode = PlaceCodes.publicCode(query)
         val sql: String
         val args: Array<String>
         if (numericCode != null) {

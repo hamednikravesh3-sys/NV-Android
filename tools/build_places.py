@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build NV's deterministic places database from GeoJSON or GeoJSON Text Sequences."""
+"""Build NV's stable-code places database from GeoJSON or GeoJSON Text Sequences."""
 
 from __future__ import annotations
 
@@ -124,7 +124,32 @@ def iter_features(path: Path) -> Iterable[dict]:
                     yield feature
 
 
-def build_database(source: Path, output: Path) -> int:
+def load_code_registry(path: Path | None) -> dict[str, int]:
+    if path is None or not path.exists():
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("Place-code registry must be a JSON object")
+    registry = {str(key): int(value) for key, value in raw.items()}
+    codes = list(registry.values())
+    if any(code <= 0 for code in codes) or len(codes) != len(set(codes)):
+        raise ValueError("Place-code registry contains invalid or duplicate codes")
+    return registry
+
+
+def write_code_registry(path: Path, registry: dict[str, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(registry, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def build_database(source: Path, output: Path, registry_path: Path | None = None) -> int:
+    registry = load_code_registry(registry_path)
+    next_code = max(registry.values(), default=0)
     if output.exists():
         output.unlink()
     with sqlite3.connect(output) as database:
@@ -162,8 +187,15 @@ def build_database(source: Path, output: Path) -> int:
         )
         insert_batch = []
         count = 0
-        for count, row in enumerate(ordered, start=1):
-            insert_batch.append((count, *row))
+        for row in ordered:
+            count += 1
+            identity = f"{row[0]}/{row[1]}"
+            code = registry.get(identity)
+            if code is None:
+                next_code += 1
+                code = next_code
+                registry[identity] = code
+            insert_batch.append((code, *row))
             if len(insert_batch) >= 10_000:
                 database.executemany(
                     "INSERT INTO places VALUES (?, ?, ?, ?, ?, ?, ?, ?)", insert_batch
@@ -176,6 +208,8 @@ def build_database(source: Path, output: Path) -> int:
         database.execute("ANALYZE")
         database.execute("PRAGMA optimize")
         database.commit()
+    if registry_path is not None:
+        write_code_registry(registry_path, registry)
     return count
 
 
@@ -183,8 +217,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("geojson", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--registry",
+        type=Path,
+        help="JSON registry that preserves public NV codes across map updates",
+    )
     args = parser.parse_args()
-    count = build_database(args.geojson, args.output)
+    count = build_database(args.geojson, args.output, args.registry)
     print(f"Created {args.output} with {count} named places")
 
 

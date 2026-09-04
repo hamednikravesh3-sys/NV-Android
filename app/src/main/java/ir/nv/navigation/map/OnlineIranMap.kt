@@ -23,7 +23,8 @@ import org.mapsforge.map.layer.overlay.Circle
 @Composable
 fun OnlineIranMap(
     context: Context,
-    route: Route?,
+    routes: List<Route>,
+    selectedRouteIndex: Int,
     currentLocation: Coordinate?,
     followLocation: Boolean,
     darkMode: Boolean,
@@ -40,7 +41,7 @@ fun OnlineIranMap(
         modifier = modifier,
         update = {
             holder.setDarkMode(darkMode)
-            holder.showRoute(route)
+            holder.showRoutes(routes, selectedRouteIndex)
             holder.showLocation(currentLocation, followLocation)
         }
     )
@@ -50,9 +51,10 @@ private class OnlineMapHolder(context: Context) {
     val mapView = MapView(context)
     private val tileCache: TileCache
     private val downloadLayer: TileDownloadLayer
-    private var routeLayer: Polyline? = null
+    private val routeLayers = mutableListOf<Polyline>()
     private var locationLayer: Circle? = null
-    private var renderedRoute: Route? = null
+    private var renderedRoutes: List<Route> = emptyList()
+    private var renderedSelectedRoute = -1
     private var darkMode: Boolean? = null
 
     init {
@@ -69,7 +71,7 @@ private class OnlineMapHolder(context: Context) {
             1f,
             mapView.model.frameBufferModel.overdrawFactor
         )
-        OpenStreetMapMapnik.INSTANCE.setUserAgent("NV-Android/0.4 (hamednikravesh3@gmail.com)")
+        OpenStreetMapMapnik.INSTANCE.setUserAgent("NV-Android/0.5 (hamednikravesh3@gmail.com)")
         downloadLayer = TileDownloadLayer(
             tileCache,
             mapView.model.mapViewPosition,
@@ -80,25 +82,35 @@ private class OnlineMapHolder(context: Context) {
         downloadLayer.start()
     }
 
-    fun showRoute(route: Route?) {
-        if (renderedRoute === route) return
-        renderedRoute = route
-        routeLayer?.let { mapView.layerManager.layers.remove(it) }
-        routeLayer = route?.takeIf { it.points.size >= 2 }?.let { result ->
+    fun showRoutes(routes: List<Route>, selectedRouteIndex: Int) {
+        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex) return
+        renderedRoutes = routes
+        renderedSelectedRoute = selectedRouteIndex
+        routeLayers.forEach { mapView.layerManager.layers.remove(it) }
+        routeLayers.clear()
+        val ordered = routes.indices.sortedBy { if (it == selectedRouteIndex) 1 else 0 }
+        ordered.forEach { index ->
+            val result = routes[index]
+            if (result.points.size < 2) return@forEach
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 20, 184, 166))
-                setStrokeWidth(11f * mapView.model.displayModel.scaleFactor)
+                val color = when {
+                    index == selectedRouteIndex -> intArrayOf(54, 214, 255)
+                    index % 2 == 0 -> intArrayOf(215, 255, 91)
+                    else -> intArrayOf(150, 160, 174)
+                }
+                setColor(AndroidGraphicFactory.INSTANCE.createColor(255, color[0], color[1], color[2]))
+                setStrokeWidth((if (index == selectedRouteIndex) 12f else 8f) * mapView.model.displayModel.scaleFactor)
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
                 line.setPoints(result.points.map { LatLong(it.latitude, it.longitude) })
                 mapView.layerManager.layers.add(line)
-                val center = result.points[result.points.lastIndex / 2]
-                mapView.model.mapViewPosition.mapPosition = MapPosition(
-                    LatLong(center.latitude, center.longitude),
-                    routeZoom(result.distanceMeters)
-                )
+                routeLayers += line
             }
+        }
+        routes.getOrNull(selectedRouteIndex)?.let { selected ->
+            val center = selected.points[selected.points.lastIndex / 2]
+            mapView.model.mapViewPosition.mapPosition = MapPosition(LatLong(center.latitude, center.longitude), routeZoom(selected.distanceMeters))
         }
         locationLayer?.let { marker ->
             mapView.layerManager.layers.remove(marker)

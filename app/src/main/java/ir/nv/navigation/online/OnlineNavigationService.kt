@@ -48,7 +48,9 @@ class OnlineNavigationService {
         results
     }
 
-    suspend fun route(origin: Coordinate, destination: Coordinate): Route = withContext(Dispatchers.IO) {
+    suspend fun route(origin: Coordinate, destination: Coordinate): Route = routes(origin, destination).first()
+
+    suspend fun routes(origin: Coordinate, destination: Coordinate): List<Route> = withContext(Dispatchers.IO) {
         val providers = listOf(
             BuildConfig.ROUTING_API_URL,
             BuildConfig.ROUTING_FALLBACK_API_URL
@@ -58,15 +60,15 @@ class OnlineNavigationService {
         providers.forEach { provider ->
             val url = provider + "/route/v1/driving/" +
                 "${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}" +
-                "?overview=full&geometries=geojson&steps=true&alternatives=false"
+                "?overview=full&geometries=geojson&steps=true&alternatives=true"
             val result = runCatching {
                 val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                    parseRoute(JSONObject(response.body?.string().orEmpty()))
+                    parseRoutes(JSONObject(response.body?.string().orEmpty()))
                 }
             }
-            result.getOrNull()?.let { return@withContext it }
+            result.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return@withContext it.take(3) }
             failures += result.exceptionOrNull()?.message ?: "پاسخ نامعتبر"
         }
         throw IOException("هیچ سرویس مسیر آنلاینی پاسخ نداد: ${failures.joinToString("، ")}")
@@ -102,14 +104,21 @@ class OnlineNavigationService {
         }
     }
 
-    private fun parseRoute(root: JSONObject): Route {
+    private fun parseRoutes(root: JSONObject): List<Route> {
         if (root.optString("code") != "Ok") {
             throw IOException(root.optString("message", "مسیر پیدا نشد"))
         }
         val routes = root.optJSONArray("routes") ?: throw IOException("پاسخ مسیر خالی است")
         if (routes.length() == 0) throw IOException("برای این دو نقطه مسیر پیدا نشد")
-        val first = routes.getJSONObject(0)
-        val coordinates = first.getJSONObject("geometry").getJSONArray("coordinates")
+        return buildList {
+            for (index in 0 until routes.length()) {
+                add(parseRoute(routes.getJSONObject(index)))
+            }
+        }.sortedBy { it.travelSeconds }
+    }
+
+    private fun parseRoute(value: JSONObject): Route {
+        val coordinates = value.getJSONObject("geometry").getJSONArray("coordinates")
         val points = buildList {
             for (index in 0 until coordinates.length()) {
                 val pair = coordinates.getJSONArray(index)
@@ -120,9 +129,9 @@ class OnlineNavigationService {
         return Route(
             points = points,
             edgeIds = emptyList(),
-            distanceMeters = first.optDouble("distance", 0.0),
-            travelSeconds = first.optDouble("duration", 0.0),
-            maneuvers = parseManeuvers(first)
+            distanceMeters = value.optDouble("distance", 0.0),
+            travelSeconds = value.optDouble("duration", 0.0),
+            maneuvers = parseManeuvers(value)
         )
     }
 
@@ -192,6 +201,6 @@ class OnlineNavigationService {
     private fun String.toHttpUrlString(): String = trim().trimEnd('/')
 
     private companion object {
-        const val USER_AGENT = "NV-Android/0.4 (hamednikravesh3@gmail.com)"
+        const val USER_AGENT = "NV-Android/0.5 (hamednikravesh3@gmail.com)"
     }
 }

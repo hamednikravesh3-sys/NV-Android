@@ -20,12 +20,14 @@ class PersonalPlaceStore(context: Context) {
     }
 
     fun search(query: String): List<Place> {
-        val normalized = PersianText.normalize(query)
+        val cleanQuery = PlaceCodes.normalizeDigits(query).trim()
+            .replace(Regex("^NV\\s*[:#-]?\\s*", RegexOption.IGNORE_CASE), "")
+        val normalized = PersianText.normalize(cleanQuery)
         return all().filter { place ->
             val code = place.personalCode.orEmpty()
             PersianText.normalize(place.name).contains(normalized) ||
-                code.equals(query.trim(), ignoreCase = true) ||
-                code.contains(query.trim(), ignoreCase = true)
+                code.equals(cleanQuery, ignoreCase = true) ||
+                code.contains(cleanQuery, ignoreCase = true)
         }
     }
 

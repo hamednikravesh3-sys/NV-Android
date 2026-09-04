@@ -11,6 +11,7 @@ import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.TrafficSummary
 import ir.nv.navigation.data.PersonalPlaceStore
 import ir.nv.navigation.data.PlaceRepository
+import ir.nv.navigation.data.RecentPlaceStore
 import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
 import ir.nv.navigation.location.DeviceLocationProvider
@@ -43,6 +44,9 @@ data class NvUiState(
     val origin: Place? = null,
     val destination: Place? = null,
     val route: Route? = null,
+    val routeAlternatives: List<Route> = emptyList(),
+    val selectedRouteIndex: Int = 0,
+    val recentPlaces: List<Place> = emptyList(),
     val navigationActive: Boolean = false,
     val voiceEnabled: Boolean = true,
     val locating: Boolean = false,
@@ -66,6 +70,7 @@ data class NvUiState(
 class NvViewModel(application: Application) : AndroidViewModel(application) {
     private val packManager = IranPackManager(application)
     private val personalPlaces = PersonalPlaceStore(application)
+    private val recentPlaces = RecentPlaceStore(application)
     private val online = OnlineNavigationService()
     private val networkMonitor = NetworkMonitor(application)
     private val locationProvider = DeviceLocationProvider(application)
@@ -76,6 +81,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             packStatus = packManager.status(),
             onlineAvailable = networkMonitor.isOnline(),
             offlineReady = packManager.isReady(),
+            recentPlaces = recentPlaces.all(),
             trialState = runCatching { trialManager.state() }.getOrDefault(TrialManager.State.Trial(30))
         )
     )
@@ -201,7 +207,31 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectDestination(place: Place) {
-        mutableState.update { it.copy(destination = place, destinationQuery = place.name, destinationSuggestions = emptyList()) }
+        recentPlaces.record(place)
+        mutableState.update {
+            it.copy(
+                destination = place,
+                destinationQuery = place.name,
+                destinationSuggestions = emptyList(),
+                recentPlaces = recentPlaces.all()
+            )
+        }
+    }
+
+    fun selectRoute(index: Int) {
+        val selected = mutableState.value.routeAlternatives.getOrNull(index) ?: return
+        mutableState.update {
+            it.copy(
+                route = selected,
+                selectedRouteIndex = index,
+                maneuverIndex = 0,
+                distanceToNextManeuverMeters = selected.maneuvers.firstOrNull()?.distanceMeters ?: selected.distanceMeters,
+                remainingDistanceMeters = selected.distanceMeters,
+                remainingSeconds = selected.travelSeconds,
+                routeNotices = emptyList()
+            )
+        }
+        viewModelScope.launch { loadRouteNotices(selected) }
     }
 
     fun swapEndpoints() {
@@ -215,6 +245,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 originSuggestions = emptyList(),
                 destinationSuggestions = emptyList(),
                 route = null,
+                routeAlternatives = emptyList(),
+                selectedRouteIndex = 0,
                 navigationActive = false,
                 maneuverIndex = 0,
                 offRoute = false,
@@ -229,6 +261,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update {
             it.copy(
                 route = null,
+                routeAlternatives = emptyList(),
+                selectedRouteIndex = 0,
                 navigationActive = false,
                 maneuverIndex = 0,
                 offRoute = false,
@@ -324,23 +358,22 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             )
             var source = RouteSource.NONE
             var onlineError: String? = null
-            val result: Route? = if (preferredSource == RouteSource.OFFLINE) {
+            val results: List<Route> = if (preferredSource == RouteSource.OFFLINE) {
                 val activeRouter = router
-                if (activeRouter == null) null else withContext(Dispatchers.Default) {
-                    activeRouter.route(origin.coordinate, destination.coordinate).also {
-                        if (it != null) source = RouteSource.OFFLINE
-                    }
-                }
+                if (activeRouter == null) emptyList() else listOfNotNull(withContext(Dispatchers.Default) {
+                    activeRouter.route(origin.coordinate, destination.coordinate)
+                }).also { if (it.isNotEmpty()) source = RouteSource.OFFLINE }
             } else if (preferredSource == RouteSource.ONLINE) {
-                runCatching { online.route(origin.coordinate, destination.coordinate) }
+                runCatching { online.routes(origin.coordinate, destination.coordinate) }
                     .onFailure { onlineError = it.message }
-                    .getOrNull()
+                    .getOrNull()?.takeIf { it.isNotEmpty() }
                     ?.also { source = RouteSource.ONLINE }
                     ?: router?.let { r ->
-                        withContext(Dispatchers.Default) { r.route(origin.coordinate, destination.coordinate) }
-                            ?.also { source = RouteSource.OFFLINE }
-                    }
-            } else null
+                        listOfNotNull(withContext(Dispatchers.Default) { r.route(origin.coordinate, destination.coordinate) })
+                            .also { if (it.isNotEmpty()) source = RouteSource.OFFLINE }
+                    }.orEmpty()
+            } else emptyList()
+            val result = results.firstOrNull()
 
             val notices = if (result == null) emptyList() else withContext(Dispatchers.IO) {
                 val attractions = places?.attractionsAlong(result).orEmpty()
@@ -351,6 +384,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     routing = false,
                     route = result,
+                    routeAlternatives = results,
+                    selectedRouteIndex = 0,
                     navigationActive = false,
                     maneuverIndex = 0,
                     distanceToNextManeuverMeters = result?.maneuvers?.firstOrNull()?.distanceMeters
@@ -408,6 +443,17 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun mapFile() = packManager.mapFile
 
+    private suspend fun loadRouteNotices(route: Route) {
+        val notices = withContext(Dispatchers.IO) {
+            val attractions = places?.attractionsAlong(route).orEmpty()
+            val weather = if (networkMonitor.isOnline()) {
+                runCatching { weatherAlerts.alertsAhead(route) }.getOrDefault(emptyList())
+            } else emptyList()
+            (weather + attractions).sortedBy { it.distanceAheadMeters }.take(8)
+        }
+        mutableState.update { state -> if (state.route === route) state.copy(routeNotices = notices) else state }
+    }
+
     private suspend fun updateNavigationProgress(coordinate: Coordinate) {
         val snapshot = mutableState.value
         val route = snapshot.route ?: return
@@ -446,6 +492,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update {
             it.copy(
                 route = replacement,
+                routeAlternatives = listOf(replacement),
+                selectedRouteIndex = 0,
                 routeSource = if (snapshot.onlineAvailable) RouteSource.ONLINE else RouteSource.OFFLINE,
                 maneuverIndex = 0,
                 distanceToNextManeuverMeters = replacement.maneuvers.firstOrNull()?.distanceMeters

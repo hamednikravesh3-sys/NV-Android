@@ -23,7 +23,8 @@ object RouteInsightEngine {
                 title = place.displayName,
                 detail = categoryLabel(place.category),
                 distanceAheadMeters = projection.progressMeters,
-                kind = RouteNotice.Kind.ATTRACTION
+                kind = RouteNotice.Kind.ATTRACTION,
+                placeCode = place.code.takeIf { it > 0 }
             )
         }.sortedBy { it.distanceAheadMeters }.take(limit)
     }
