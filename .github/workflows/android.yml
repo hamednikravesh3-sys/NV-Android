@@ -35,6 +35,12 @@ jobs:
         run: |
           python -m unittest discover -s tools -p "test_*.py"
           gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
       - name: Capture real app screenshot
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -55,10 +61,4 @@ jobs:
         with:
           name: NV-real-screenshot
           path: nv-real-home.png
-          if-no-files-found: error
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: NV-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
