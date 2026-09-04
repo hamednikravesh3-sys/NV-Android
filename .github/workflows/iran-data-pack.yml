@@ -29,7 +29,7 @@ jobs:
       - name: Install OSM tooling
         run: |
           sudo apt-get update
-          sudo apt-get install --yes osmium-tool
+          sudo apt-get install --yes osmium-tool sqlite3
           python -m pip install --disable-pip-version-check "osmium>=4,<5"
       - name: Download Iran-only source data
         run: |
@@ -45,6 +45,22 @@ jobs:
           osmium export --overwrite --format geojsonseq \
             --output work/named.geojsonseq work/named.osm.pbf
           python tools/build_places.py work/named.geojsonseq work/places.db
+      - name: Verify NV public codes are 1 to N
+        run: |
+          python - <<'PY'
+          import sqlite3
+          db = sqlite3.connect('work/places.db')
+          count, minimum, maximum, distinct_count = db.execute(
+              'SELECT COUNT(*), MIN(code), MAX(code), COUNT(DISTINCT code) FROM places'
+          ).fetchone()
+          if count <= 0:
+              raise SystemExit('No named places were indexed')
+          if minimum != 1 or maximum != count or distinct_count != count:
+              raise SystemExit(
+                  f'NV code verification failed: count={count}, min={minimum}, max={maximum}, distinct={distinct_count}'
+              )
+          print(f'NV code index verified: every named place has one unique code from 1 to {count}')
+          PY
       - name: Build directed routing graph
         run: python tools/build_routing.py work/iran.osm.pbf work/routing.db
       - name: Package and verify
@@ -65,4 +81,3 @@ jobs:
             gh release create map-v1 --title "NV Iran offline data" \
               --notes "Iran-only OpenStreetMap vector map, named-place index and directed offline-routing graph."
           gh release upload map-v1 dist/iran.nvpack dist/iran.nvpack.sha256 --clobber
-
