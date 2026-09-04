@@ -38,7 +38,7 @@ class IranPackManager(private val context: Context) {
         installDirectory.resolve(MANIFEST_FILE).isFile &&
             mapFile.isFile && placesFile.isFile && routingFile.isFile
 
-    fun ensureDownloadStarted(): Long {
+    fun startDownload(): Long {
         if (isReady()) return READY_DOWNLOAD_ID
         val existing = prefs.getLong(KEY_DOWNLOAD_ID, NO_DOWNLOAD_ID)
         if (existing != NO_DOWNLOAD_ID) return existing
@@ -46,8 +46,8 @@ class IranPackManager(private val context: Context) {
         downloadedPack.parentFile?.mkdirs()
         if (downloadedPack.exists()) downloadedPack.delete()
         val request = DownloadManager.Request(Uri.parse(BuildConfig.IRAN_PACK_URL))
-            .setTitle("نقشه کامل ایران — NV")
-            .setDescription("داده نقشه، مکان‌ها و مسیریابی آفلاین")
+            .setTitle("نقشه آفلاین کل ایران — NV")
+            .setDescription("نقشه، جست‌وجوی مکان و مسیریابی آفلاین؛ دانلود با انتخاب شما")
             .setMimeType("application/zip")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
@@ -68,20 +68,12 @@ class IranPackManager(private val context: Context) {
             return when (status) {
                 DownloadManager.STATUS_SUCCESSFUL -> Status.Installing
                 DownloadManager.STATUS_FAILED -> {
-                    val reason = cursor.getInt(
-                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)
-                    )
-                    Status.Failed("خطای دانلود: " + reason)
+                    val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                    Status.Failed("خطای دانلود: $reason")
                 }
                 else -> Status.Downloading(
-                    bytes = cursor.getLong(
-                        cursor.getColumnIndexOrThrow(
-                            DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR
-                        )
-                    ),
-                    totalBytes = cursor.getLong(
-                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-                    )
+                    bytes = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
+                    totalBytes = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
                 )
             }
         }
@@ -112,26 +104,26 @@ class IranPackManager(private val context: Context) {
     }
 
     fun retry() {
+        cancelDownload()
+        startDownload()
+    }
+
+    fun cancelDownload() {
         val id = prefs.getLong(KEY_DOWNLOAD_ID, NO_DOWNLOAD_ID)
-        if (id != NO_DOWNLOAD_ID) downloads.remove(id)
+        if (id != NO_DOWNLOAD_ID && id != READY_DOWNLOAD_ID) downloads.remove(id)
         prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
         if (downloadedPack.exists()) downloadedPack.delete()
-        ensureDownloadStarted()
+    }
+
+    fun deleteInstalledPack() {
+        cancelDownload()
+        installDirectory.deleteRecursively()
     }
 
     private fun verifyChecksum(file: File) {
         val expected = BuildConfig.IRAN_PACK_SHA256.trim().lowercase()
         if (expected.isEmpty()) return
-        val digest = MessageDigest.getInstance("SHA-256")
-        FileInputStream(file).use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        val actual = sha256(file)
         check(actual == expected) { "امضای SHA-256 بسته ایران صحیح نیست" }
     }
 
