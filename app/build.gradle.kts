@@ -27,14 +27,42 @@ android {
         )
         buildConfigField("String", "IRAN_PACK_SHA256", "\"\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
-        buildConfigField("String", "WEATHER_API_URL", "\"https://api.open-meteo.com/v1/forecast\"")
-        buildConfigField("String", "PLACES_API_URL", "\"https://overpass-api.de/api/interpreter\"")
+        buildConfigField(
+            "String",
+            "WEATHER_API_URL",
+            "\"https://api.open-meteo.com/v1/forecast\""
+        )
+        buildConfigField(
+            "String",
+            "PLACES_API_URL",
+            "\"https://overpass-api.de/api/interpreter\""
+        )
         buildConfigField("String", "TRAFFIC_API_KEY", "\"$trafficApiKey\"")
-        buildConfigField("String", "TRAFFIC_API_URL", "\"https://api.tomtom.com\"")
-        buildConfigField("String", "GEOCODING_API_URL", "\"https://photon.komoot.io/api\"")
-        buildConfigField("String", "GEOCODING_FALLBACK_API_URL", "\"https://nominatim.openstreetmap.org\"")
-        buildConfigField("String", "ROUTING_API_URL", "\"https://router.project-osrm.org\"")
-        buildConfigField("String", "ROUTING_FALLBACK_API_URL", "\"https://routing.openstreetmap.de/routed-car\"")
+        buildConfigField(
+            "String",
+            "TRAFFIC_API_URL",
+            "\"https://api.tomtom.com\""
+        )
+        buildConfigField(
+            "String",
+            "GEOCODING_API_URL",
+            "\"https://photon.komoot.io/api\""
+        )
+        buildConfigField(
+            "String",
+            "GEOCODING_FALLBACK_API_URL",
+            "\"https://nominatim.openstreetmap.org\""
+        )
+        buildConfigField(
+            "String",
+            "ROUTING_API_URL",
+            "\"https://router.project-osrm.org\""
+        )
+        buildConfigField(
+            "String",
+            "ROUTING_FALLBACK_API_URL",
+            "\"https://routing.openstreetmap.de/routed-car\""
+        )
     }
 
     signingConfigs {
@@ -63,8 +91,13 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (!System.getenv("NV_KEYSTORE_FILE").isNullOrBlank()) signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            if (!System.getenv("NV_KEYSTORE_FILE").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -72,13 +105,19 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
     buildFeatures {
         compose = true
         buildConfig = true
     }
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.15"
+    }
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
 }
 
 dependencies {
@@ -96,9 +135,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("org.maplibre.gl:android-sdk-opengl:13.4.1")
     implementation("org.mapsforge:mapsforge-map-android:0.25.0")
     implementation("org.mapsforge:mapsforge-themes:0.25.0")
+    implementation("org.maplibre.gl:android-sdk:13.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.android.billingclient:billing-ktx:7.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

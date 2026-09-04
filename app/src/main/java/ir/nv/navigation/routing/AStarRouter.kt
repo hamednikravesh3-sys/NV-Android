@@ -16,7 +16,31 @@ class AStarRouter(private val graph: RoutingGraph) {
     }
     private data class Previous(val state: State, val edge: RoadEdge)
 
-    fun route(origin: Coordinate, destination: Coordinate): Route? {
+    fun route(origin: Coordinate, destination: Coordinate): Route? =
+        routeAvoiding(origin, destination, emptySet())
+
+    /** Returns the fastest path plus practical detours created by avoiding key edges. */
+    fun routes(origin: Coordinate, destination: Coordinate, limit: Int = 3): List<Route> {
+        val primary = route(origin, destination) ?: return emptyList()
+        if (limit <= 1 || primary.edgeIds.size < 2) return listOf(primary)
+        val attempts = (limit * 2).coerceAtMost(MAX_ALTERNATIVE_ATTEMPTS)
+        val avoidIndices = (1..attempts).map {
+            (primary.edgeIds.lastIndex * it / (attempts + 1)).coerceIn(0, primary.edgeIds.lastIndex)
+        }.distinct()
+        val candidates = avoidIndices.mapNotNull { index ->
+            routeAvoiding(origin, destination, setOf(primary.edgeIds[index]))
+        }.filter { it.travelSeconds <= primary.travelSeconds * MAX_ALTERNATIVE_TIME_FACTOR }
+        return (listOf(primary) + candidates)
+            .distinctBy(Route::edgeIds)
+            .sortedBy(Route::travelSeconds)
+            .take(limit)
+    }
+
+    private fun routeAvoiding(
+        origin: Coordinate,
+        destination: Coordinate,
+        bannedEdgeIds: Set<Long>
+    ): Route? {
         val startNode = graph.nearestNode(origin) ?: return null
         val goalNode = graph.nearestNode(destination) ?: return null
         val start = State(startNode, null)
@@ -35,6 +59,7 @@ class AStarRouter(private val graph: RoutingGraph) {
             }
 
             for (edge in graph.outgoing(current.nodeId)) {
+                if (edge.id in bannedEdgeIds) continue
                 if (!graph.isTurnAllowed(current.nodeId, current.incomingEdgeId, edge.id)) continue
                 val next = State(edge.toNode, edge.id)
                 val nextCost = currentCost + edge.travelSeconds
@@ -92,5 +117,7 @@ class AStarRouter(private val graph: RoutingGraph) {
     private companion object {
         const val EARTH_RADIUS_METERS = 6_371_000.0
         const val MAX_EXPECTED_SPEED_METERS_PER_SECOND = 55.56
+        const val MAX_ALTERNATIVE_ATTEMPTS = 6
+        const val MAX_ALTERNATIVE_TIME_FACTOR = 1.8
     }
 }

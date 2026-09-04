@@ -4,10 +4,11 @@ NV is a Persian-first navigation application for Android 10 and newer. This
 repository replaces the earlier incomplete IranNavApp upload with a standard,
 testable Android project.
 
-## Current architecture (0.11)
+## Current architecture (0.12)
 
 - Android minSdk 29 (Android 10), Kotlin and Jetpack Compose
-- online-first native map, instant bundled Iran-city search, Photon plus
+- online-first MapLibre vector map with real pitch, two-finger rotation and 3D
+  OpenMapTiles buildings, instant bundled Iran-city search, Photon plus
   Nominatim street/place fallback, and dual-provider routing
 - live network monitoring with automatic offline fallback
 - user-initiated Iran-only map download from a dedicated in-app panel
@@ -15,11 +16,13 @@ testable Android project.
 - stable public place codes, user-defined numeric personal codes with a dedicated
   persistent menu, recent destinations and
   search by Persian name, Persian/Latin digits, numeric code or `NV:code`
-- origin and destination dropdowns
+- mandatory fresh GPS origin and a destination name/code dropdown
 - an on-device A* routing engine
 - directed edges for one-way roads
 - turn-restriction enforcement using incoming-edge routing state
-- up to three online route alternatives with visual selection, route distance,
+- every route returned by online routing (requested primary plus three
+  alternatives) and up to three locally-computed offline alternatives, all
+  visible on the map and in a horizontally scrollable selector with distance,
   travel time and ETA
 - reference-matched D/F/H/I interface: bright map-first home, automatic navy
   route-selection and driving surfaces, cyan glow route, glass-like cards,
@@ -32,7 +35,9 @@ testable Android project.
 - GPS speed display and OSRM lane guidance in the active-driving HUD
 - explicit Auto/Day/Night appearance selector that also changes the live map
 - automatic driving camera zoom based on speed and next-turn distance, manual
-  zoom controls, gesture pause and one-tap vehicle recentering
+  zoom controls, heading-up camera, gesture pause and one-tap vehicle recentering
+- sequential offline place codes plus stable reserved online OSM codes that can
+  be searched again; selected/recent/personal location codes are drawn on the map
 - route insights refreshed every 2.5 km so weather and places remain genuinely
   ahead of the driver instead of ahead of the original starting point
 - optional Wikimedia/OpenStreetMap attraction imagery and spoken severe-weather

@@ -88,6 +88,9 @@ fun NvApp(
             )
         }
     }
+    LaunchedEffect(Unit) {
+        requestLocation(LocationAction.ORIGIN)
+    }
     val sharePlace: (Place) -> Unit = { place ->
         (place.personalCode?.let { "کد شخصی NV: $it" } ?: PlaceCodes.shareCode(place.code))?.let { code ->
             val message = "${place.name}\n$code"
@@ -237,6 +240,7 @@ fun NvApp(
                     navigationActive = state.navigationActive,
                     navigationZoomLevel = state.navigationZoomLevel,
                     navigationRecenterToken = state.navigationRecenterToken,
+                    bearingDegrees = state.bearingDegrees,
                     onManualGesture = viewModel::pauseNavigationFollow,
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
@@ -248,18 +252,30 @@ fun NvApp(
                     selectedRouteIndex = state.selectedRouteIndex,
                     traffic = state.traffic,
                     trafficSegments = state.trafficSegments,
+                    codedPlaces = (state.personalPlaces + state.recentPlaces + listOfNotNull(state.origin, state.destination))
+                        .distinctBy { it.personalCode ?: it.code.toString() },
                     currentLocation = state.currentLocation,
                     followLocation = (state.navigationActive && state.followNavigation) ||
                         (state.route == null && state.currentLocation != null),
                     navigationActive = state.navigationActive,
                     navigationZoomLevel = state.navigationZoomLevel,
                     navigationRecenterToken = state.navigationRecenterToken,
+                    bearingDegrees = state.bearingDegrees,
                     onManualGesture = viewModel::pauseNavigationFollow,
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
 
                 else -> NoMapConnection(modifier = Modifier.fillMaxSize())
+            }
+
+            if (!state.navigationActive) {
+                state.destination?.let { destination ->
+                    MapCodeBadge(
+                        place = destination,
+                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
+                    )
+                }
             }
 
             Column(
@@ -332,7 +348,9 @@ fun NvApp(
             if (state.navigationActive) {
                 if (state.followNavigation) {
                     NavigationVehicleMarker(
-                        bearingDegrees = state.bearingDegrees,
+                        // The navigation camera itself is heading-up, so the car remains
+                        // upright while the vector map rotates underneath it.
+                        bearingDegrees = 0f,
                         modifier = Modifier.align(Alignment.Center)
                     )
                 }

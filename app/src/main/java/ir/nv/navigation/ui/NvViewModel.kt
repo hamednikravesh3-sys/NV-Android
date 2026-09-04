@@ -268,29 +268,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun swapEndpoints() {
-        navigationJob?.cancel()
-        insightsRefreshJob?.cancel()
-        mutableState.update {
-            it.copy(
-                origin = it.destination,
-                destination = it.origin,
-                originQuery = it.destination?.name.orEmpty(),
-                destinationQuery = it.origin?.name.orEmpty(),
-                originSuggestions = emptyList(),
-                destinationSuggestions = emptyList(),
-                route = null,
-                routeAlternatives = emptyList(),
-                selectedRouteIndex = 0,
-                navigationActive = false,
-                maneuverIndex = 0,
-                offRoute = false,
-                routeSource = RouteSource.NONE,
-                routeNotices = emptyList(),
-                routeInsightsLoading = false,
-                traffic = null,
-                trafficSegments = emptyList()
-            )
-        }
+        mutableState.update { it.copy(message = "مبدأ NV همیشه موقعیت فعلی GPS شماست") }
     }
 
     fun clearRoute() {
@@ -439,15 +417,41 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun calculateRoute() {
-        val snapshot = mutableState.value
-        val origin = snapshot.origin
-        val destination = snapshot.destination
-        if (origin == null || destination == null) {
-            mutableState.update { it.copy(message = "ابتدا مبدأ و مقصد را انتخاب کنید") }
+        val destination = mutableState.value.destination
+        if (destination == null) {
+            mutableState.update { it.copy(message = "ابتدا مقصد را انتخاب کنید") }
+            return
+        }
+        if (!locationProvider.hasPermission()) {
+            mutableState.update { it.copy(message = "برای تعیین مبدأ، دسترسی موقعیت مکانی را فعال کنید") }
             return
         }
         viewModelScope.launch {
-            mutableState.update { it.copy(routing = true, message = null) }
+            mutableState.update { it.copy(routing = true, locating = true, message = "در حال دریافت مبدأ از GPS…") }
+            val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
+            if (coordinate == null) {
+                mutableState.update {
+                    it.copy(routing = false, locating = false, message = "مبدأ از GPS دریافت نشد؛ GPS را روشن کنید")
+                }
+                return@launch
+            }
+            val origin = Place(
+                code = CURRENT_LOCATION_CODE,
+                name = "موقعیت فعلی من",
+                coordinate = coordinate,
+                category = "device:location"
+            )
+            mutableState.update {
+                it.copy(
+                    locating = false,
+                    currentLocation = coordinate,
+                    origin = origin,
+                    originQuery = origin.name,
+                    originSuggestions = emptyList(),
+                    message = null
+                )
+            }
+            val snapshot = mutableState.value
             val preferredSource = NavigationModeResolver.preferredSource(
                 onlineAvailable = snapshot.onlineAvailable,
                 offlineReady = snapshot.offlineReady,
@@ -457,16 +461,16 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             var onlineError: String? = null
             val rawResults: List<Route> = if (preferredSource == RouteSource.OFFLINE) {
                 val activeRouter = router
-                if (activeRouter == null) emptyList() else listOfNotNull(withContext(Dispatchers.Default) {
-                    activeRouter.route(origin.coordinate, destination.coordinate)
-                }).also { if (it.isNotEmpty()) source = RouteSource.OFFLINE }
+                if (activeRouter == null) emptyList() else withContext(Dispatchers.Default) {
+                    activeRouter.routes(origin.coordinate, destination.coordinate)
+                }.also { if (it.isNotEmpty()) source = RouteSource.OFFLINE }
             } else if (preferredSource == RouteSource.ONLINE) {
                 runCatching { online.routes(origin.coordinate, destination.coordinate) }
                     .onFailure { onlineError = it.message }
                     .getOrNull()?.takeIf { it.isNotEmpty() }
                     ?.also { source = RouteSource.ONLINE }
                     ?: router?.let { r ->
-                        listOfNotNull(withContext(Dispatchers.Default) { r.route(origin.coordinate, destination.coordinate) })
+                        withContext(Dispatchers.Default) { r.routes(origin.coordinate, destination.coordinate) }
                             .also { if (it.isNotEmpty()) source = RouteSource.OFFLINE }
                     }.orEmpty()
             } else emptyList()
@@ -534,7 +538,9 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            val needsOnline = query.trim().length >= 2 && PlaceCodes.publicCode(query) == null &&
+            val publicCode = PlaceCodes.publicCode(query)
+            val needsOnline = query.trim().length >= 2 &&
+                (publicCode == null || PlaceCodes.onlineIdentity(publicCode) != null) &&
                 networkMonitor.isOnline() && !mutableState.value.preferOffline
             if (!needsOnline) return@launch
             delay(220)

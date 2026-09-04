@@ -44,6 +44,19 @@ class AStarRouterTest {
         )
         assertNull(reverseRoute)
     }
+
+    @Test
+    fun returnsSelectableAlternativePaths() {
+        val graph = MemoryGraph(coordinates, edges, emptySet())
+        val routes = AStarRouter(graph).routes(
+            coordinates.getValue(1),
+            coordinates.getValue(4),
+            limit = 3
+        )
+        assertEquals(2, routes.size)
+        assertEquals(listOf(12L, 24L), routes[0].edgeIds)
+        assertEquals(listOf(12L, 23L, 34L), routes[1].edgeIds)
+    }
 }
 
 private class MemoryGraph(

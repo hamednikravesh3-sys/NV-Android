@@ -2,36 +2,37 @@ package ir.nv.navigation.map
 
 import android.content.Context
 import android.graphics.Color
+import android.view.MotionEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Coordinate
+import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.TrafficSegment
 import ir.nv.navigation.core.TrafficSummary
-import org.json.JSONArray
-import org.json.JSONObject
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.FillExtrusionLayer
 import org.maplibre.android.style.layers.LineLayer
-import org.maplibre.android.style.layers.PropertyFactory.circleColor
-import org.maplibre.android.style.layers.PropertyFactory.circleRadius
-import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
-import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
-import org.maplibre.android.style.layers.PropertyFactory.lineColor
-import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
-import org.maplibre.android.style.layers.PropertyFactory.lineWidth
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
 
+/** Online vector map with genuine camera pitch, two-finger rotation and 3D buildings. */
 @Composable
 fun OnlineIranMap(
     context: Context,
@@ -39,49 +40,78 @@ fun OnlineIranMap(
     selectedRouteIndex: Int,
     traffic: TrafficSummary?,
     trafficSegments: List<TrafficSegment>,
+    codedPlaces: List<Place>,
     currentLocation: Coordinate?,
     followLocation: Boolean,
     navigationActive: Boolean,
     navigationZoomLevel: Int,
     navigationRecenterToken: Int,
+    bearingDegrees: Float,
     onManualGesture: () -> Unit,
     darkMode: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val holder = remember { MapLibreIranHolder(context.applicationContext, onManualGesture) }
-    DisposableEffect(holder) { onDispose { holder.destroy() } }
+    val holder = remember { VectorMapHolder(context.applicationContext) }
+
+    DisposableEffect(holder) {
+        onDispose(holder::destroy)
+    }
 
     AndroidView(
         factory = { holder.mapView },
         modifier = modifier,
-        update = {
+        update = { view ->
+            view.setOnTouchListener { _, event ->
+                if (navigationActive && (
+                        event.actionMasked == MotionEvent.ACTION_MOVE ||
+                            event.actionMasked == MotionEvent.ACTION_POINTER_DOWN
+                        )
+                ) {
+                    onManualGesture()
+                }
+                false
+            }
             holder.update(
                 routes = routes,
                 selectedRouteIndex = selectedRouteIndex,
                 trafficSegments = trafficSegments,
+                codedPlaces = codedPlaces,
                 currentLocation = currentLocation,
                 followLocation = followLocation,
                 navigationActive = navigationActive,
                 navigationZoomLevel = navigationZoomLevel,
                 navigationRecenterToken = navigationRecenterToken,
+                bearingDegrees = bearingDegrees,
                 darkMode = darkMode
             )
         }
     )
 }
 
-private class MapLibreIranHolder(
-    context: Context,
-    private val onManualGesture: () -> Unit
-) {
+private class VectorMapHolder(context: Context) {
     val mapView: MapView
     private var map: MapLibreMap? = null
     private var style: Style? = null
-    private var currentDarkMode: Boolean? = null
-    private var pending: RenderState = RenderState()
-    private var lastOverviewKey = ""
+    private val routeSources = mutableListOf<GeoJsonSource>()
+    private val routeLayers = mutableListOf<LineLayer>()
+    private val routeGlowLayers = mutableListOf<LineLayer>()
+    private val trafficSources = mutableListOf<GeoJsonSource>()
+    private val trafficLayers = mutableListOf<LineLayer>()
+    private var locationSource: GeoJsonSource? = null
+    private var placeSource: GeoJsonSource? = null
+    private var darkMode = false
+    private var appliedDarkMode: Boolean? = null
     private var lastRecenterToken = -1
-    private var lastNavigationActive = false
+    private var renderedRoutes: List<Route> = emptyList()
+    private var renderedSelectedRoute = -1
+    private var renderedTraffic: List<TrafficSegment> = emptyList()
+    private var renderedPlaces: List<Place> = emptyList()
+    private var currentLocation: Coordinate? = null
+    private var followLocation = false
+    private var navigationActive = false
+    private var navigationZoomLevel = 18
+    private var navigationRecenterToken = 0
+    private var bearingDegrees = 0f
 
     init {
         MapLibre.getInstance(context)
@@ -91,15 +121,16 @@ private class MapLibreIranHolder(
         mapView.onResume()
         mapView.getMapAsync { readyMap ->
             map = readyMap
-            readyMap.uiSettings.isRotateGesturesEnabled = true
-            readyMap.uiSettings.isTiltGesturesEnabled = true
-            readyMap.uiSettings.isZoomGesturesEnabled = true
-            readyMap.uiSettings.isScrollGesturesEnabled = true
-            readyMap.uiSettings.isCompassEnabled = true
-            readyMap.addOnCameraMoveStartedListener { reason ->
-                if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) onManualGesture()
+            readyMap.uiSettings.apply {
+                isRotateGesturesEnabled = true
+                isTiltGesturesEnabled = true
+                isZoomGesturesEnabled = true
+                isScrollGesturesEnabled = true
+                isCompassEnabled = true
+                isAttributionEnabled = true
+                isLogoEnabled = false
             }
-            loadStyle(pending.darkMode)
+            loadStyle()
         }
     }
 
@@ -107,214 +138,284 @@ private class MapLibreIranHolder(
         routes: List<Route>,
         selectedRouteIndex: Int,
         trafficSegments: List<TrafficSegment>,
+        codedPlaces: List<Place>,
         currentLocation: Coordinate?,
         followLocation: Boolean,
         navigationActive: Boolean,
         navigationZoomLevel: Int,
         navigationRecenterToken: Int,
+        bearingDegrees: Float,
         darkMode: Boolean
     ) {
-        pending = RenderState(
-            routes,
-            selectedRouteIndex,
-            trafficSegments,
-            currentLocation,
-            followLocation,
-            navigationActive,
-            navigationZoomLevel,
-            navigationRecenterToken,
-            darkMode
-        )
-        if (currentDarkMode != darkMode) loadStyle(darkMode) else render()
+        val routesChanged = routes != renderedRoutes || selectedRouteIndex != renderedSelectedRoute
+        renderedRoutes = routes
+        renderedSelectedRoute = selectedRouteIndex
+        renderedTraffic = trafficSegments
+        renderedPlaces = codedPlaces.distinctBy { it.code }.take(MAX_CODE_LABELS)
+        this.currentLocation = currentLocation
+        this.followLocation = followLocation
+        this.navigationActive = navigationActive
+        this.navigationZoomLevel = navigationZoomLevel
+        this.navigationRecenterToken = navigationRecenterToken
+        this.bearingDegrees = bearingDegrees
+        this.darkMode = darkMode
+        if (appliedDarkMode != darkMode) {
+            loadStyle()
+            return
+        }
+        renderRoutes()
+        renderTraffic()
+        renderPlaces()
+        renderLocation()
+        updateCamera(frameRoute = routesChanged)
     }
 
-    private fun loadStyle(darkMode: Boolean) {
+    private fun loadStyle() {
         val readyMap = map ?: return
-        currentDarkMode = darkMode
+        appliedDarkMode = darkMode
         style = null
-        val styleUrl = if (darkMode) DARK_STYLE else DAY_STYLE
-        readyMap.setStyle(Style.Builder().fromUri(styleUrl)) { loaded ->
-            style = loaded
-            lastOverviewKey = ""
-            render()
+        readyMap.setStyle(if (darkMode) DARK_STYLE_URL else DAY_STYLE_URL) { loadedStyle ->
+            style = loadedStyle
+            setupThreeDimensionalBuildings(loadedStyle)
+            setupDynamicLayers(loadedStyle)
+            renderRoutes()
+            renderTraffic()
+            renderPlaces()
+            renderLocation()
+            updateCamera(frameRoute = renderedRoutes.isNotEmpty())
         }
     }
 
-    private fun render() {
-        val readyMap = map ?: return
-        val loadedStyle = style ?: return
-        renderRoutes(loadedStyle, pending.routes, pending.selectedRouteIndex)
-        renderTraffic(loadedStyle, pending.trafficSegments)
-        renderLocation(loadedStyle, pending.currentLocation)
-
-        if (pending.navigationActive) {
-            val location = pending.currentLocation
-            if (location != null && (pending.followLocation || pending.navigationRecenterToken != lastRecenterToken || !lastNavigationActive)) {
-                val existingBearing = readyMap.cameraPosition.bearing
-                val camera = CameraPosition.Builder()
-                    .target(LatLng(location.latitude, location.longitude))
-                    .zoom(pending.navigationZoomLevel.coerceIn(16, 19).toDouble())
-                    .bearing(existingBearing)
-                    .tilt(58.0)
-                    .padding(0.0, 190.0, 0.0, 260.0)
-                    .build()
-                readyMap.animateCamera(CameraUpdateFactory.newCameraPosition(camera), 500)
-                lastRecenterToken = pending.navigationRecenterToken
-            }
-        } else if (pending.routes.isNotEmpty()) {
-            fitAllRoutes(readyMap, pending.routes)
-        } else if (pending.currentLocation != null && pending.followLocation) {
-            val location = pending.currentLocation!!
-            readyMap.animateCamera(
-                CameraUpdateFactory.newCameraPosition(
-                    CameraPosition.Builder()
-                        .target(LatLng(location.latitude, location.longitude))
-                        .zoom(16.0)
-                        .tilt(0.0)
-                        .build()
-                ),
-                350
-            )
-        }
-        lastNavigationActive = pending.navigationActive
-    }
-
-    private fun renderRoutes(style: Style, routes: List<Route>, selectedIndex: Int) {
-        removeLayers(style, ROUTE_LAYER_PREFIX, ROUTE_SOURCE_PREFIX, 20)
-        routes.forEachIndexed { index, route ->
-            if (route.points.size < 2) return@forEachIndexed
-            val sourceId = "$ROUTE_SOURCE_PREFIX$index"
-            val geometry = lineGeoJson(route.points)
-            style.addSource(GeoJsonSource(sourceId, geometry))
-
-            if (index == selectedIndex) {
-                val casingId = "$ROUTE_LAYER_PREFIX${index}_casing"
-                style.addLayer(
-                    LineLayer(casingId, sourceId).withProperties(
-                        lineColor(Color.rgb(4, 23, 39)),
-                        lineWidth(17f),
-                        lineOpacity(0.88f)
-                    )
-                )
-            }
-
-            val color = when {
-                index == selectedIndex -> Color.rgb(24, 212, 255)
-                index % 3 == 0 -> Color.rgb(215, 255, 91)
-                index % 3 == 1 -> Color.rgb(255, 181, 46)
-                else -> Color.rgb(170, 181, 194)
-            }
-            style.addLayer(
-                LineLayer("$ROUTE_LAYER_PREFIX$index", sourceId).withProperties(
-                    lineColor(color),
-                    lineWidth(if (index == selectedIndex) 9f else 6f),
-                    lineOpacity(if (index == selectedIndex) 1f else 0.82f)
+    private fun setupThreeDimensionalBuildings(loadedStyle: Style) {
+        if (loadedStyle.getLayer(BUILDING_LAYER_ID) != null || loadedStyle.getSource(OPEN_MAP_TILES_SOURCE) == null) return
+        val buildings = FillExtrusionLayer(BUILDING_LAYER_ID, OPEN_MAP_TILES_SOURCE).apply {
+            sourceLayer = "building"
+            minZoom = 15f
+            setFilter(
+                Expression.all(
+                    Expression.has("render_height"),
+                    Expression.has("render_min_height")
                 )
             )
+            setProperties(
+                PropertyFactory.fillExtrusionColor(if (darkMode) Color.rgb(40, 61, 79) else Color.LTGRAY),
+                PropertyFactory.fillExtrusionHeight(Expression.get("render_height")),
+                PropertyFactory.fillExtrusionBase(Expression.get("render_min_height")),
+                PropertyFactory.fillExtrusionOpacity(0.88f)
+            )
+        }
+        loadedStyle.addLayer(buildings)
+    }
+
+    private fun setupDynamicLayers(loadedStyle: Style) {
+        routeSources.clear()
+        routeLayers.clear()
+        routeGlowLayers.clear()
+        repeat(MAX_ROUTE_LAYERS) { index ->
+            val source = GeoJsonSource("nv-route-source-$index", emptyFeatures())
+            val glow = LineLayer("nv-route-glow-$index", source.id).withProperties(
+                PropertyFactory.lineColor(Color.argb(100, 24, 212, 255)),
+                PropertyFactory.lineWidth(18f),
+                PropertyFactory.lineOpacity(0f)
+            )
+            val layer = LineLayer("nv-route-line-$index", source.id).withProperties(
+                PropertyFactory.lineColor(Color.rgb(140, 151, 166)),
+                PropertyFactory.lineWidth(6f),
+                PropertyFactory.lineOpacity(0f)
+            )
+            loadedStyle.addSource(source)
+            loadedStyle.addLayer(glow)
+            loadedStyle.addLayer(layer)
+            routeSources += source
+            routeGlowLayers += glow
+            routeLayers += layer
+        }
+        trafficSources.clear()
+        trafficLayers.clear()
+        repeat(MAX_TRAFFIC_LAYERS) { index ->
+            val source = GeoJsonSource("nv-traffic-source-$index", emptyFeatures())
+            val layer = LineLayer("nv-traffic-line-$index", source.id).withProperties(
+                PropertyFactory.lineColor(Color.rgb(100, 214, 109)),
+                PropertyFactory.lineWidth(8f),
+                PropertyFactory.lineOpacity(0f)
+            )
+            loadedStyle.addSource(source)
+            loadedStyle.addLayer(layer)
+            trafficSources += source
+            trafficLayers += layer
+        }
+
+        locationSource = GeoJsonSource(LOCATION_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)
+        loadedStyle.addLayer(
+            CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+                PropertyFactory.circleColor(Color.rgb(24, 212, 255)),
+                PropertyFactory.circleRadius(9f),
+                PropertyFactory.circleStrokeColor(Color.WHITE),
+                PropertyFactory.circleStrokeWidth(3f)
+            )
+        )
+
+        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)
+        loadedStyle.addLayer(
+            CircleLayer(PLACE_CIRCLE_LAYER_ID, PLACE_SOURCE_ID).withProperties(
+                PropertyFactory.circleColor(Color.rgb(6, 30, 52)),
+                PropertyFactory.circleRadius(7f),
+                PropertyFactory.circleStrokeColor(Color.rgb(24, 212, 255)),
+                PropertyFactory.circleStrokeWidth(2f)
+            )
+        )
+        loadedStyle.addLayer(
+            SymbolLayer(PLACE_LABEL_LAYER_ID, PLACE_SOURCE_ID).withProperties(
+                PropertyFactory.textField(Expression.get("label")),
+                PropertyFactory.textSize(13f),
+                PropertyFactory.textColor(Color.WHITE),
+                PropertyFactory.textHaloColor(Color.rgb(6, 22, 39)),
+                PropertyFactory.textHaloWidth(2f),
+                PropertyFactory.textOffset(arrayOf(0f, 1.35f)),
+                PropertyFactory.textAllowOverlap(true)
+            )
+        )
+    }
+
+    private fun renderRoutes() {
+        if (style == null) return
+        routeSources.forEachIndexed { index, source ->
+            val route = renderedRoutes.getOrNull(index)
+            source.setGeoJson(route?.toFeatureCollection() ?: emptyFeatures())
+            val selected = index == renderedSelectedRoute && route != null
+            val routeColor = when {
+                selected -> Color.rgb(24, 212, 255)
+                index % 2 == 0 -> Color.rgb(215, 255, 91)
+                else -> Color.rgb(150, 160, 174)
+            }
+            routeLayers[index].setProperties(
+                PropertyFactory.lineColor(routeColor),
+                PropertyFactory.lineWidth(if (selected) 10f else 6f),
+                PropertyFactory.lineOpacity(if (route == null) 0f else 0.96f)
+            )
+            routeGlowLayers[index].setProperties(
+                PropertyFactory.lineColor(Color.argb(100, 24, 212, 255)),
+                PropertyFactory.lineOpacity(if (selected) 0.8f else 0f)
+            )
         }
     }
 
-    private fun renderTraffic(style: Style, segments: List<TrafficSegment>) {
-        removeLayers(style, TRAFFIC_LAYER_PREFIX, TRAFFIC_SOURCE_PREFIX, 100)
-        segments.forEachIndexed { index, segment ->
-            val sourceId = "$TRAFFIC_SOURCE_PREFIX$index"
-            style.addSource(GeoJsonSource(sourceId, lineGeoJson(listOf(segment.start, segment.end))))
+    private fun renderTraffic() {
+        if (style == null) return
+        trafficSources.forEachIndexed { index, source ->
+            val segment = renderedTraffic.getOrNull(index)
+            source.setGeoJson(segment?.toFeatureCollection() ?: emptyFeatures())
             val color = when {
+                segment == null -> Color.TRANSPARENT
                 segment.delaySeconds >= 600.0 -> Color.rgb(230, 64, 69)
                 segment.delaySeconds >= 120.0 -> Color.rgb(255, 181, 46)
                 else -> Color.rgb(100, 214, 109)
             }
-            style.addLayer(
-                LineLayer("$TRAFFIC_LAYER_PREFIX$index", sourceId).withProperties(
-                    lineColor(color), lineWidth(7f), lineOpacity(0.95f)
-                )
+            trafficLayers[index].setProperties(
+                PropertyFactory.lineColor(color),
+                PropertyFactory.lineOpacity(if (segment == null) 0f else 1f)
             )
         }
     }
 
-    private fun renderLocation(style: Style, location: Coordinate?) {
-        style.removeLayer(LOCATION_LAYER)
-        style.removeSource(LOCATION_SOURCE)
-        if (location == null) return
-        val point = JSONObject()
-            .put("type", "Feature")
-            .put("geometry", JSONObject()
-                .put("type", "Point")
-                .put("coordinates", JSONArray().put(location.longitude).put(location.latitude)))
-            .put("properties", JSONObject())
-            .toString()
-        style.addSource(GeoJsonSource(LOCATION_SOURCE, point))
-        style.addLayer(
-            CircleLayer(LOCATION_LAYER, LOCATION_SOURCE).withProperties(
-                circleRadius(8f),
-                circleColor(Color.rgb(24, 212, 255)),
-                circleStrokeColor(Color.WHITE),
-                circleStrokeWidth(3f)
-            )
+    private fun renderPlaces() {
+        val features = renderedPlaces.map { place ->
+            Feature.fromGeometry(
+                Point.fromLngLat(place.coordinate.longitude, place.coordinate.latitude)
+            ).also { feature ->
+                val code = place.personalCode ?: place.code.takeIf { it > 0 }?.toString() ?: "GPS"
+                feature.addStringProperty("label", "${place.name}  •  NV:$code")
+            }
+        }
+        placeSource?.setGeoJson(FeatureCollection.fromFeatures(features))
+    }
+
+    private fun renderLocation() {
+        val point = currentLocation?.let {
+            Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))
+        }
+        locationSource?.setGeoJson(
+            if (point == null) emptyFeatures() else FeatureCollection.fromFeature(point)
         )
     }
 
-    private fun fitAllRoutes(map: MapLibreMap, routes: List<Route>) {
-        val key = routes.joinToString("|") { "${it.points.size}:${it.distanceMeters.toLong()}:${it.travelSeconds.toLong()}" }
-        if (key == lastOverviewKey) return
-        val builder = LatLngBounds.Builder()
-        var count = 0
-        routes.forEach { route ->
-            route.points.forEach { point ->
-                builder.include(LatLng(point.latitude, point.longitude))
-                count++
+    private fun updateCamera(frameRoute: Boolean) {
+        val readyMap = map ?: return
+        if (frameRoute && !navigationActive) {
+            renderedRoutes.getOrNull(renderedSelectedRoute)?.takeIf { it.points.isNotEmpty() }?.let { route ->
+                val center = route.points[route.points.lastIndex / 2]
+                val position = CameraPosition.Builder()
+                    .target(LatLng(center.latitude, center.longitude))
+                    .zoom(routeZoom(route.distanceMeters))
+                    .tilt(BROWSE_TILT)
+                    .bearing(readyMap.cameraPosition.bearing)
+                    .build()
+                readyMap.easeCamera(CameraUpdateFactory.newCameraPosition(position), CAMERA_ANIMATION_MS)
+                return
             }
         }
-        if (count < 2) return
-        val bounds = builder.build()
-        map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 70, 150, 70, 300), 550)
-        lastOverviewKey = key
-    }
-
-    private fun removeLayers(style: Style, layerPrefix: String, sourcePrefix: String, max: Int) {
-        repeat(max) { index ->
-            style.removeLayer("$layerPrefix${index}_casing")
-            style.removeLayer("$layerPrefix$index")
-            style.removeSource("$sourcePrefix$index")
-        }
-    }
-
-    private fun lineGeoJson(points: List<Coordinate>): String {
-        val coordinates = JSONArray()
-        points.forEach { point -> coordinates.put(JSONArray().put(point.longitude).put(point.latitude)) }
-        return JSONObject()
-            .put("type", "Feature")
-            .put("geometry", JSONObject().put("type", "LineString").put("coordinates", coordinates))
-            .put("properties", JSONObject())
-            .toString()
+        val location = currentLocation ?: return
+        val mustRecenter = navigationRecenterToken != lastRecenterToken
+        if (!followLocation && !mustRecenter) return
+        lastRecenterToken = navigationRecenterToken
+        val position = CameraPosition.Builder()
+            .target(LatLng(location.latitude, location.longitude))
+            .zoom(if (navigationActive) navigationZoomLevel.toDouble() else HOME_ZOOM)
+            .tilt(if (navigationActive) NAVIGATION_TILT else BROWSE_TILT)
+            .bearing(if (navigationActive && bearingDegrees.isFinite()) bearingDegrees.toDouble() else readyMap.cameraPosition.bearing)
+            .build()
+        readyMap.easeCamera(CameraUpdateFactory.newCameraPosition(position), CAMERA_ANIMATION_MS)
     }
 
     fun destroy() {
-        runCatching { mapView.onPause() }
-        runCatching { mapView.onStop() }
-        runCatching { mapView.onDestroy() }
+        mapView.onPause()
+        mapView.onStop()
+        mapView.onDestroy()
     }
 
-    private data class RenderState(
-        val routes: List<Route> = emptyList(),
-        val selectedRouteIndex: Int = 0,
-        val trafficSegments: List<TrafficSegment> = emptyList(),
-        val currentLocation: Coordinate? = null,
-        val followLocation: Boolean = false,
-        val navigationActive: Boolean = false,
-        val navigationZoomLevel: Int = 18,
-        val navigationRecenterToken: Int = 0,
-        val darkMode: Boolean = false
+    private fun Route.toFeatureCollection(): FeatureCollection = FeatureCollection.fromFeature(
+        Feature.fromGeometry(
+            LineString.fromLngLats(points.map { Point.fromLngLat(it.longitude, it.latitude) })
+        )
     )
 
+    private fun TrafficSegment.toFeatureCollection(): FeatureCollection = FeatureCollection.fromFeature(
+        Feature.fromGeometry(
+            LineString.fromLngLats(
+                listOf(
+                    Point.fromLngLat(start.longitude, start.latitude),
+                    Point.fromLngLat(end.longitude, end.latitude)
+                )
+            )
+        )
+    )
+
+    private fun routeZoom(distanceMeters: Double): Double = when {
+        distanceMeters < 4_000 -> 14.5
+        distanceMeters < 15_000 -> 12.5
+        distanceMeters < 60_000 -> 10.5
+        distanceMeters < 250_000 -> 8.5
+        else -> 6.5
+    }
+
+    private fun emptyFeatures(): FeatureCollection = FeatureCollection.fromFeatures(emptyList())
+
     private companion object {
-        const val DAY_STYLE = "https://tiles.openfreemap.org/styles/liberty"
-        const val DARK_STYLE = "https://tiles.openfreemap.org/styles/dark"
-        const val ROUTE_LAYER_PREFIX = "nv-route-layer-"
-        const val ROUTE_SOURCE_PREFIX = "nv-route-source-"
-        const val TRAFFIC_LAYER_PREFIX = "nv-traffic-layer-"
-        const val TRAFFIC_SOURCE_PREFIX = "nv-traffic-source-"
-        const val LOCATION_SOURCE = "nv-location-source"
-        const val LOCATION_LAYER = "nv-location-layer"
+        const val DAY_STYLE_URL = "https://tiles.openfreemap.org/styles/3d"
+        const val DARK_STYLE_URL = "https://tiles.openfreemap.org/styles/dark"
+        const val OPEN_MAP_TILES_SOURCE = "openmaptiles"
+        const val BUILDING_LAYER_ID = "nv-building-3d"
+        const val LOCATION_SOURCE_ID = "nv-location-source"
+        const val LOCATION_LAYER_ID = "nv-location-layer"
+        const val PLACE_SOURCE_ID = "nv-place-source"
+        const val PLACE_CIRCLE_LAYER_ID = "nv-place-circle-layer"
+        const val PLACE_LABEL_LAYER_ID = "nv-place-label-layer"
+        const val MAX_ROUTE_LAYERS = 8
+        const val MAX_TRAFFIC_LAYERS = 12
+        const val MAX_CODE_LABELS = 12
+        const val CAMERA_ANIMATION_MS = 650
+        const val HOME_ZOOM = 16.5
+        const val BROWSE_TILT = 42.0
+        const val NAVIGATION_TILT = 58.0
     }
 }

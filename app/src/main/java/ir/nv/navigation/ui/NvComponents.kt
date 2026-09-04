@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.GpsFixed
@@ -432,9 +434,7 @@ fun SelectedRouteHeader(
                     }
                 }
             }
-            IconButton(onClick = onSwap) {
-                Icon(Icons.Rounded.SwapVert, contentDescription = "جابه‌جایی مبدأ و مقصد", tint = NvCyan)
-            }
+            Icon(Icons.Rounded.MyLocation, contentDescription = "مبدأ ثابت از GPS", tint = NvCyan)
         }
     }
 }
@@ -463,44 +463,52 @@ fun SearchPanel(
         ),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 7.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(start = 8.dp, end = 14.dp, top = 14.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                PlaceSearchField(
-                    label = "مبدأ",
-                    placeholder = "از کجا حرکت می‌کنید؟",
-                    value = state.originQuery,
-                    color = OriginBlue,
-                    suggestions = state.originSuggestions,
-                    searching = state.originSearching,
-                    onValueChange = onOriginChange,
-                    onSelect = onOriginSelect,
-                    trailingIcon = {
-                        IconButton(onClick = onUseCurrentLocation, enabled = !state.locating) {
-                            if (state.locating) {
-                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Rounded.MyLocation, contentDescription = "استفاده از موقعیت فعلی", tint = NvCyan)
-                            }
-                        }
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !state.locating, onClick = onUseCurrentLocation),
+                shape = RoundedCornerShape(16.dp),
+                color = NvPanelHigh,
+                border = BorderStroke(1.dp, OriginBlue.copy(alpha = 0.7f))
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (state.locating) {
+                        CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = NvCyan)
+                    } else {
+                        Icon(Icons.Rounded.MyLocation, contentDescription = null, tint = OriginBlue)
                     }
-                )
-                PlaceSearchField(
-                    label = "مقصد",
-                    placeholder = "کجا می‌روید؟ نام یا کد مکان",
-                    value = state.destinationQuery,
-                    color = DestinationRed,
-                    suggestions = state.destinationSuggestions,
-                    searching = state.destinationSearching,
-                    onValueChange = onDestinationChange,
-                    onSelect = onDestinationSelect
-                )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("مبدأ ثابت", color = NvMuted, style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            if (state.currentLocation != null) "موقعیت فعلی من • GPS آماده" else "برای دریافت موقعیت لمس کنید",
+                            color = NvText,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Icon(Icons.Rounded.Lock, contentDescription = "مبدأ قابل تغییر نیست", tint = NvCyan)
+                }
             }
-            IconButton(onClick = onSwap) {
-                Icon(Icons.Rounded.SwapVert, contentDescription = "جابه‌جایی مبدأ و مقصد", tint = NvCyan)
-            }
+            PlaceSearchField(
+                label = "مقصد",
+                placeholder = "کجا می‌روید؟ نام یا کد مکان",
+                value = state.destinationQuery,
+                color = DestinationRed,
+                suggestions = state.destinationSuggestions,
+                searching = state.destinationSearching,
+                onValueChange = onDestinationChange,
+                onSelect = onDestinationSelect
+            )
+            Text(
+                "مبدأ در لحظه مسیریابی دوباره از GPS خوانده می‌شود.",
+                color = NvMuted,
+                style = MaterialTheme.typography.labelSmall
+            )
         }
 
         state.searchMessage?.let { warning ->
@@ -512,7 +520,7 @@ fun SearchPanel(
             )
         }
 
-        AnimatedVisibility(state.origin != null || state.destination != null) {
+        AnimatedVisibility(state.destination != null) {
             Column {
                 HorizontalDivider(color = NvOutline)
                 Row(
@@ -522,7 +530,7 @@ fun SearchPanel(
                 ) {
                     TextButton(
                         onClick = onSaveCode,
-                        enabled = state.origin != null || state.destination != null,
+                        enabled = state.destination != null,
                         colors = ButtonDefaults.textButtonColors(contentColor = NvCyan)
                     ) {
                         Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -532,7 +540,7 @@ fun SearchPanel(
                     Spacer(Modifier.weight(1f))
                     Button(
                         onClick = onRoute,
-                        enabled = state.origin != null && state.destination != null && !state.routing,
+                        enabled = state.destination != null && !state.routing,
                         shape = RoundedCornerShape(16.dp),
                         contentPadding = ButtonDefaults.ContentPadding,
                         colors = ButtonDefaults.buttonColors(containerColor = NvCyan, contentColor = NvInk)
@@ -1153,14 +1161,18 @@ fun RouteSummaryCard(
                 }
             }
             if (alternatives.size > 1) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    alternatives.take(3).forEachIndexed { index, candidate ->
+                Text("همه مسیرهای پیدا‌شده — برای انتخاب لمس کنید", color = NvMuted, style = MaterialTheme.typography.labelMedium)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    alternatives.forEachIndexed { index, candidate ->
                         RouteChoiceCard(
                             route = candidate,
                             index = index,
                             selected = index == selectedRouteIndex,
                             onClick = { onRouteSelect(index) },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.width(142.dp)
                         )
                     }
                 }
@@ -1219,6 +1231,23 @@ fun RouteSummaryCard(
                 Spacer(Modifier.width(8.dp))
                 Text("شروع حرکت", fontWeight = FontWeight.Black)
             }
+        }
+    }
+}
+
+@Composable
+fun MapCodeBadge(place: Place, modifier: Modifier = Modifier) {
+    val code = place.personalCode ?: place.code.takeIf { it > 0 }?.toString() ?: return
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = NvNavy,
+        border = BorderStroke(1.dp, NvCyan),
+        shadowElevation = 8.dp
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+            Text(place.name, color = NvText, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            Text("کد این مکان: NV:$code", color = NvCyan, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black)
         }
     }
 }

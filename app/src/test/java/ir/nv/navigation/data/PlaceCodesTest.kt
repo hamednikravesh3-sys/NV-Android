@@ -18,4 +18,11 @@ class PlaceCodesTest {
         assertNull(PlaceCodes.shareCode(-1))
         assertEquals("NV:42", PlaceCodes.shareCode(42))
     }
+
+    @Test
+    fun onlineCodesPreserveOsmIdentity() {
+        val code = requireNotNull(PlaceCodes.onlineCode("way", 123456789L))
+        assertEquals(PlaceCodes.OnlineIdentity("way", 123456789L), PlaceCodes.onlineIdentity(code))
+        assertEquals(code, PlaceCodes.publicCode("NV:$code"))
+    }
 }

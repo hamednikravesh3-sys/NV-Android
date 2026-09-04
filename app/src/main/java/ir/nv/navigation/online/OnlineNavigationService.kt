@@ -5,6 +5,7 @@ import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.RouteManeuver
+import ir.nv.navigation.data.PlaceCodes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -30,6 +31,10 @@ class OnlineNavigationService {
     }
 
     suspend fun search(query: String, limit: Int = 20): List<Place> = withContext(Dispatchers.IO) {
+        val onlineIdentity = PlaceCodes.publicCode(query)?.let(PlaceCodes::onlineIdentity)
+        if (onlineIdentity != null) {
+            return@withContext searchNominatimIdentity(onlineIdentity).take(limit)
+        }
         val q = normalizeQuery(query)
         if (q.length < 2) return@withContext emptyList()
         synchronized(searchCache) { searchCache[q]?.let { return@withContext it } }
@@ -88,6 +93,21 @@ class OnlineNavigationService {
         }
     }
 
+    private fun searchNominatimIdentity(identity: PlaceCodes.OnlineIdentity): List<Place> {
+        val prefix = when (identity.osmType) {
+            "node" -> "N"
+            "way" -> "W"
+            else -> "R"
+        }
+        val url = BuildConfig.GEOCODING_FALLBACK_API_URL.toHttpUrlString() +
+            "/lookup?osm_ids=$prefix${identity.osmId}&format=jsonv2&addressdetails=1&accept-language=fa,en"
+        val request = Request.Builder().url(url).searchHeaders().build()
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            parseNominatim(JSONArray(response.body?.string().orEmpty()))
+        }
+    }
+
     private fun Request.Builder.searchHeaders(): Request.Builder =
         header("User-Agent", USER_AGENT)
             .header("From", "hamednikravesh3@gmail.com")
@@ -106,7 +126,7 @@ class OnlineNavigationService {
         providers.forEach { provider ->
             val url = provider + "/route/v1/driving/" +
                 "${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}" +
-                "?overview=full&geometries=geojson&steps=true&alternatives=true"
+                "?overview=full&geometries=geojson&steps=true&alternatives=3"
             val result = runCatching {
                 val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
                 client.newCall(request).execute().use { response ->
@@ -114,7 +134,7 @@ class OnlineNavigationService {
                     parseRoutes(JSONObject(response.body?.string().orEmpty()))
                 }
             }
-            result.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return@withContext it.take(3) }
+            result.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
             failures += result.exceptionOrNull()?.message ?: "پاسخ نامعتبر"
         }
         throw IOException("هیچ سرویس مسیر آنلاینی پاسخ نداد: ${failures.joinToString("، ")}")
@@ -132,6 +152,7 @@ class OnlineNavigationService {
                 if (!latitude.isFinite() || !longitude.isFinite()) continue
                 val properties = feature.optJSONObject("properties") ?: JSONObject()
                 val osmId = properties.optLong("osm_id", index.toLong() + 1)
+                val osmType = properties.optString("osm_type", "node")
                 val primaryName = properties.optString("name")
                     .ifBlank { properties.optString("street") }
                     .ifBlank { properties.optString("district") }
@@ -154,7 +175,8 @@ class OnlineNavigationService {
                 val osmValue = properties.optString("osm_value", "place")
                 add(
                     Place(
-                        code = -(osmId.absoluteValue + 1L),
+                        code = PlaceCodes.onlineCode(osmType, osmId.absoluteValue)
+                            ?: -(osmId.absoluteValue + 1L),
                         name = name,
                         coordinate = Coordinate(latitude, longitude),
                         category = "$osmKey:$osmValue"
@@ -171,6 +193,7 @@ class OnlineNavigationService {
             val longitude = value.optString("lon").toDoubleOrNull() ?: continue
             if (latitude !in 24.0..40.0 || longitude !in 44.0..64.0) continue
             val osmId = value.optLong("osm_id", index.toLong() + 1)
+            val osmType = value.optString("osm_type", "node")
             val displayName = value.optString("display_name")
                 .split(',')
                 .map(String::trim)
@@ -179,7 +202,8 @@ class OnlineNavigationService {
                 .joinToString("، ")
             add(
                 Place(
-                    code = -(osmId.absoluteValue + NOMINATIM_CODE_OFFSET),
+                    code = PlaceCodes.onlineCode(osmType, osmId.absoluteValue)
+                        ?: -(osmId.absoluteValue + NOMINATIM_CODE_OFFSET),
                     name = displayName.ifBlank { "نتیجه جست‌وجو" },
                     coordinate = Coordinate(latitude, longitude),
                     category = "online:${value.optString("type", "place")}"
