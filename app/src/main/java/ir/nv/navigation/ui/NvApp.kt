@@ -49,6 +49,8 @@ fun NvApp(
     var showOfflineMaps by remember { mutableStateOf(false) }
     var showPlaceCode by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showExplore by remember { mutableStateOf(false) }
+    var experience by remember { mutableStateOf(NvExperience.HOME) }
     var pendingLocationAction by remember { mutableStateOf(LocationAction.ORIGIN) }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -86,6 +88,9 @@ fun NvApp(
     }
     LaunchedEffect(billingState.purchased) {
         viewModel.refreshEntitlement(billingState.purchased)
+    }
+    LaunchedEffect(state.navigationActive) {
+        if (state.navigationActive) experience = NvExperience.DRIVE
     }
 
     val mapSource = NavigationModeResolver.preferredSource(
@@ -129,7 +134,10 @@ fun NvApp(
         if (showSearch) {
             SearchSheet(
                 state = state,
-                onDismiss = { showSearch = false },
+                onDismiss = {
+                    showSearch = false
+                    if (state.route == null) experience = NvExperience.HOME
+                },
                 onOriginChange = viewModel::updateOriginQuery,
                 onDestinationChange = viewModel::updateDestinationQuery,
                 onOriginSelect = viewModel::selectOrigin,
@@ -137,10 +145,26 @@ fun NvApp(
                 onSwap = viewModel::swapEndpoints,
                 onRoute = {
                     viewModel.calculateRoute()
+                    experience = NvExperience.ROUTE
                     showSearch = false
                 },
                 onUseCurrentLocation = { requestLocation(LocationAction.ORIGIN) },
                 onSaveCode = { showPlaceCode = true }
+            )
+        }
+
+        if (showExplore) {
+            DfhiExploreSheet(
+                state = state,
+                onDismiss = {
+                    showExplore = false
+                    if (state.route == null) experience = NvExperience.HOME
+                },
+                onChooseDestination = {
+                    showExplore = false
+                    experience = NvExperience.ROUTE
+                    showSearch = true
+                }
             )
         }
 
@@ -214,9 +238,18 @@ fun NvApp(
                     navigationActive = state.navigationActive,
                     remainingDistanceMeters = state.remainingDistanceMeters,
                     remainingSeconds = state.remainingSeconds,
-                    onStart = { requestLocation(LocationAction.NAVIGATE) },
-                    onStop = viewModel::stopNavigation,
-                    onClose = viewModel::clearRoute,
+                    onStart = {
+                        experience = NvExperience.DRIVE
+                        requestLocation(LocationAction.NAVIGATE)
+                    },
+                    onStop = {
+                        viewModel.stopNavigation()
+                        experience = NvExperience.ROUTE
+                    },
+                    onClose = {
+                        viewModel.clearRoute()
+                        experience = NvExperience.HOME
+                    },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
             }
@@ -238,10 +271,31 @@ fun NvApp(
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
             } else if (state.route == null) {
-                DestinationSearchBar(
-                    onClick = { showSearch = true },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
+                Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+                    DfhiHomeSearch(
+                        state = state,
+                        onSearch = {
+                            experience = NvExperience.ROUTE
+                            showSearch = true
+                        }
+                    )
+                    DfhiModeDock(
+                        selected = experience,
+                        onHome = { experience = NvExperience.HOME },
+                        onRoute = {
+                            experience = NvExperience.ROUTE
+                            showSearch = true
+                        },
+                        onDrive = {
+                            experience = NvExperience.DRIVE
+                            showSearch = true
+                        },
+                        onExplore = {
+                            experience = NvExperience.EXPLORE
+                            showExplore = true
+                        }
+                    )
+                }
             }
         }
     }
