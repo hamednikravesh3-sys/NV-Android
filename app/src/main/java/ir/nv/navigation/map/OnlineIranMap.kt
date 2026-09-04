@@ -1,7 +1,7 @@
 package ir.nv.navigation.map
 
 import android.content.Context
-import android.view.MotionEvent
+import android.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -11,20 +11,26 @@ import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.TrafficSegment
 import ir.nv.navigation.core.TrafficSummary
-import org.mapsforge.core.graphics.Style
-import org.mapsforge.core.model.LatLong
-import org.mapsforge.core.model.MapPosition
-import org.mapsforge.map.android.graphics.AndroidGraphicFactory
-import org.mapsforge.map.android.util.AndroidUtil
-import org.mapsforge.map.android.view.MapView
-import org.mapsforge.map.layer.cache.TileCache
-import org.mapsforge.map.layer.download.TileDownloadLayer
-import org.mapsforge.map.layer.download.tilesource.OpenStreetMapMapnik
-import org.mapsforge.map.layer.overlay.Circle
-import org.mapsforge.map.layer.overlay.Polyline
-import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.max
+import org.json.JSONArray
+import org.json.JSONObject
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.PropertyFactory.circleColor
+import org.maplibre.android.style.layers.PropertyFactory.circleRadius
+import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
+import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
+import org.maplibre.android.style.layers.PropertyFactory.lineWidth
+import org.maplibre.android.style.sources.GeoJsonSource
 
 @Composable
 fun OnlineIranMap(
@@ -42,224 +48,273 @@ fun OnlineIranMap(
     darkMode: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val holder = remember { OnlineMapHolder(context) }
+    val holder = remember { MapLibreIranHolder(context.applicationContext, onManualGesture) }
     DisposableEffect(holder) { onDispose { holder.destroy() } }
 
     AndroidView(
         factory = { holder.mapView },
         modifier = modifier,
         update = {
-            holder.installGestureControls(navigationActive, onManualGesture)
-            holder.setDrivingPerspective(navigationActive)
-            holder.setDarkMode(darkMode)
-            holder.showRoutes(routes, selectedRouteIndex, traffic, trafficSegments, navigationActive)
-            holder.showLocation(currentLocation, followLocation, navigationActive, navigationZoomLevel, navigationRecenterToken)
+            holder.update(
+                routes = routes,
+                selectedRouteIndex = selectedRouteIndex,
+                trafficSegments = trafficSegments,
+                currentLocation = currentLocation,
+                followLocation = followLocation,
+                navigationActive = navigationActive,
+                navigationZoomLevel = navigationZoomLevel,
+                navigationRecenterToken = navigationRecenterToken,
+                darkMode = darkMode
+            )
         }
     )
 }
 
-private class OnlineMapHolder(context: Context) {
-    val mapView = MapView(context)
-    private val tileCache: TileCache
-    private val downloadLayer: TileDownloadLayer
-    private val routeLayers = mutableListOf<Polyline>()
-    private var locationLayer: Circle? = null
-    private var renderedRoutes: List<Route> = emptyList()
-    private var renderedSelectedRoute = -1
-    private var renderedTraffic: TrafficSummary? = null
-    private var renderedTrafficSegments: List<TrafficSegment> = emptyList()
-    private var darkMode: Boolean? = null
-    private var lastRecenterToken = 0
-    private var mapBearing = 0f
-    private var gestureStartAngle = 0f
-    private var gestureStartBearing = 0f
-    private var gestureStartAverageY = 0f
-    private var gestureStartPitch = 0f
-    private var mapPitch = 0f
+private class MapLibreIranHolder(
+    context: Context,
+    private val onManualGesture: () -> Unit
+) {
+    val mapView: MapView
+    private var map: MapLibreMap? = null
+    private var style: Style? = null
+    private var currentDarkMode: Boolean? = null
+    private var pending: RenderState = RenderState()
+    private var lastOverviewKey = ""
+    private var lastRecenterToken = -1
+    private var lastNavigationActive = false
 
     init {
-        mapView.setBuiltInZoomControls(false)
-        mapView.mapScaleBar.isVisible = false
-        mapView.model.mapViewPosition.zoomLevelMin = 4
-        mapView.model.mapViewPosition.zoomLevelMax = 19
-        mapView.model.mapViewPosition.mapPosition = MapPosition(IRAN_CENTER, 5)
-        mapView.cameraDistance = 12_000f
-        mapView.pivotX = mapView.width / 2f
-        mapView.pivotY = mapView.height * 0.72f
-
-        tileCache = AndroidUtil.createTileCache(context, "nv-online-map-v2", mapView.model.displayModel.tileSize, 1f, mapView.model.frameBufferModel.overdrawFactor)
-        OpenStreetMapMapnik.INSTANCE.setUserAgent("NV-Android/0.12")
-        downloadLayer = TileDownloadLayer(tileCache, mapView.model.mapViewPosition, OpenStreetMapMapnik.INSTANCE, AndroidGraphicFactory.INSTANCE)
-        mapView.layerManager.layers.add(downloadLayer)
-        downloadLayer.start()
-    }
-
-    fun installGestureControls(navigationActive: Boolean, onManualGesture: () -> Unit) {
-        mapView.setOnTouchListener { view, event ->
-            if (event.pointerCount >= 2) {
-                val angle = pointerAngle(event)
-                val averageY = (event.getY(0) + event.getY(1)) / 2f
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_POINTER_DOWN -> {
-                        gestureStartAngle = angle
-                        gestureStartBearing = mapBearing
-                        gestureStartAverageY = averageY
-                        gestureStartPitch = mapPitch
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val delta = normalizeAngle(angle - gestureStartAngle)
-                        mapBearing = normalizeAngle(gestureStartBearing + delta)
-                        val pitchDelta = (gestureStartAverageY - averageY) / max(1f, view.height.toFloat()) * 85f
-                        mapPitch = (gestureStartPitch + pitchDelta).coerceIn(0f, 48f)
-                        applyTransform()
-                        onManualGesture()
-                        return@setOnTouchListener true
-                    }
-                }
-            } else if (event.actionMasked == MotionEvent.ACTION_MOVE && navigationActive) {
-                onManualGesture()
+        MapLibre.getInstance(context)
+        mapView = MapView(context)
+        mapView.onCreate(null)
+        mapView.onStart()
+        mapView.onResume()
+        mapView.getMapAsync { readyMap ->
+            map = readyMap
+            readyMap.uiSettings.isRotateGesturesEnabled = true
+            readyMap.uiSettings.isTiltGesturesEnabled = true
+            readyMap.uiSettings.isZoomGesturesEnabled = true
+            readyMap.uiSettings.isScrollGesturesEnabled = true
+            readyMap.uiSettings.isCompassEnabled = true
+            readyMap.addOnCameraMoveStartedListener { reason ->
+                if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) onManualGesture()
             }
-            false
+            loadStyle(pending.darkMode)
         }
     }
 
-    fun setDrivingPerspective(active: Boolean) {
-        if (active && mapPitch < 28f) mapPitch = 38f
-        if (!active && mapPitch > 0f) mapPitch = 0f
-        applyTransform()
+    fun update(
+        routes: List<Route>,
+        selectedRouteIndex: Int,
+        trafficSegments: List<TrafficSegment>,
+        currentLocation: Coordinate?,
+        followLocation: Boolean,
+        navigationActive: Boolean,
+        navigationZoomLevel: Int,
+        navigationRecenterToken: Int,
+        darkMode: Boolean
+    ) {
+        pending = RenderState(
+            routes,
+            selectedRouteIndex,
+            trafficSegments,
+            currentLocation,
+            followLocation,
+            navigationActive,
+            navigationZoomLevel,
+            navigationRecenterToken,
+            darkMode
+        )
+        if (currentDarkMode != darkMode) loadStyle(darkMode) else render()
     }
 
-    private fun applyTransform() {
-        mapView.rotation = mapBearing
-        mapView.rotationX = mapPitch
-        mapView.scaleX = if (mapPitch > 0f) 1.10f else 1f
-        mapView.scaleY = if (mapPitch > 0f) 1.22f else 1f
-        mapView.pivotX = mapView.width / 2f
-        mapView.pivotY = mapView.height * 0.74f
+    private fun loadStyle(darkMode: Boolean) {
+        val readyMap = map ?: return
+        currentDarkMode = darkMode
+        style = null
+        val styleUrl = if (darkMode) DARK_STYLE else DAY_STYLE
+        readyMap.setStyle(Style.Builder().fromUri(styleUrl)) { loaded ->
+            style = loaded
+            lastOverviewKey = ""
+            render()
+        }
     }
 
-    fun showRoutes(routes: List<Route>, selectedRouteIndex: Int, traffic: TrafficSummary?, trafficSegments: List<TrafficSegment>, navigationActive: Boolean) {
-        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex && renderedTraffic == traffic && renderedTrafficSegments == trafficSegments) return
-        renderedRoutes = routes
-        renderedSelectedRoute = selectedRouteIndex
-        renderedTraffic = traffic
-        renderedTrafficSegments = trafficSegments
-        routeLayers.forEach { mapView.layerManager.layers.remove(it) }
-        routeLayers.clear()
+    private fun render() {
+        val readyMap = map ?: return
+        val loadedStyle = style ?: return
+        renderRoutes(loadedStyle, pending.routes, pending.selectedRouteIndex)
+        renderTraffic(loadedStyle, pending.trafficSegments)
+        renderLocation(loadedStyle, pending.currentLocation)
 
-        routes.indices.sortedBy { if (it == selectedRouteIndex) 1 else 0 }.forEach { index ->
-            val route = routes[index]
-            if (route.points.size < 2) return@forEach
+        if (pending.navigationActive) {
+            val location = pending.currentLocation
+            if (location != null && (pending.followLocation || pending.navigationRecenterToken != lastRecenterToken || !lastNavigationActive)) {
+                val existingBearing = readyMap.cameraPosition.bearing
+                val camera = CameraPosition.Builder()
+                    .target(LatLng(location.latitude, location.longitude))
+                    .zoom(pending.navigationZoomLevel.coerceIn(16, 19).toDouble())
+                    .bearing(existingBearing)
+                    .tilt(58.0)
+                    .padding(0.0, 190.0, 0.0, 260.0)
+                    .build()
+                readyMap.animateCamera(CameraUpdateFactory.newCameraPosition(camera), 500)
+                lastRecenterToken = pending.navigationRecenterToken
+            }
+        } else if (pending.routes.isNotEmpty()) {
+            fitAllRoutes(readyMap, pending.routes)
+        } else if (pending.currentLocation != null && pending.followLocation) {
+            val location = pending.currentLocation!!
+            readyMap.animateCamera(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.Builder()
+                        .target(LatLng(location.latitude, location.longitude))
+                        .zoom(16.0)
+                        .tilt(0.0)
+                        .build()
+                ),
+                350
+            )
+        }
+        lastNavigationActive = pending.navigationActive
+    }
+
+    private fun renderRoutes(style: Style, routes: List<Route>, selectedIndex: Int) {
+        removeLayers(style, ROUTE_LAYER_PREFIX, ROUTE_SOURCE_PREFIX, 20)
+        routes.forEachIndexed { index, route ->
+            if (route.points.size < 2) return@forEachIndexed
+            val sourceId = "$ROUTE_SOURCE_PREFIX$index"
+            val geometry = lineGeoJson(route.points)
+            style.addSource(GeoJsonSource(sourceId, geometry))
+
+            if (index == selectedIndex) {
+                val casingId = "$ROUTE_LAYER_PREFIX${index}_casing"
+                style.addLayer(
+                    LineLayer(casingId, sourceId).withProperties(
+                        lineColor(Color.rgb(4, 23, 39)),
+                        lineWidth(17f),
+                        lineOpacity(0.88f)
+                    )
+                )
+            }
+
             val color = when {
-                index == selectedRouteIndex -> intArrayOf(24, 212, 255)
-                index % 3 == 0 -> intArrayOf(215, 255, 91)
-                index % 3 == 1 -> intArrayOf(255, 181, 46)
-                else -> intArrayOf(160, 170, 185)
+                index == selectedIndex -> Color.rgb(24, 212, 255)
+                index % 3 == 0 -> Color.rgb(215, 255, 91)
+                index % 3 == 1 -> Color.rgb(255, 181, 46)
+                else -> Color.rgb(170, 181, 194)
             }
-            if (index == selectedRouteIndex) {
-                addRouteLine(route, intArrayOf(3, 20, 33), 30f, 160)
-                addRouteLine(route, color, 22f, 100)
-            }
-            addRouteLine(route, color, if (index == selectedRouteIndex) 10f else 7f, 255)
+            style.addLayer(
+                LineLayer("$ROUTE_LAYER_PREFIX$index", sourceId).withProperties(
+                    lineColor(color),
+                    lineWidth(if (index == selectedIndex) 9f else 6f),
+                    lineOpacity(if (index == selectedIndex) 1f else 0.82f)
+                )
+            )
         }
+    }
 
-        trafficSegments.forEach { segment ->
-            if (segment.start == segment.end) return@forEach
+    private fun renderTraffic(style: Style, segments: List<TrafficSegment>) {
+        removeLayers(style, TRAFFIC_LAYER_PREFIX, TRAFFIC_SOURCE_PREFIX, 100)
+        segments.forEachIndexed { index, segment ->
+            val sourceId = "$TRAFFIC_SOURCE_PREFIX$index"
+            style.addSource(GeoJsonSource(sourceId, lineGeoJson(listOf(segment.start, segment.end))))
             val color = when {
-                segment.delaySeconds >= 600.0 -> intArrayOf(230, 64, 69)
-                segment.delaySeconds >= 120.0 -> intArrayOf(255, 181, 46)
-                else -> intArrayOf(100, 214, 109)
+                segment.delaySeconds >= 600.0 -> Color.rgb(230, 64, 69)
+                segment.delaySeconds >= 120.0 -> Color.rgb(255, 181, 46)
+                else -> Color.rgb(100, 214, 109)
             }
-            val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                setColor(AndroidGraphicFactory.INSTANCE.createColor(255, color[0], color[1], color[2]))
-                setStrokeWidth(9f * mapView.model.displayModel.scaleFactor)
-                setStyle(Style.STROKE)
-            }
-            Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
-                line.setPoints(listOf(LatLong(segment.start.latitude, segment.start.longitude), LatLong(segment.end.latitude, segment.end.longitude)))
-                mapView.layerManager.layers.add(line)
-                routeLayers += line
-            }
-        }
-
-        if (!navigationActive) showAllRoutesOverview(routes)
-        locationLayer?.let { marker -> mapView.layerManager.layers.remove(marker); mapView.layerManager.layers.add(marker) }
-        mapView.layerManager.redrawLayers()
-    }
-
-    private fun addRouteLine(route: Route, color: IntArray, width: Float, alpha: Int) {
-        val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-            setColor(AndroidGraphicFactory.INSTANCE.createColor(alpha, color[0], color[1], color[2]))
-            setStrokeWidth(width * mapView.model.displayModel.scaleFactor)
-            setStyle(Style.STROKE)
-        }
-        Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
-            line.setPoints(route.points.map { LatLong(it.latitude, it.longitude) })
-            mapView.layerManager.layers.add(line)
-            routeLayers += line
+            style.addLayer(
+                LineLayer("$TRAFFIC_LAYER_PREFIX$index", sourceId).withProperties(
+                    lineColor(color), lineWidth(7f), lineOpacity(0.95f)
+                )
+            )
         }
     }
 
-    private fun showAllRoutesOverview(routes: List<Route>) {
-        val points = routes.flatMap { it.points }
-        if (points.isEmpty()) return
-        val minLat = points.minOf { it.latitude }
-        val maxLat = points.maxOf { it.latitude }
-        val minLon = points.minOf { it.longitude }
-        val maxLon = points.maxOf { it.longitude }
-        val center = LatLong((minLat + maxLat) / 2.0, (minLon + maxLon) / 2.0)
-        val span = max(maxLat - minLat, maxLon - minLon)
-        val zoom: Byte = when {
-            span < 0.015 -> 16
-            span < 0.03 -> 15
-            span < 0.07 -> 14
-            span < 0.15 -> 13
-            span < 0.35 -> 12
-            span < 0.7 -> 11
-            span < 1.5 -> 10
-            span < 3.0 -> 9
-            span < 6.0 -> 8
-            else -> 6
-        }
-        mapView.model.mapViewPosition.mapPosition = MapPosition(center, zoom)
-    }
-
-    fun setDarkMode(enabled: Boolean) {
-        if (darkMode == enabled) return
-        darkMode = enabled
-        mapView.applyNightDisplay(enabled)
-    }
-
-    fun showLocation(location: Coordinate?, follow: Boolean, navigationActive: Boolean, navigationZoomLevel: Int, recenterToken: Int) {
+    private fun renderLocation(style: Style, location: Coordinate?) {
+        style.removeLayer(LOCATION_LAYER)
+        style.removeSource(LOCATION_SOURCE)
         if (location == null) return
-        val point = LatLong(location.latitude, location.longitude)
-        val marker = locationLayer ?: createLocationMarker(point).also { locationLayer = it; mapView.layerManager.layers.add(it) }
-        marker.setLatLong(point)
-        if (follow || (navigationActive && recenterToken != lastRecenterToken)) {
-            mapView.model.mapViewPosition.mapPosition = MapPosition(point, if (navigationActive) navigationZoomLevel.coerceIn(16, 19).toByte() else BROWSE_LOCATION_ZOOM)
-            lastRecenterToken = recenterToken
+        val point = JSONObject()
+            .put("type", "Feature")
+            .put("geometry", JSONObject()
+                .put("type", "Point")
+                .put("coordinates", JSONArray().put(location.longitude).put(location.latitude)))
+            .put("properties", JSONObject())
+            .toString()
+        style.addSource(GeoJsonSource(LOCATION_SOURCE, point))
+        style.addLayer(
+            CircleLayer(LOCATION_LAYER, LOCATION_SOURCE).withProperties(
+                circleRadius(8f),
+                circleColor(Color.rgb(24, 212, 255)),
+                circleStrokeColor(Color.WHITE),
+                circleStrokeWidth(3f)
+            )
+        )
+    }
+
+    private fun fitAllRoutes(map: MapLibreMap, routes: List<Route>) {
+        val key = routes.joinToString("|") { "${it.points.size}:${it.distanceMeters.toLong()}:${it.travelSeconds.toLong()}" }
+        if (key == lastOverviewKey) return
+        val builder = LatLngBounds.Builder()
+        var count = 0
+        routes.forEach { route ->
+            route.points.forEach { point ->
+                builder.include(LatLng(point.latitude, point.longitude))
+                count++
+            }
         }
-        mapView.layerManager.redrawLayers()
+        if (count < 2) return
+        val bounds = builder.build()
+        map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 70, 150, 70, 300), 550)
+        lastOverviewKey = key
     }
 
-    private fun createLocationMarker(point: LatLong): Circle {
-        val fill = AndroidGraphicFactory.INSTANCE.createPaint().apply { setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 24, 212, 255)); setStyle(Style.FILL) }
-        val stroke = AndroidGraphicFactory.INSTANCE.createPaint().apply { setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 255, 255, 255)); setStrokeWidth(5f * mapView.model.displayModel.scaleFactor); setStyle(Style.STROKE) }
-        return Circle(point, 16f, fill, stroke)
+    private fun removeLayers(style: Style, layerPrefix: String, sourcePrefix: String, max: Int) {
+        repeat(max) { index ->
+            style.removeLayer("$layerPrefix${index}_casing")
+            style.removeLayer("$layerPrefix$index")
+            style.removeSource("$sourcePrefix$index")
+        }
     }
 
-    private fun pointerAngle(event: MotionEvent): Float = Math.toDegrees(atan2((event.getY(1) - event.getY(0)).toDouble(), (event.getX(1) - event.getX(0)).toDouble())).toFloat()
-    private fun normalizeAngle(value: Float): Float {
-        var result = value
-        while (result > 180f) result -= 360f
-        while (result < -180f) result += 360f
-        return result
+    private fun lineGeoJson(points: List<Coordinate>): String {
+        val coordinates = JSONArray()
+        points.forEach { point -> coordinates.put(JSONArray().put(point.longitude).put(point.latitude)) }
+        return JSONObject()
+            .put("type", "Feature")
+            .put("geometry", JSONObject().put("type", "LineString").put("coordinates", coordinates))
+            .put("properties", JSONObject())
+            .toString()
     }
 
-    fun destroy() { downloadLayer.stop(); mapView.destroyAll() }
+    fun destroy() {
+        runCatching { mapView.onPause() }
+        runCatching { mapView.onStop() }
+        runCatching { mapView.onDestroy() }
+    }
+
+    private data class RenderState(
+        val routes: List<Route> = emptyList(),
+        val selectedRouteIndex: Int = 0,
+        val trafficSegments: List<TrafficSegment> = emptyList(),
+        val currentLocation: Coordinate? = null,
+        val followLocation: Boolean = false,
+        val navigationActive: Boolean = false,
+        val navigationZoomLevel: Int = 18,
+        val navigationRecenterToken: Int = 0,
+        val darkMode: Boolean = false
+    )
 
     private companion object {
-        val IRAN_CENTER = LatLong(32.4279, 53.6880)
-        const val BROWSE_LOCATION_ZOOM: Byte = 16
+        const val DAY_STYLE = "https://tiles.openfreemap.org/styles/liberty"
+        const val DARK_STYLE = "https://tiles.openfreemap.org/styles/dark"
+        const val ROUTE_LAYER_PREFIX = "nv-route-layer-"
+        const val ROUTE_SOURCE_PREFIX = "nv-route-source-"
+        const val TRAFFIC_LAYER_PREFIX = "nv-traffic-layer-"
+        const val TRAFFIC_SOURCE_PREFIX = "nv-traffic-source-"
+        const val LOCATION_SOURCE = "nv-location-source"
+        const val LOCATION_LAYER = "nv-location-layer"
     }
 }
