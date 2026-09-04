@@ -137,7 +137,9 @@ dependencies {
 
     implementation("org.mapsforge:mapsforge-map-android:0.25.0")
     implementation("org.mapsforge:mapsforge-themes:0.25.0")
-    implementation("org.maplibre.gl:android-sdk:13.4.1")
+    // 11.7.1 retains the vector camera/3D APIs and is binary-compatible with
+    // this project's Kotlin 1.9 / Compose compiler toolchain.
+    implementation("org.maplibre.gl:android-sdk:11.7.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.android.billingclient:billing-ktx:7.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
