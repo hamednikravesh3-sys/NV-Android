@@ -59,6 +59,12 @@ fun NvApp(
     val entitlementBlocked = state.trialState is TrialManager.State.Expired ||
         state.trialState is TrialManager.State.Tampered
 
+    NavigationVoice(
+        active = state.navigationActive,
+        enabled = state.voiceEnabled,
+        instruction = state.route?.maneuvers?.firstOrNull()?.instruction
+    )
+
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         if (showOfflineMaps) {
             OfflineMapsSheet(
@@ -115,24 +121,31 @@ fun NvApp(
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                NavigationTopBar(
-                    state = state,
-                    darkMode = darkMode,
-                    onToggleTheme = onToggleTheme,
-                    onOpenOfflineMaps = { showOfflineMaps = true }
-                )
-                SearchPanel(
-                    state = state,
-                    onOriginChange = viewModel::updateOriginQuery,
-                    onDestinationChange = viewModel::updateDestinationQuery,
-                    onOriginSelect = viewModel::selectOrigin,
-                    onDestinationSelect = viewModel::selectDestination,
-                    onSwap = viewModel::swapEndpoints,
-                    onRoute = viewModel::calculateRoute,
-                    onSaveCode = { showPlaceCode = true }
-                )
-                state.message?.let {
-                    StatusMessage(text = it, modifier = Modifier.padding(top = 8.dp))
+                if (state.navigationActive && state.route != null) {
+                    NavigationHud(
+                        route = state.route,
+                        onStop = viewModel::stopNavigation
+                    )
+                } else {
+                    NavigationTopBar(
+                        state = state,
+                        darkMode = darkMode,
+                        onToggleTheme = onToggleTheme,
+                        onOpenOfflineMaps = { showOfflineMaps = true }
+                    )
+                    SearchPanel(
+                        state = state,
+                        onOriginChange = viewModel::updateOriginQuery,
+                        onDestinationChange = viewModel::updateDestinationQuery,
+                        onOriginSelect = viewModel::selectOrigin,
+                        onDestinationSelect = viewModel::selectDestination,
+                        onSwap = viewModel::swapEndpoints,
+                        onRoute = viewModel::calculateRoute,
+                        onSaveCode = { showPlaceCode = true }
+                    )
+                    state.message?.let {
+                        StatusMessage(text = it, modifier = Modifier.padding(top = 8.dp))
+                    }
                 }
             }
 
@@ -142,8 +155,22 @@ fun NvApp(
                     source = state.routeSource,
                     traffic = state.traffic,
                     notices = state.routeNotices,
+                    navigationActive = state.navigationActive,
+                    onStart = viewModel::startNavigation,
+                    onStop = viewModel::stopNavigation,
                     onClose = viewModel::clearRoute,
                     modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+
+            if (state.navigationActive) {
+                FloatingNavigationControls(
+                    voiceEnabled = state.voiceEnabled,
+                    darkMode = darkMode,
+                    onToggleVoice = viewModel::toggleVoice,
+                    onToggleTheme = onToggleTheme,
+                    onOpenOfflineMaps = { showOfflineMaps = true },
+                    modifier = Modifier.align(Alignment.CenterEnd)
                 )
             }
 

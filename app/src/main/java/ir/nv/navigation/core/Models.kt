@@ -26,10 +26,30 @@ data class Route(
     val points: List<Coordinate>,
     val edgeIds: List<Long>,
     val distanceMeters: Double,
-    val travelSeconds: Double
+    val travelSeconds: Double,
+    val maneuvers: List<RouteManeuver> = emptyList()
 )
 
 enum class RouteSource { NONE, ONLINE, OFFLINE }
+
+data class RouteManeuver(
+    val instruction: String,
+    val roadName: String?,
+    val distanceMeters: Double,
+    val direction: Direction
+) {
+    enum class Direction {
+        STRAIGHT,
+        SLIGHT_LEFT,
+        LEFT,
+        SHARP_LEFT,
+        SLIGHT_RIGHT,
+        RIGHT,
+        SHARP_RIGHT,
+        UTURN,
+        ARRIVE
+    }
+}
 
 data class TrafficSegment(
     val start: Coordinate,

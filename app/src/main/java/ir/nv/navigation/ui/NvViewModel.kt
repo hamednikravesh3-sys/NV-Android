@@ -38,6 +38,8 @@ data class NvUiState(
     val origin: Place? = null,
     val destination: Place? = null,
     val route: Route? = null,
+    val navigationActive: Boolean = false,
+    val voiceEnabled: Boolean = true,
     val routeNotices: List<RouteNotice> = emptyList(),
     val traffic: TrafficSummary? = null,
     val routing: Boolean = false,
@@ -196,6 +198,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 originSuggestions = emptyList(),
                 destinationSuggestions = emptyList(),
                 route = null,
+                navigationActive = false,
                 routeSource = RouteSource.NONE,
                 routeNotices = emptyList()
             )
@@ -204,8 +207,28 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearRoute() {
         mutableState.update {
-            it.copy(route = null, routeSource = RouteSource.NONE, routeNotices = emptyList(), traffic = null)
+            it.copy(
+                route = null,
+                navigationActive = false,
+                routeSource = RouteSource.NONE,
+                routeNotices = emptyList(),
+                traffic = null
+            )
         }
+    }
+
+    fun startNavigation() {
+        if (mutableState.value.route != null) {
+            mutableState.update { it.copy(navigationActive = true, message = null) }
+        }
+    }
+
+    fun stopNavigation() {
+        mutableState.update { it.copy(navigationActive = false) }
+    }
+
+    fun toggleVoice() {
+        mutableState.update { it.copy(voiceEnabled = !it.voiceEnabled) }
     }
 
     fun savePersonalCode(place: Place, code: String) {
@@ -254,6 +277,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     routing = false,
                     route = result,
+                    navigationActive = false,
                     routeSource = source,
                     routeNotices = notices,
                     traffic = null,

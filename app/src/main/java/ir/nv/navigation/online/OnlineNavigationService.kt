@@ -3,6 +3,7 @@ package ir.nv.navigation.online
 import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.RouteManeuver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -63,7 +64,7 @@ class OnlineNavigationService {
     suspend fun route(origin: Coordinate, destination: Coordinate): Route? = withContext(Dispatchers.IO) {
         val url = "https://router.project-osrm.org/route/v1/driving/" +
             "${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}" +
-            "?overview=full&geometries=geojson&steps=false&alternatives=false"
+            "?overview=full&geometries=geojson&steps=true&alternatives=false"
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "NV-Android/0.3")
@@ -84,8 +85,65 @@ class OnlineNavigationService {
                 points = points,
                 edgeIds = emptyList(),
                 distanceMeters = first.optDouble("distance", 0.0),
-                travelSeconds = first.optDouble("duration", 0.0)
+                travelSeconds = first.optDouble("duration", 0.0),
+                maneuvers = parseManeuvers(first)
             )
         }
+    }
+
+    private fun parseManeuvers(route: JSONObject): List<RouteManeuver> {
+        val legs = route.optJSONArray("legs") ?: return emptyList()
+        val result = mutableListOf<RouteManeuver>()
+        for (legIndex in 0 until legs.length()) {
+            val steps = legs.getJSONObject(legIndex).optJSONArray("steps") ?: continue
+            for (stepIndex in 0 until steps.length()) {
+                val step = steps.getJSONObject(stepIndex)
+                val maneuver = step.optJSONObject("maneuver") ?: continue
+                val type = maneuver.optString("type")
+                val modifier = maneuver.optString("modifier")
+                val roadName = step.optString("name").takeIf { it.isNotBlank() }
+                val direction = maneuverDirection(type, modifier)
+                result += RouteManeuver(
+                    instruction = maneuverInstruction(type, direction, roadName),
+                    roadName = roadName,
+                    distanceMeters = step.optDouble("distance", 0.0),
+                    direction = direction
+                )
+            }
+        }
+        return result
+    }
+
+    private fun maneuverDirection(type: String, modifier: String): RouteManeuver.Direction = when {
+        type == "arrive" -> RouteManeuver.Direction.ARRIVE
+        modifier == "uturn" -> RouteManeuver.Direction.UTURN
+        modifier == "sharp left" -> RouteManeuver.Direction.SHARP_LEFT
+        modifier == "slight left" -> RouteManeuver.Direction.SLIGHT_LEFT
+        modifier == "left" -> RouteManeuver.Direction.LEFT
+        modifier == "sharp right" -> RouteManeuver.Direction.SHARP_RIGHT
+        modifier == "slight right" -> RouteManeuver.Direction.SLIGHT_RIGHT
+        modifier == "right" -> RouteManeuver.Direction.RIGHT
+        else -> RouteManeuver.Direction.STRAIGHT
+    }
+
+    private fun maneuverInstruction(
+        type: String,
+        direction: RouteManeuver.Direction,
+        roadName: String?
+    ): String {
+        val action = when {
+            type == "depart" -> "حرکت را آغاز کنید"
+            direction == RouteManeuver.Direction.ARRIVE -> "به مقصد می‌رسید"
+            direction == RouteManeuver.Direction.UTURN -> "دور بزنید"
+            direction == RouteManeuver.Direction.SHARP_LEFT -> "به چپ تند بپیچید"
+            direction == RouteManeuver.Direction.SLIGHT_LEFT -> "کمی به چپ بروید"
+            direction == RouteManeuver.Direction.LEFT -> "به چپ بپیچید"
+            direction == RouteManeuver.Direction.SHARP_RIGHT -> "به راست تند بپیچید"
+            direction == RouteManeuver.Direction.SLIGHT_RIGHT -> "کمی به راست بروید"
+            direction == RouteManeuver.Direction.RIGHT -> "به راست بپیچید"
+            type == "roundabout" || type == "rotary" -> "وارد میدان شوید"
+            else -> "مستقیم ادامه دهید"
+        }
+        return roadName?.let { "$action، سپس وارد $it شوید" } ?: action
     }
 }

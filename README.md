@@ -18,6 +18,8 @@ testable Android project.
 - turn-restriction enforcement using incoming-edge routing state
 - route distance, travel time and ETA
 - map-first Persian Material interface, light/dark mode and adaptive NV icon
+- distraction-minimized driving mode with large maneuver HUD, ETA panel,
+  floating controls and Persian voice guidance
 - a signed local 30-day trial record with rollback detection
 - debug APK CI and a separate secret-backed signed-release workflow
 - unit tests proving one-way and forbidden-turn behavior

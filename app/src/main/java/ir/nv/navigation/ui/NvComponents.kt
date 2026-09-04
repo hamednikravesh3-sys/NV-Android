@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.DarkMode
@@ -33,6 +34,11 @@ import androidx.compose.material.icons.rounded.OfflinePin
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material.icons.rounded.TurnLeft
+import androidx.compose.material.icons.rounded.TurnRight
+import androidx.compose.material.icons.rounded.UTurnLeft
+import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -71,6 +77,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.RouteManeuver
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.TrafficSummary
@@ -323,11 +330,89 @@ fun StatusMessage(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun NavigationHud(route: Route, onStop: () -> Unit) {
+    val maneuver = route.maneuvers.firstOrNull()
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.primary,
+        shadowElevation = 9.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f)
+            ) {
+                Icon(
+                    imageVector = maneuverIcon(maneuver?.direction),
+                    contentDescription = null,
+                    modifier = Modifier.padding(10.dp).size(43.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    formatDistance(maneuver?.distanceMeters ?: route.distanceMeters),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black
+                )
+                Text(
+                    maneuver?.instruction ?: "مستقیم به سمت مقصد ادامه دهید",
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onStop) {
+                Text("×", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.headlineMedium)
+            }
+        }
+    }
+}
+
+@Composable
+fun FloatingNavigationControls(
+    voiceEnabled: Boolean,
+    darkMode: Boolean,
+    onToggleVoice: () -> Unit,
+    onToggleTheme: () -> Unit,
+    onOpenOfflineMaps: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        AppIconButton(
+            if (voiceEnabled) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
+            if (voiceEnabled) "قطع صدای راهنما" else "فعال‌کردن صدای راهنما",
+            onToggleVoice
+        )
+        AppIconButton(Icons.Rounded.Map, "نقشه‌های آفلاین", onOpenOfflineMaps)
+        AppIconButton(
+            if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+            if (darkMode) "حالت روز" else "حالت شب",
+            onToggleTheme
+        )
+    }
+}
+
+@Composable
 fun RouteSummaryCard(
     route: Route,
     source: RouteSource,
     traffic: TrafficSummary?,
     notices: List<RouteNotice>,
+    navigationActive: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -346,7 +431,10 @@ fun RouteSummaryCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                FilledIconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+                FilledIconButton(
+                    onClick = if (navigationActive) onStop else onClose,
+                    modifier = Modifier.size(36.dp)
+                ) {
                     Text("×", style = MaterialTheme.typography.titleLarge)
                 }
                 Spacer(Modifier.weight(1f))
@@ -388,8 +476,43 @@ fun RouteSummaryCard(
                     }
                 }
             }
+            if (navigationActive) {
+                OutlinedButton(
+                    onClick = onStop,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text("توقف راهنمای مسیر")
+                }
+            } else {
+                Button(
+                    onClick = onStart,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("شروع حرکت", fontWeight = FontWeight.Black)
+                }
+            }
         }
     }
+}
+
+private fun maneuverIcon(direction: RouteManeuver.Direction?): ImageVector = when (direction) {
+    RouteManeuver.Direction.LEFT,
+    RouteManeuver.Direction.SLIGHT_LEFT,
+    RouteManeuver.Direction.SHARP_LEFT -> Icons.Rounded.TurnLeft
+    RouteManeuver.Direction.RIGHT,
+    RouteManeuver.Direction.SLIGHT_RIGHT,
+    RouteManeuver.Direction.SHARP_RIGHT -> Icons.Rounded.TurnRight
+    RouteManeuver.Direction.UTURN -> Icons.Rounded.UTurnLeft
+    else -> Icons.Rounded.ArrowUpward
+}
+
+private fun formatDistance(meters: Double): String = when {
+    meters < 1_000 -> "${meters.roundToInt()} متر"
+    else -> "%.1f کیلومتر".format(meters / 1_000.0)
 }
 
 @Composable
