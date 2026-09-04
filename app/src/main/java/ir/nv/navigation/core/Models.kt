@@ -6,9 +6,11 @@ data class Place(
     val code: Long,
     val name: String,
     val coordinate: Coordinate,
-    val category: String
+    val category: String,
+    val personalCode: String? = null
 ) {
-    val displayName: String get() = "$name — $code"
+    val displayName: String
+        get() = if (personalCode.isNullOrBlank()) "$name — $code" else "$name — $personalCode"
 }
 
 data class RoadEdge(
