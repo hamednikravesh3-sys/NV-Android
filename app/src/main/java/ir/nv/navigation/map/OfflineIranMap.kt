@@ -79,7 +79,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
                 color = AndroidGraphicFactory.INSTANCE.createColor(255, 0, 166, 126)
                 strokeWidth = 10f * mapView.model.displayModel.scaleFactor
-                style = Style.STROKE
+                setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
                 line.setPoints(result.points.map { LatLong(it.latitude, it.longitude) })
