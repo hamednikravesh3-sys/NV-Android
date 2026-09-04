@@ -19,33 +19,63 @@ import kotlin.math.absoluteValue
 
 class OnlineNavigationService {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(18, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
-    private val searchCache = object : LinkedHashMap<String, List<Place>>(30, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Place>>?): Boolean = size > 30
+
+    private val searchCache = object : LinkedHashMap<String, List<Place>>(80, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Place>>?): Boolean = size > 80
     }
 
-    suspend fun search(query: String, limit: Int = 12): List<Place> = withContext(Dispatchers.IO) {
-        val q = query.trim()
+    suspend fun search(query: String, limit: Int = 20): List<Place> = withContext(Dispatchers.IO) {
+        val q = normalizeQuery(query)
         if (q.length < 2) return@withContext emptyList()
         synchronized(searchCache) { searchCache[q]?.let { return@withContext it } }
 
-        val encoded = URLEncoder.encode(q, StandardCharsets.UTF_8.toString())
+        val generic = runCatching { photonSearch(q, limit) }.getOrDefault(emptyList())
+        val roadResults = if (looksLikeRoadQuery(q)) {
+            runCatching { photonSearch(q, limit, osmTag = "highway") }.getOrDefault(emptyList())
+        } else emptyList()
+        val iranQualified = if ((generic + roadResults).size < 6 && !q.contains("ایران")) {
+            runCatching { photonSearch("$q ایران", limit) }.getOrDefault(emptyList())
+        } else emptyList()
+
+        val combined = (generic + roadResults + iranQualified)
+            .filter { isInsideIran(it.coordinate) }
+            .distinctBy { placeIdentity(it) }
+            .sortedWith(
+                compareBy<Place> { searchScore(it, q) }
+                    .thenBy { it.name.length }
+                    .thenBy { it.code }
+            )
+            .take(limit)
+
+        synchronized(searchCache) { searchCache[q] = combined }
+        combined
+    }
+
+    private fun photonSearch(query: String, limit: Int, osmTag: String? = null): List<Place> {
+        val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.toString())
+        val tag = osmTag?.let {
+            "&osm_tag=${URLEncoder.encode(it, StandardCharsets.UTF_8.toString())}"
+        }.orEmpty()
         val url = BuildConfig.GEOCODING_API_URL.toHttpUrlString() +
-            "?q=$encoded&limit=$limit&lang=fa&countrycode=IR&bbox=44.0,24.0,64.0,40.0"
+            "?q=$encoded&limit=$limit&lang=fa&bbox=44.0,24.0,64.0,40.0$tag"
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
-            .header("Accept-Language", "fa,en")
+            .header("Accept", "application/json")
+            .header("Accept-Language", "fa-IR,fa;q=0.95,en;q=0.7")
             .build()
-        val results = client.newCall(request).execute().use { response ->
+
+        return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("جست‌وجوی آنلاین: HTTP ${response.code}")
-            parsePhoton(JSONObject(response.body?.string().orEmpty()), q)
+            val body = response.body?.string().orEmpty()
+            if (body.isBlank()) return@use emptyList()
+            parsePhoton(JSONObject(body), query)
         }
-        synchronized(searchCache) { searchCache[q] = results }
-        results
     }
 
     suspend fun route(origin: Coordinate, destination: Coordinate): Route = routes(origin, destination).first()
@@ -84,18 +114,35 @@ class OnlineNavigationService {
                 val longitude = coordinates.optDouble(0, Double.NaN)
                 val latitude = coordinates.optDouble(1, Double.NaN)
                 if (!latitude.isFinite() || !longitude.isFinite()) continue
+
                 val properties = feature.optJSONObject("properties") ?: JSONObject()
                 val osmId = properties.optLong("osm_id", index.toLong() + 1)
-                val name = properties.optString("name")
+                val primary = properties.optString("name")
                     .ifBlank { properties.optString("street") }
+                    .ifBlank { properties.optString("district") }
                     .ifBlank { properties.optString("city") }
+                    .ifBlank { properties.optString("county") }
                     .ifBlank { fallbackName }
+                val city = properties.optString("city")
+                    .ifBlank { properties.optString("town") }
+                    .ifBlank { properties.optString("village") }
+                    .ifBlank { properties.optString("county") }
+                val district = properties.optString("district")
+                    .ifBlank { properties.optString("locality") }
+                val state = properties.optString("state")
+                val contextualName = buildList {
+                    add(primary)
+                    if (district.isNotBlank() && !district.equals(primary, true)) add(district)
+                    if (city.isNotBlank() && !city.equals(primary, true) && !city.equals(district, true)) add(city)
+                    if (state.isNotBlank() && size < 3 && !state.equals(city, true)) add(state)
+                }.joinToString("، ")
+
                 val osmKey = properties.optString("osm_key", "online")
                 val osmValue = properties.optString("osm_value", "place")
                 add(
                     Place(
                         code = -(osmId.absoluteValue + 1L),
-                        name = name,
+                        name = contextualName,
                         coordinate = Coordinate(latitude, longitude),
                         category = "$osmKey:$osmValue"
                     )
@@ -103,6 +150,54 @@ class OnlineNavigationService {
             }
         }
     }
+
+    private fun searchScore(place: Place, query: String): Int {
+        val name = normalizeQuery(place.name)
+        val category = place.category.lowercase()
+        var score = when {
+            name == query -> 0
+            name.startsWith(query) -> 10
+            name.contains(query) -> 20
+            query.split(' ').all { token -> name.contains(token) } -> 30
+            else -> 60
+        }
+        score += when {
+            category.startsWith("place:city") || category.startsWith("place:town") -> 0
+            category.contains("highway") || category.contains("street") -> 2
+            category.startsWith("place:suburb") || category.startsWith("place:neighbourhood") -> 4
+            category.startsWith("place:village") -> 6
+            category.startsWith("amenity:") || category.startsWith("tourism:") -> 8
+            else -> 12
+        }
+        return score
+    }
+
+    private fun placeIdentity(place: Place): String {
+        val lat = (place.coordinate.latitude * 100_000).toLong()
+        val lon = (place.coordinate.longitude * 100_000).toLong()
+        return "${normalizeQuery(place.name)}|$lat|$lon"
+    }
+
+    private fun looksLikeRoadQuery(query: String): Boolean {
+        val words = listOf(
+            "خیابان", "خ ", "کوچه", "بلوار", "میدان", "جاده", "بزرگراه", "اتوبان",
+            "راه", "چهارراه", "street", "road", "avenue", "boulevard", "highway", "alley"
+        )
+        return words.any { query.contains(it, ignoreCase = true) }
+    }
+
+    private fun isInsideIran(coordinate: Coordinate): Boolean =
+        coordinate.latitude in 24.0..40.0 && coordinate.longitude in 44.0..64.0
+
+    private fun normalizeQuery(value: String): String = value
+        .trim()
+        .lowercase()
+        .replace('ي', 'ی')
+        .replace('ك', 'ک')
+        .replace('ة', 'ه')
+        .replace("\u200c", " ")
+        .replace(Regex("[ًٌٍَُِّْـ]"), "")
+        .replace(Regex("\\s+"), " ")
 
     private fun parseRoutes(root: JSONObject): List<Route> {
         if (root.optString("code") != "Ok") {
