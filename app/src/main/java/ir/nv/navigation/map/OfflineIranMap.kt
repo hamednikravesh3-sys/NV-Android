@@ -6,6 +6,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.TrafficSummary
@@ -44,30 +46,30 @@ fun OfflineIranMap(
     val holder = remember(mapFile.absolutePath) { MapsforgeMapHolder(context, mapFile) }
 
     DisposableEffect(holder) {
-        onDispose {
-            holder.destroy()
-        }
+        onDispose { holder.destroy() }
     }
+
+    val drivingMapModifier = if (navigationActive) {
+        modifier.graphicsLayer {
+            rotationX = 34f
+            scaleX = 1.16f
+            scaleY = 1.34f
+            transformOrigin = TransformOrigin(0.5f, 0.78f)
+            clip = false
+        }
+    } else modifier
 
     AndroidView(
         factory = { holder.mapView },
-        modifier = modifier,
+        modifier = drivingMapModifier,
         update = {
             it.setOnTouchListener { _, event ->
-                if (navigationActive && event.actionMasked == MotionEvent.ACTION_MOVE) {
-                    onManualGesture()
-                }
+                if (navigationActive && event.actionMasked == MotionEvent.ACTION_MOVE) onManualGesture()
                 false
             }
             holder.setDarkMode(darkMode)
             holder.showRoutes(routes, selectedRouteIndex, traffic, trafficSegments)
-            holder.showLocation(
-                currentLocation,
-                followLocation,
-                navigationActive,
-                navigationZoomLevel,
-                navigationRecenterToken
-            )
+            holder.showLocation(currentLocation, followLocation, navigationActive, navigationZoomLevel, navigationRecenterToken)
         }
     )
 }
@@ -87,39 +89,18 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
 
     init {
         mapView.setBuiltInZoomControls(false)
-        mapView.mapScaleBar.isVisible = true
+        mapView.mapScaleBar.isVisible = false
         mapView.model.mapViewPosition.zoomLevelMin = 4
         mapView.model.mapViewPosition.zoomLevelMax = 20
         mapView.model.mapViewPosition.mapPosition = MapPosition(IRAN_CENTER, 5)
 
-        tileCache = AndroidUtil.createTileCache(
-            context,
-            "nv-iran-vector-v2",
-            mapView.model.displayModel.tileSize,
-            1f,
-            mapView.model.frameBufferModel.overdrawFactor
-        )
-        val renderer = AndroidUtil.createTileRendererLayer(
-            tileCache,
-            mapView.model.mapViewPosition,
-            mapData,
-            MapsforgeThemes.MOTORIDER,
-            false,
-            true,
-            false
-        )
+        tileCache = AndroidUtil.createTileCache(context, "nv-iran-vector-v2", mapView.model.displayModel.tileSize, 1f, mapView.model.frameBufferModel.overdrawFactor)
+        val renderer = AndroidUtil.createTileRendererLayer(tileCache, mapView.model.mapViewPosition, mapData, MapsforgeThemes.MOTORIDER, false, true, false)
         mapView.layerManager.layers.add(renderer)
     }
 
-    fun showRoutes(
-        routes: List<Route>,
-        selectedRouteIndex: Int,
-        traffic: TrafficSummary?,
-        trafficSegments: List<TrafficSegment>
-    ) {
-        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex &&
-            renderedTraffic == traffic && renderedTrafficSegments == trafficSegments
-        ) return
+    fun showRoutes(routes: List<Route>, selectedRouteIndex: Int, traffic: TrafficSummary?, trafficSegments: List<TrafficSegment>) {
+        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex && renderedTraffic == traffic && renderedTrafficSegments == trafficSegments) return
         renderedRoutes = routes
         renderedSelectedRoute = selectedRouteIndex
         renderedTraffic = traffic
@@ -131,15 +112,24 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
             val result = routes[index]
             if (result.points.size < 2) return@forEach
             val routeColor = when {
-                // Keep the active route cyan; the traffic rail carries delay severity.
                 index == selectedRouteIndex -> intArrayOf(24, 212, 255)
                 index % 2 == 0 -> intArrayOf(215, 255, 91)
                 else -> intArrayOf(150, 160, 174)
             }
             if (index == selectedRouteIndex) {
+                val shadowPaint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+                    color = AndroidGraphicFactory.INSTANCE.createColor(150, 3, 20, 33)
+                    strokeWidth = 30f * mapView.model.displayModel.scaleFactor
+                    setStyle(Style.STROKE)
+                }
+                Polyline(shadowPaint, AndroidGraphicFactory.INSTANCE).also { shadow ->
+                    shadow.setPoints(result.points.map { LatLong(it.latitude, it.longitude) })
+                    mapView.layerManager.layers.add(shadow)
+                    routeLayers += shadow
+                }
                 val glowPaint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                    color = AndroidGraphicFactory.INSTANCE.createColor(82, routeColor[0], routeColor[1], routeColor[2])
-                    strokeWidth = 24f * mapView.model.displayModel.scaleFactor
+                    color = AndroidGraphicFactory.INSTANCE.createColor(105, routeColor[0], routeColor[1], routeColor[2])
+                    strokeWidth = 22f * mapView.model.displayModel.scaleFactor
                     setStyle(Style.STROKE)
                 }
                 Polyline(glowPaint, AndroidGraphicFactory.INSTANCE).also { glow ->
@@ -150,7 +140,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
             }
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
                 color = AndroidGraphicFactory.INSTANCE.createColor(255, routeColor[0], routeColor[1], routeColor[2])
-                strokeWidth = (if (index == selectedRouteIndex) 11f else 7f) * mapView.model.displayModel.scaleFactor
+                strokeWidth = (if (index == selectedRouteIndex) 10f else 6f) * mapView.model.displayModel.scaleFactor
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
@@ -159,18 +149,14 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
                 routeLayers += line
             }
         }
-        routes.getOrNull(selectedRouteIndex)?.takeIf {
-            it.points.size >= 2 && it.maneuvers.firstOrNull()?.roadName == "اتصال مسیر خاکی"
-        }?.let { route ->
+        routes.getOrNull(selectedRouteIndex)?.takeIf { it.points.size >= 2 && it.maneuvers.firstOrNull()?.roadName == "اتصال مسیر خاکی" }?.let { route ->
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
                 color = AndroidGraphicFactory.INSTANCE.createColor(255, 255, 181, 46)
                 strokeWidth = 9f * mapView.model.displayModel.scaleFactor
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { connector ->
-                connector.setPoints(
-                    route.points.take(2).map { LatLong(it.latitude, it.longitude) }
-                )
+                connector.setPoints(route.points.take(2).map { LatLong(it.latitude, it.longitude) })
                 mapView.layerManager.layers.add(connector)
                 routeLayers += connector
             }
@@ -183,22 +169,12 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
                 else -> intArrayOf(100, 214, 109)
             }
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                color = AndroidGraphicFactory.INSTANCE.createColor(
-                    255,
-                    routeColor[0],
-                    routeColor[1],
-                    routeColor[2]
-                )
+                color = AndroidGraphicFactory.INSTANCE.createColor(255, routeColor[0], routeColor[1], routeColor[2])
                 strokeWidth = 9f * mapView.model.displayModel.scaleFactor
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
-                line.setPoints(
-                    listOf(
-                        LatLong(segment.start.latitude, segment.start.longitude),
-                        LatLong(segment.end.latitude, segment.end.longitude)
-                    )
-                )
+                line.setPoints(listOf(LatLong(segment.start.latitude, segment.start.longitude), LatLong(segment.end.latitude, segment.end.longitude)))
                 mapView.layerManager.layers.add(line)
                 routeLayers += line
             }
@@ -216,13 +192,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
         mapView.applyNightDisplay(enabled)
     }
 
-    fun showLocation(
-        location: Coordinate?,
-        follow: Boolean,
-        navigationActive: Boolean,
-        navigationZoomLevel: Int,
-        recenterToken: Int
-    ) {
+    fun showLocation(location: Coordinate?, follow: Boolean, navigationActive: Boolean, navigationZoomLevel: Int, recenterToken: Int) {
         if (location == null) return
         val point = LatLong(location.latitude, location.longitude)
         val marker = locationLayer ?: createLocationMarker(point).also {
@@ -231,10 +201,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
         }
         marker.setLatLong(point)
         if (follow || (navigationActive && recenterToken != lastRecenterToken)) {
-            mapView.model.mapViewPosition.mapPosition = MapPosition(
-                point,
-                if (navigationActive) navigationZoomLevel.coerceIn(15, 19).toByte() else BROWSE_LOCATION_ZOOM
-            )
+            mapView.model.mapViewPosition.mapPosition = MapPosition(point, if (navigationActive) navigationZoomLevel.coerceIn(16, 19).toByte() else BROWSE_LOCATION_ZOOM)
             lastRecenterToken = recenterToken
         }
         mapView.layerManager.redrawLayers()
@@ -250,7 +217,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
             setStrokeWidth(5f * mapView.model.displayModel.scaleFactor)
             setStyle(Style.STROKE)
         }
-        return Circle(point, 15f, fill, stroke)
+        return Circle(point, 16f, fill, stroke)
     }
 
     fun destroy() {
