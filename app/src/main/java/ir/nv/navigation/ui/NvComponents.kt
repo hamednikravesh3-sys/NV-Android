@@ -224,7 +224,7 @@ fun DestinationSearchBar(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 10.dp),
+            .padding(top = 10.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surface,
