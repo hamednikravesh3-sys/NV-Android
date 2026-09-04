@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -35,6 +35,27 @@ jobs:
         run: |
           python -m unittest discover -s tools -p "test_*.py"
           gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Capture real app screenshot
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell settings put system accelerometer_rotation 0
+            adb shell settings put system user_rotation 0
+            adb shell am force-stop ir.nv.navigation.debug
+            adb shell am start -n ir.nv.navigation.debug/ir.nv.navigation.MainActivity
+            sleep 12
+            adb exec-out screencap -p > nv-real-home.png
+      - name: Upload real screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-real-screenshot
+          path: nv-real-home.png
+          if-no-files-found: error
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
