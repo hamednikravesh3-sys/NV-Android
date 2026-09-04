@@ -21,6 +21,7 @@ import ir.nv.navigation.location.DeviceLocationProvider
 import ir.nv.navigation.location.NavigationFix
 import ir.nv.navigation.network.NetworkMonitor
 import ir.nv.navigation.online.OnlineNavigationService
+import ir.nv.navigation.online.OnlinePlacesService
 import ir.nv.navigation.routing.AStarRouter
 import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.routing.RouteProgressEngine
@@ -29,6 +30,8 @@ import ir.nv.navigation.weather.WeatherAlertService
 import ir.nv.navigation.traffic.LiveTrafficService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -55,6 +58,7 @@ data class NvUiState(
     val routeAlternatives: List<Route> = emptyList(),
     val selectedRouteIndex: Int = 0,
     val recentPlaces: List<Place> = emptyList(),
+    val personalPlaces: List<Place> = emptyList(),
     val navigationActive: Boolean = false,
     val voiceEnabled: Boolean = true,
     val locating: Boolean = false,
@@ -67,6 +71,7 @@ data class NvUiState(
     val remainingSeconds: Double = 0.0,
     val offRoute: Boolean = false,
     val routeNotices: List<RouteNotice> = emptyList(),
+    val routeInsightsLoading: Boolean = false,
     val traffic: TrafficSummary? = null,
     val routing: Boolean = false,
     val message: String? = null,
@@ -82,6 +87,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private val personalPlaces = PersonalPlaceStore(application)
     private val recentPlaces = RecentPlaceStore(application)
     private val online = OnlineNavigationService()
+    private val onlinePlaces = OnlinePlacesService()
     private val networkMonitor = NetworkMonitor(application)
     private val locationProvider = DeviceLocationProvider(application)
     private val trialManager = TrialManager(application)
@@ -93,6 +99,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             onlineAvailable = networkMonitor.isOnline(),
             offlineReady = packManager.isReady(),
             recentPlaces = recentPlaces.all(),
+            personalPlaces = personalPlaces.all(),
             trialState = runCatching { trialManager.state() }.getOrDefault(TrialManager.State.Trial(30))
         )
     )
@@ -239,7 +246,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 distanceToNextManeuverMeters = selected.maneuvers.firstOrNull()?.distanceMeters ?: selected.distanceMeters,
                 remainingDistanceMeters = selected.distanceMeters,
                 remainingSeconds = selected.travelSeconds,
-                routeNotices = emptyList()
+                routeNotices = emptyList(),
+                routeInsightsLoading = true
             )
         }
         viewModelScope.launch { loadRouteNotices(selected) }
@@ -262,7 +270,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 maneuverIndex = 0,
                 offRoute = false,
                 routeSource = RouteSource.NONE,
-                routeNotices = emptyList()
+                routeNotices = emptyList(),
+                routeInsightsLoading = false
             )
         }
     }
@@ -279,6 +288,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 offRoute = false,
                 routeSource = RouteSource.NONE,
                 routeNotices = emptyList(),
+                routeInsightsLoading = false,
                 traffic = null
             )
         }
@@ -349,7 +359,20 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun savePersonalCode(place: Place, code: String) {
         val result = personalPlaces.save(code, place.name, place.coordinate)
-        mutableState.update { it.copy(message = result.exceptionOrNull()?.message ?: "کد شخصی «${code.trim()}» ذخیره شد") }
+        val cleanCode = ir.nv.navigation.data.PersonalCodeRules.normalize(code)
+        mutableState.update {
+            it.copy(
+                personalPlaces = personalPlaces.all(),
+                message = result.exceptionOrNull()?.message ?: "کد شخصی «$cleanCode» ذخیره شد"
+            )
+        }
+    }
+
+    fun deletePersonalCode(code: String) {
+        personalPlaces.delete(code)
+        mutableState.update {
+            it.copy(personalPlaces = personalPlaces.all(), message = "کد شخصی حذف شد")
+        }
     }
 
     fun calculateRoute() {
@@ -401,6 +424,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     offRoute = false,
                     routeSource = source,
                     routeNotices = emptyList(),
+                    routeInsightsLoading = result != null,
                     traffic = null,
                     message = when {
                         result != null -> null
@@ -492,18 +516,32 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     fun mapFile() = packManager.mapFile
 
     private suspend fun loadRouteNotices(route: Route) {
-        val notices = withContext(Dispatchers.IO) {
-            val attractions = places?.noticesAlong(route).orEmpty()
-            val weather = if (networkMonitor.isOnline()) {
-                runCatching { weatherAlerts.alertsAhead(route) }.getOrDefault(emptyList())
-            } else emptyList()
-            (weather + attractions).sortedBy { it.distanceAheadMeters }.take(8)
+        val onlineNow = networkMonitor.isOnline()
+        val (notices, traffic) = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val offlinePlaces = async { runCatching { places?.noticesAlong(route, 12).orEmpty() }.getOrDefault(emptyList()) }
+                val remotePlaces = async {
+                    if (onlineNow) runCatching { onlinePlaces.noticesAhead(route) }.getOrDefault(emptyList())
+                    else emptyList()
+                }
+                val weather = async {
+                    if (onlineNow) runCatching { weatherAlerts.alertsAhead(route) }.getOrDefault(emptyList())
+                    else emptyList()
+                }
+                val currentTraffic = async {
+                    if (onlineNow) runCatching { liveTraffic.summary(route) }.getOrNull() else null
+                }
+                val merged = (weather.await() + offlinePlaces.await() + remotePlaces.await())
+                    .distinctBy { Triple(it.kind, it.title, it.distanceAheadMeters.toInt() / 250) }
+                    .sortedBy { it.distanceAheadMeters }
+                    .take(16)
+                merged to currentTraffic.await()
+            }
         }
-        val traffic = if (networkMonitor.isOnline()) {
-            withContext(Dispatchers.IO) { runCatching { liveTraffic.summary(route) }.getOrNull() }
-        } else null
         mutableState.update { state ->
-            if (state.route === route) state.copy(routeNotices = notices, traffic = traffic) else state
+            if (state.route === route) {
+                state.copy(routeNotices = notices, routeInsightsLoading = false, traffic = traffic)
+            } else state
         }
     }
 

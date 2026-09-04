@@ -13,12 +13,17 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 object RouteInsightEngine {
-    fun placesAhead(route: Route, places: List<Place>, limit: Int = 8): List<RouteNotice> {
+    fun placesAhead(
+        route: Route,
+        places: List<Place>,
+        limit: Int = 8,
+        maxAheadMeters: Double = DEFAULT_MAX_AHEAD_METERS
+    ): List<RouteNotice> {
         if (route.points.size < 2) return emptyList()
         return places.mapNotNull { place ->
             val projection = project(route.points, place.coordinate) ?: return@mapNotNull null
             if (projection.offsetMeters > PLACE_CORRIDOR_METERS) return@mapNotNull null
-            if (projection.progressMeters !in MIN_AHEAD_METERS..MAX_AHEAD_METERS) return@mapNotNull null
+            if (projection.progressMeters !in MIN_AHEAD_METERS..maxAheadMeters) return@mapNotNull null
             RouteNotice(
                 title = place.displayName,
                 detail = categoryLabel(place.category),
@@ -101,5 +106,5 @@ object RouteInsightEngine {
     private const val METERS_PER_DEGREE = 111_320.0
     private const val PLACE_CORRIDOR_METERS = 3_000.0
     private const val MIN_AHEAD_METERS = 500.0
-    private const val MAX_AHEAD_METERS = 100_000.0
+    private const val DEFAULT_MAX_AHEAD_METERS = 100_000.0
 }

@@ -51,6 +51,7 @@ fun NvApp(
     val billingState by billing.state.collectAsState()
     var showOfflineMaps by remember { mutableStateOf(false) }
     var showPlaceCode by remember { mutableStateOf(false) }
+    var showPersonalCodes by remember { mutableStateOf(false) }
     var showRoutePlaces by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf(LocationAction.ORIGIN) }
@@ -85,7 +86,7 @@ fun NvApp(
         }
     }
     val sharePlace: (Place) -> Unit = { place ->
-        PlaceCodes.shareCode(place.code)?.let { code ->
+        (place.personalCode?.let { "کد شخصی NV: $it" } ?: PlaceCodes.shareCode(place.code))?.let { code ->
             val message = "${place.name}\n$code"
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -141,16 +142,37 @@ fun NvApp(
             )
         }
 
+        if (showPersonalCodes) {
+            PersonalCodesSheet(
+                selectedPlace = state.destination ?: state.origin,
+                savedPlaces = state.personalPlaces,
+                onDismiss = { showPersonalCodes = false },
+                onAddCode = {
+                    showPersonalCodes = false
+                    if (state.destination != null || state.origin != null) showPlaceCode = true else showSearch = true
+                },
+                onDelete = viewModel::deletePersonalCode,
+                onShare = sharePlace
+            )
+        }
+
         if (showRoutePlaces) {
             RoutePlacesSheet(
                 destination = state.destination,
                 notices = state.routeNotices,
+                loading = state.routeInsightsLoading,
+                onlineAvailable = state.onlineAvailable,
+                offlineReady = state.offlineReady,
                 onDismiss = { showRoutePlaces = false },
                 onShowCode = {
                     showRoutePlaces = false
                     showPlaceCode = true
                 },
-                onShare = sharePlace
+                onShare = sharePlace,
+                onOpenOfflineMaps = {
+                    showRoutePlaces = false
+                    showOfflineMaps = true
+                }
             )
         }
 
@@ -264,6 +286,7 @@ fun NvApp(
                     source = state.routeSource,
                     traffic = state.traffic,
                     notices = state.routeNotices,
+                    insightsLoading = state.routeInsightsLoading,
                     navigationActive = state.navigationActive,
                     remainingDistanceMeters = state.remainingDistanceMeters,
                     remainingSeconds = state.remainingSeconds,
@@ -293,6 +316,17 @@ fun NvApp(
                     onOpenOfflineMaps = { showOfflineMaps = true },
                     onToggleTheme = onToggleTheme,
                     modifier = Modifier.align(Alignment.CenterEnd)
+                )
+            }
+
+            if (!state.navigationActive && state.route == null && (state.onlineAvailable || state.offlineReady)) {
+                NvHomeDock(
+                    onRoute = { showSearch = true },
+                    onCodes = { showPersonalCodes = true },
+                    onOfflineMaps = { showOfflineMaps = true },
+                    darkMode = darkMode,
+                    onToggleTheme = onToggleTheme,
+                    modifier = Modifier.align(Alignment.BottomCenter)
                 )
             }
 

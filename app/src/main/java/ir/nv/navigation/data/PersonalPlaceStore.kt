@@ -32,13 +32,10 @@ class PersonalPlaceStore(context: Context) {
     }
 
     fun save(code: String, name: String, coordinate: Coordinate): Result<Unit> = runCatching {
-        val cleanCode = code.trim()
-        require(cleanCode.length in 2..24) { "کد شخصی باید بین ۲ تا ۲۴ نویسه باشد" }
-        require(cleanCode.matches(Regex("[A-Za-z0-9آ-ی_-]+"))) {
-            "کد فقط می‌تواند شامل حروف، عدد، خط تیره یا زیرخط باشد"
-        }
+        val cleanCode = PersonalCodeRules.normalize(code)
+        requireNotNull(cleanCode) { "کد شخصی باید یک عدد بین ۱ تا ۹۹۹٬۹۹۹٬۹۹۹ باشد" }
         val current = read().toMutableList()
-        require(current.none { it.code.equals(cleanCode, ignoreCase = true) }) {
+        require(current.none { it.code == cleanCode }) {
             "این کد شخصی قبلاً استفاده شده است"
         }
         current += Item(cleanCode, name.trim().ifBlank { "مکان شخصی" }, coordinate.latitude, coordinate.longitude)
@@ -46,7 +43,8 @@ class PersonalPlaceStore(context: Context) {
     }
 
     fun delete(code: String) {
-        write(read().filterNot { it.code.equals(code, ignoreCase = true) })
+        val cleanCode = PersonalCodeRules.normalize(code) ?: return
+        write(read().filterNot { it.code == cleanCode })
     }
 
     private fun read(): List<Item> {

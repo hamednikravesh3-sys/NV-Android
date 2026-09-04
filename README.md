@@ -4,7 +4,7 @@ NV is a Persian-first navigation application for Android 10 and newer. This
 repository replaces the earlier incomplete IranNavApp upload with a standard,
 testable Android project.
 
-## Current architecture (0.6)
+## Current architecture (0.7)
 
 - Android minSdk 29 (Android 10), Kotlin and Jetpack Compose
 - online-first native map, instant bundled Iran-city search, Photon plus
@@ -12,7 +12,8 @@ testable Android project.
 - live network monitoring with automatic offline fallback
 - user-initiated Iran-only map download from a dedicated in-app panel
 - offline Mapsforge vector rendering with no online dependency
-- stable public place codes, optional personal codes, recent destinations and
+- stable public place codes, user-defined numeric personal codes with a dedicated
+  persistent menu, recent destinations and
   search by Persian name, Persian/Latin digits, numeric code or `NV:code`
 - origin and destination dropdowns
 - an on-device A* routing engine
@@ -20,10 +21,13 @@ testable Android project.
 - turn-restriction enforcement using incoming-edge routing state
 - up to three online route alternatives with visual selection, route distance,
   travel time and ETA
-- map-first Persian Material interface with a destination bottom sheet, automatic
-  system day/night mode and an original adaptive NV Fold icon
+- map-first Persian Material interface with a persistent one-hand dock, destination
+  bottom sheets, automatic system day/night mode and the approved green NV icon
 - D/F/H/I navigation flow: map-first home, route-choice sheet, distraction-
-  minimized driving HUD, and an attractions/services-ahead sheet
+  minimized driving HUD, and an always-active attractions/services-ahead sheet
+- online OpenStreetMap attractions and services for the next 10 km, with automatic
+  offline fallback to the installed Iran data pack
+- a live weather card sampled at the actual coordinate exactly 10 km ahead
 - GPS speed display and OSRM lane guidance in the active-driving HUD
 - real TomTom traffic-flow adapter (enabled only when `NV_TRAFFIC_API_KEY` is
   provided; NV never invents congestion when live data is unavailable)

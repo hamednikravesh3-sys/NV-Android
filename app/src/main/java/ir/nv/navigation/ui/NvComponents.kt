@@ -77,8 +77,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
@@ -659,6 +661,71 @@ fun HomeMapControls(
 }
 
 @Composable
+fun NvHomeDock(
+    onRoute: () -> Unit,
+    onCodes: () -> Unit,
+    onOfflineMaps: () -> Unit,
+    darkMode: Boolean,
+    onToggleTheme: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().navigationBarsPadding().padding(12.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        shadowElevation = 12.dp
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            DockAction("مسیر", Icons.Rounded.DirectionsCar, true, onRoute)
+            DockAction("کدهای من", Icons.Rounded.Save, false, onCodes)
+            DockAction("نقشه آفلاین", Icons.Rounded.Download, false, onOfflineMaps)
+            DockAction(
+                if (darkMode) "حالت روز" else "حالت شب",
+                if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                false,
+                onToggleTheme
+            )
+        }
+    }
+}
+
+@Composable
+private fun DockAction(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(horizontal = 9.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(13.dp),
+            color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp).size(22.dp),
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
 fun RouteSummaryCard(
     route: Route,
     destination: Place?,
@@ -667,6 +734,7 @@ fun RouteSummaryCard(
     source: RouteSource,
     traffic: TrafficSummary?,
     notices: List<RouteNotice>,
+    insightsLoading: Boolean,
     navigationActive: Boolean,
     remainingDistanceMeters: Double,
     remainingSeconds: Double,
@@ -755,10 +823,10 @@ fun RouteSummaryCard(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            notices.firstOrNull()?.let { notice ->
+            notices.firstOrNull { it.kind == RouteNotice.Kind.WEATHER }?.let { notice ->
                 Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
                     Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
+                        Icon(Icons.Rounded.CloudDone, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Column {
                             Text(notice.title, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -768,10 +836,11 @@ fun RouteSummaryCard(
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onOpenPlaces, modifier = Modifier.weight(1f), enabled = notices.isNotEmpty()) {
-                    Icon(Icons.Rounded.Explore, null, Modifier.size(18.dp))
+                OutlinedButton(onClick = onOpenPlaces, modifier = Modifier.weight(1f)) {
+                    if (insightsLoading) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Rounded.Explore, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(5.dp))
-                    Text("جاذبه‌های مسیر")
+                    Text(if (insightsLoading) "در حال بررسی" else "جاذبه‌ها و هوا")
                 }
                 OutlinedButton(onClick = onOpenCode, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Rounded.QrCode2, null, Modifier.size(18.dp))
@@ -1042,9 +1111,13 @@ private fun ModeButton(text: String, selected: Boolean, modifier: Modifier, onCl
 fun RoutePlacesSheet(
     destination: Place?,
     notices: List<RouteNotice>,
+    loading: Boolean,
+    onlineAvailable: Boolean,
+    offlineReady: Boolean,
     onDismiss: () -> Unit,
     onShowCode: () -> Unit,
-    onShare: (Place) -> Unit
+    onShare: (Place) -> Unit,
+    onOpenOfflineMaps: () -> Unit
 ) {
     var filter by remember { mutableStateOf(RoutePlaceFilter.ALL) }
     val visibleNotices = notices.filter { notice ->
@@ -1052,6 +1125,7 @@ fun RoutePlacesSheet(
             RoutePlaceFilter.ALL -> true
             RoutePlaceFilter.ATTRACTIONS -> notice.kind == RouteNotice.Kind.ATTRACTION
             RoutePlaceFilter.SERVICES -> notice.kind == RouteNotice.Kind.SERVICE
+            RoutePlaceFilter.WEATHER -> notice.kind == RouteNotice.Kind.WEATHER
         }
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -1059,16 +1133,20 @@ fun RoutePlacesSheet(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("جاذبه‌ها و امکانات مسیر", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text("جلوتر در مسیر", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            Text("دیدنی‌ها، خدمات و آب‌وهوای ۱۰ کیلومتر جلوتر", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 RoutePlaceFilterButton("همه", filter == RoutePlaceFilter.ALL, Modifier.weight(1f)) {
                     filter = RoutePlaceFilter.ALL
                 }
-                RoutePlaceFilterButton("دیدنی‌ها", filter == RoutePlaceFilter.ATTRACTIONS, Modifier.weight(1f)) {
+                RoutePlaceFilterButton("دیدنی", filter == RoutePlaceFilter.ATTRACTIONS, Modifier.weight(1f)) {
                     filter = RoutePlaceFilter.ATTRACTIONS
                 }
                 RoutePlaceFilterButton("خدمات", filter == RoutePlaceFilter.SERVICES, Modifier.weight(1f)) {
                     filter = RoutePlaceFilter.SERVICES
+                }
+                RoutePlaceFilterButton("هوا", filter == RoutePlaceFilter.WEATHER, Modifier.weight(1f)) {
+                    filter = RoutePlaceFilter.WEATHER
                 }
             }
             destination?.let { place ->
@@ -1085,8 +1163,17 @@ fun RoutePlacesSheet(
                     }
                 }
             }
-            visibleNotices.take(8).forEach { notice ->
-                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            if (loading) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text("در حال دریافت اطلاعات واقعی مسیر…", style = MaterialTheme.typography.bodySmall)
+            }
+            visibleNotices.take(12).forEach { notice ->
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (notice.kind == RouteNotice.Kind.WEATHER) {
+                        MaterialTheme.colorScheme.tertiaryContainer
+                    } else MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             when (notice.kind) {
@@ -1106,7 +1193,25 @@ fun RoutePlacesSheet(
                     }
                 }
             }
-            if (visibleNotices.isEmpty()) Text("موردی در این دسته در ادامه مسیر پیدا نشد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!loading && visibleNotices.isEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        when {
+                            !onlineAvailable && !offlineReady -> "برای جاذبه‌ها و خدمات، اینترنت یا نقشه آفلاین ایران لازم است."
+                            filter == RoutePlaceFilter.WEATHER && !onlineAvailable -> "هواشناسی زنده فقط هنگام اتصال اینترنت نمایش داده می‌شود."
+                            else -> "موردی در این دسته در ۱۰ کیلومتر جلوتر پیدا نشد."
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (!offlineReady) {
+                        OutlinedButton(onClick = onOpenOfflineMaps) {
+                            Icon(Icons.Rounded.Download, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("دانلود نقشه آفلاین ایران")
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -1126,7 +1231,71 @@ private fun RoutePlaceFilterButton(
     }
 }
 
-private enum class RoutePlaceFilter { ALL, ATTRACTIONS, SERVICES }
+private enum class RoutePlaceFilter { ALL, ATTRACTIONS, SERVICES, WEATHER }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PersonalCodesSheet(
+    selectedPlace: Place?,
+    savedPlaces: List<Place>,
+    onDismiss: () -> Unit,
+    onAddCode: () -> Unit,
+    onDelete: (String) -> Unit,
+    onShare: (Place) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("کدهای عددی من", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            Text(
+                "برای هر مکان یک عدد دلخواه تعریف کنید و بعداً همان عدد را در جست‌وجو وارد کنید.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Place, null)
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(selectedPlace?.name ?: "هنوز مکانی انتخاب نشده", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (selectedPlace == null) "ابتدا یک مکان را از جست‌وجو انتخاب کنید" else "برای این مکان کد عددی بسازید",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Button(onClick = onAddCode) { Text(if (selectedPlace == null) "انتخاب" else "تعریف کد") }
+                }
+            }
+            if (savedPlaces.isEmpty()) {
+                Text("هنوز کد شخصی ذخیره نشده است.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text("کدهای ذخیره‌شده", fontWeight = FontWeight.Black)
+                savedPlaces.take(10).forEach { place ->
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primary) {
+                                Text(
+                                    place.personalCode.orEmpty(),
+                                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                            Spacer(Modifier.width(9.dp))
+                            Text(place.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            IconButton(onClick = { onShare(place) }) { Icon(Icons.Rounded.Share, "اشتراک") }
+                            IconButton(onClick = { place.personalCode?.let(onDelete) }) {
+                                Icon(Icons.Rounded.DeleteOutline, "حذف", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
 
 @Composable
 fun PlaceCodeDialog(
@@ -1164,17 +1333,27 @@ fun PlaceCodeDialog(
                 } else if (place != null) {
                     Text("این نتیجه آنلاین است؛ کد عمومی پس از نصب نقشه آفلاین ایران در دسترس است.", style = MaterialTheme.typography.bodySmall)
                 }
+                val normalizedCode = ir.nv.navigation.data.PersonalCodeRules.normalize(code)
                 OutlinedTextField(
                     value = code,
-                    onValueChange = { code = it },
-                    label = { Text("کد شخصی؛ مثلاً 11 یا HOME") },
+                    onValueChange = { input ->
+                        code = PlaceCodes.normalizeDigits(input).filter(Char::isDigit).take(9)
+                    },
+                    label = { Text("کد شخصی فقط عددی؛ مثلاً ۱۱") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
-                    enabled = place != null
+                    enabled = place != null,
+                    supportingText = {
+                        Text(if (code.isBlank() || normalizedCode != null) "عدد ۱ تا ۹۹۹٬۹۹۹٬۹۹۹" else "عدد معتبر وارد کنید")
+                    }
                 )
             }
         },
         confirmButton = {
-            Button(onClick = { place?.let { onSave(it, code) } }, enabled = place != null && code.trim().length >= 2) {
+            Button(
+                onClick = { place?.let { onSave(it, code) } },
+                enabled = place != null && ir.nv.navigation.data.PersonalCodeRules.normalize(code) != null
+            ) {
                 Text("ذخیره")
             }
         },

@@ -14,8 +14,8 @@ android {
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -31,6 +31,11 @@ android {
             "String",
             "WEATHER_API_URL",
             "\"https://api.open-meteo.com/v1/forecast\""
+        )
+        buildConfigField(
+            "String",
+            "PLACES_API_URL",
+            "\"https://overpass-api.de/api/interpreter\""
         )
         buildConfigField("String", "TRAFFIC_API_KEY", "\"$trafficApiKey\"")
         buildConfigField(
