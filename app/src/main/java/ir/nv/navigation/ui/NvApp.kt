@@ -132,7 +132,7 @@ fun NvApp(
         }
 
         if (showSearch) {
-            SearchSheet(
+            DfhiRouteSheet(
                 state = state,
                 onDismiss = {
                     showSearch = false
