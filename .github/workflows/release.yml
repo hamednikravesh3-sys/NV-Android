@@ -1,0 +1,47 @@
+name: Signed Release APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KEYSTORE_BASE64: ${{ secrets.NV_KEYSTORE_BASE64 }}
+      NV_KEYSTORE_PASSWORD: ${{ secrets.NV_KEYSTORE_PASSWORD }}
+      NV_KEY_ALIAS: ${{ secrets.NV_KEY_ALIAS }}
+      NV_KEY_PASSWORD: ${{ secrets.NV_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require signing secrets
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          test -n "$NV_KEYSTORE_PASSWORD"
+          test -n "$NV_KEY_ALIAS"
+          test -n "$NV_KEY_PASSWORD"
+      - name: Decode keystore
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nv-release.jks"
+          echo "NV_KEYSTORE_FILE=$RUNNER_TEMP/nv-release.jks" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Test and build signed release
+        run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-signed-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

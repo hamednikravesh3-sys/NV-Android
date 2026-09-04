@@ -1,0 +1,3 @@
+-keep class org.osmdroid.** { *; }
+-dontwarn org.osmdroid.**
+-keepattributes Signature
