@@ -11,8 +11,8 @@ android {
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -30,6 +30,21 @@ android {
             "\"https://api.open-meteo.com/v1/forecast\""
         )
         buildConfigField("String", "TRAFFIC_API_KEY", "\"\"")
+        buildConfigField(
+            "String",
+            "GEOCODING_API_URL",
+            "\"https://photon.komoot.io/api\""
+        )
+        buildConfigField(
+            "String",
+            "ROUTING_API_URL",
+            "\"https://router.project-osrm.org\""
+        )
+        buildConfigField(
+            "String",
+            "ROUTING_FALLBACK_API_URL",
+            "\"https://routing.openstreetmap.de/routed-car\""
+        )
     }
 
     signingConfigs {

@@ -1,5 +1,6 @@
 package ir.nv.navigation.online
 
+import ir.nv.navigation.BuildConfig
 import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
@@ -8,110 +9,151 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.LinkedHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.absoluteValue
 
 class OnlineNavigationService {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
+    private val searchCache = object : LinkedHashMap<String, List<Place>>(30, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Place>>?): Boolean = size > 30
+    }
 
     suspend fun search(query: String, limit: Int = 12): List<Place> = withContext(Dispatchers.IO) {
         val q = query.trim()
         if (q.length < 2) return@withContext emptyList()
+        synchronized(searchCache) { searchCache[q]?.let { return@withContext it } }
+
         val encoded = URLEncoder.encode(q, StandardCharsets.UTF_8.toString())
-        val url = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=ir&limit=$limit&q=$encoded"
+        val url = BuildConfig.GEOCODING_API_URL.toHttpUrlString() +
+            "?q=$encoded&limit=$limit&lang=fa&countrycode=IR&bbox=44.0,24.0,64.0,40.0"
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "NV-Android/0.3 (offline-capable navigation)")
+            .header("User-Agent", USER_AGENT)
             .header("Accept-Language", "fa,en")
             .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return@withContext emptyList()
-            val body = response.body?.string().orEmpty()
-            val array = JSONArray(body)
-            buildList {
-                for (i in 0 until array.length()) {
-                    val item = array.getJSONObject(i)
-                    val lat = item.optString("lat").toDoubleOrNull() ?: continue
-                    val lon = item.optString("lon").toDoubleOrNull() ?: continue
-                    val osmId = item.optLong("osm_id", i.toLong() + 1L)
-                    val type = item.optString("type", "place")
-                    val category = when (type) {
-                        "city", "town", "village", "suburb", "neighbourhood" -> "place:$type"
-                        else -> "online:$type"
-                    }
-                    val display = item.optString("display_name").ifBlank { q }
-                    val shortName = display.substringBefore(',').trim().ifBlank { display }
+        val results = client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("جست‌وجوی آنلاین: HTTP ${response.code}")
+            parsePhoton(JSONObject(response.body?.string().orEmpty()), q)
+        }
+        synchronized(searchCache) { searchCache[q] = results }
+        results
+    }
+
+    suspend fun route(origin: Coordinate, destination: Coordinate): Route = withContext(Dispatchers.IO) {
+        val providers = listOf(
+            BuildConfig.ROUTING_API_URL,
+            BuildConfig.ROUTING_FALLBACK_API_URL
+        ).map { it.toHttpUrlString() }.distinct()
+        val failures = mutableListOf<String>()
+
+        providers.forEach { provider ->
+            val url = provider + "/route/v1/driving/" +
+                "${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}" +
+                "?overview=full&geometries=geojson&steps=true&alternatives=false"
+            val result = runCatching {
+                val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                    parseRoute(JSONObject(response.body?.string().orEmpty()))
+                }
+            }
+            result.getOrNull()?.let { return@withContext it }
+            failures += result.exceptionOrNull()?.message ?: "پاسخ نامعتبر"
+        }
+        throw IOException("هیچ سرویس مسیر آنلاینی پاسخ نداد: ${failures.joinToString("، ")}")
+    }
+
+    private fun parsePhoton(root: JSONObject, fallbackName: String): List<Place> {
+        val features = root.optJSONArray("features") ?: return emptyList()
+        return buildList {
+            for (index in 0 until features.length()) {
+                val feature = features.optJSONObject(index) ?: continue
+                val coordinates = feature.optJSONObject("geometry")?.optJSONArray("coordinates") ?: continue
+                if (coordinates.length() < 2) continue
+                val longitude = coordinates.optDouble(0, Double.NaN)
+                val latitude = coordinates.optDouble(1, Double.NaN)
+                if (!latitude.isFinite() || !longitude.isFinite()) continue
+                val properties = feature.optJSONObject("properties") ?: JSONObject()
+                val osmId = properties.optLong("osm_id", index.toLong() + 1)
+                val name = properties.optString("name")
+                    .ifBlank { properties.optString("street") }
+                    .ifBlank { properties.optString("city") }
+                    .ifBlank { fallbackName }
+                val osmKey = properties.optString("osm_key", "online")
+                val osmValue = properties.optString("osm_value", "place")
+                add(
+                    Place(
+                        code = -(osmId.absoluteValue + 1L),
+                        name = name,
+                        coordinate = Coordinate(latitude, longitude),
+                        category = "$osmKey:$osmValue"
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseRoute(root: JSONObject): Route {
+        if (root.optString("code") != "Ok") {
+            throw IOException(root.optString("message", "مسیر پیدا نشد"))
+        }
+        val routes = root.optJSONArray("routes") ?: throw IOException("پاسخ مسیر خالی است")
+        if (routes.length() == 0) throw IOException("برای این دو نقطه مسیر پیدا نشد")
+        val first = routes.getJSONObject(0)
+        val coordinates = first.getJSONObject("geometry").getJSONArray("coordinates")
+        val points = buildList {
+            for (index in 0 until coordinates.length()) {
+                val pair = coordinates.getJSONArray(index)
+                add(Coordinate(pair.getDouble(1), pair.getDouble(0)))
+            }
+        }
+        if (points.size < 2) throw IOException("هندسه مسیر نامعتبر است")
+        return Route(
+            points = points,
+            edgeIds = emptyList(),
+            distanceMeters = first.optDouble("distance", 0.0),
+            travelSeconds = first.optDouble("duration", 0.0),
+            maneuvers = parseManeuvers(first)
+        )
+    }
+
+    private fun parseManeuvers(route: JSONObject): List<RouteManeuver> {
+        val legs = route.optJSONArray("legs") ?: return emptyList()
+        return buildList {
+            for (legIndex in 0 until legs.length()) {
+                val steps = legs.getJSONObject(legIndex).optJSONArray("steps") ?: continue
+                for (stepIndex in 0 until steps.length()) {
+                    val step = steps.getJSONObject(stepIndex)
+                    val maneuver = step.optJSONObject("maneuver") ?: continue
+                    val type = maneuver.optString("type")
+                    val modifier = maneuver.optString("modifier")
+                    val roadName = step.optString("name").takeIf { it.isNotBlank() }
+                    val direction = maneuverDirection(type, modifier)
+                    val location = maneuver.optJSONArray("location")
+                    val coordinate = if (location != null && location.length() >= 2) {
+                        Coordinate(location.getDouble(1), location.getDouble(0))
+                    } else null
                     add(
-                        Place(
-                            code = -(osmId.absoluteValue + 1L),
-                            name = shortName,
-                            coordinate = Coordinate(lat, lon),
-                            category = category
+                        RouteManeuver(
+                            instruction = maneuverInstruction(type, direction, roadName),
+                            roadName = roadName,
+                            distanceMeters = step.optDouble("distance", 0.0),
+                            direction = direction,
+                            coordinate = coordinate
                         )
                     )
                 }
             }
         }
-    }
-
-    suspend fun route(origin: Coordinate, destination: Coordinate): Route? = withContext(Dispatchers.IO) {
-        val url = "https://router.project-osrm.org/route/v1/driving/" +
-            "${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}" +
-            "?overview=full&geometries=geojson&steps=true&alternatives=false"
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "NV-Android/0.3")
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return@withContext null
-            val root = JSONObject(response.body?.string().orEmpty())
-            val routes = root.optJSONArray("routes") ?: return@withContext null
-            if (routes.length() == 0) return@withContext null
-            val first = routes.getJSONObject(0)
-            val coords = first.getJSONObject("geometry").getJSONArray("coordinates")
-            val points = ArrayList<Coordinate>(coords.length())
-            for (i in 0 until coords.length()) {
-                val pair = coords.getJSONArray(i)
-                points += Coordinate(pair.getDouble(1), pair.getDouble(0))
-            }
-            Route(
-                points = points,
-                edgeIds = emptyList(),
-                distanceMeters = first.optDouble("distance", 0.0),
-                travelSeconds = first.optDouble("duration", 0.0),
-                maneuvers = parseManeuvers(first)
-            )
-        }
-    }
-
-    private fun parseManeuvers(route: JSONObject): List<RouteManeuver> {
-        val legs = route.optJSONArray("legs") ?: return emptyList()
-        val result = mutableListOf<RouteManeuver>()
-        for (legIndex in 0 until legs.length()) {
-            val steps = legs.getJSONObject(legIndex).optJSONArray("steps") ?: continue
-            for (stepIndex in 0 until steps.length()) {
-                val step = steps.getJSONObject(stepIndex)
-                val maneuver = step.optJSONObject("maneuver") ?: continue
-                val type = maneuver.optString("type")
-                val modifier = maneuver.optString("modifier")
-                val roadName = step.optString("name").takeIf { it.isNotBlank() }
-                val direction = maneuverDirection(type, modifier)
-                result += RouteManeuver(
-                    instruction = maneuverInstruction(type, direction, roadName),
-                    roadName = roadName,
-                    distanceMeters = step.optDouble("distance", 0.0),
-                    direction = direction
-                )
-            }
-        }
-        return result
     }
 
     private fun maneuverDirection(type: String, modifier: String): RouteManeuver.Direction = when {
@@ -145,5 +187,11 @@ class OnlineNavigationService {
             else -> "مستقیم ادامه دهید"
         }
         return roadName?.let { "$action، سپس وارد $it شوید" } ?: action
+    }
+
+    private fun String.toHttpUrlString(): String = trim().trimEnd('/')
+
+    private companion object {
+        const val USER_AGENT = "NV-Android/0.4 (hamednikravesh3@gmail.com)"
     }
 }

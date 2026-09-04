@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.Coordinate
 import org.mapsforge.core.graphics.Style
 import org.mapsforge.core.model.LatLong
 import org.mapsforge.core.model.MapPosition
@@ -17,11 +18,15 @@ import org.mapsforge.map.layer.cache.TileCache
 import org.mapsforge.map.layer.download.TileDownloadLayer
 import org.mapsforge.map.layer.download.tilesource.OpenStreetMapMapnik
 import org.mapsforge.map.layer.overlay.Polyline
+import org.mapsforge.map.layer.overlay.Circle
 
 @Composable
 fun OnlineIranMap(
     context: Context,
     route: Route?,
+    currentLocation: Coordinate?,
+    followLocation: Boolean,
+    darkMode: Boolean,
     modifier: Modifier = Modifier
 ) {
     val holder = remember { OnlineMapHolder(context) }
@@ -33,7 +38,11 @@ fun OnlineIranMap(
     AndroidView(
         factory = { holder.mapView },
         modifier = modifier,
-        update = { holder.showRoute(route) }
+        update = {
+            holder.setDarkMode(darkMode)
+            holder.showRoute(route)
+            holder.showLocation(currentLocation, followLocation)
+        }
     )
 }
 
@@ -42,7 +51,9 @@ private class OnlineMapHolder(context: Context) {
     private val tileCache: TileCache
     private val downloadLayer: TileDownloadLayer
     private var routeLayer: Polyline? = null
+    private var locationLayer: Circle? = null
     private var renderedRoute: Route? = null
+    private var darkMode: Boolean? = null
 
     init {
         mapView.setBuiltInZoomControls(false)
@@ -58,7 +69,7 @@ private class OnlineMapHolder(context: Context) {
             1f,
             mapView.model.frameBufferModel.overdrawFactor
         )
-        OpenStreetMapMapnik.INSTANCE.setUserAgent("NV-Android/0.3 (hamednikravesh3@gmail.com)")
+        OpenStreetMapMapnik.INSTANCE.setUserAgent("NV-Android/0.4 (hamednikravesh3@gmail.com)")
         downloadLayer = TileDownloadLayer(
             tileCache,
             mapView.model.mapViewPosition,
@@ -89,7 +100,44 @@ private class OnlineMapHolder(context: Context) {
                 )
             }
         }
+        locationLayer?.let { marker ->
+            mapView.layerManager.layers.remove(marker)
+            mapView.layerManager.layers.add(marker)
+        }
         mapView.layerManager.redrawLayers()
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        if (darkMode == enabled) return
+        darkMode = enabled
+        mapView.applyNightDisplay(enabled)
+    }
+
+    fun showLocation(location: Coordinate?, follow: Boolean) {
+        if (location == null) return
+        val point = LatLong(location.latitude, location.longitude)
+        val marker = locationLayer ?: createLocationMarker(point).also {
+            locationLayer = it
+            mapView.layerManager.layers.add(it)
+        }
+        marker.setLatLong(point)
+        if (follow) {
+            mapView.model.mapViewPosition.mapPosition = MapPosition(point, 16)
+        }
+        mapView.layerManager.redrawLayers()
+    }
+
+    private fun createLocationMarker(point: LatLong): Circle {
+        val fill = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+            setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 18, 104, 232))
+            setStyle(Style.FILL)
+        }
+        val stroke = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+            setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 255, 255, 255))
+            setStrokeWidth(4f * mapView.model.displayModel.scaleFactor)
+            setStyle(Style.STROKE)
+        }
+        return Circle(point, 12f, fill, stroke)
     }
 
     fun destroy() {

@@ -4,13 +4,14 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- NV Fold: an interlocked signal mark with hidden N/V negative space. -->
     <path
-        android:fillColor="#00A67E"
-        android:pathData="M54,10A44,44 0,1 0,54 98A44,44 0,1 0,54 10" />
+        android:fillColor="#36D6FF"
+        android:pathData="M23,31C23,26 27,22 32,22C35,22 38,24 40,27L55,48L69,27C72,22 78,21 82,24C85,26 87,29 87,33L87,72C87,78 83,83 77,83C71,83 67,78 67,72L67,56L63,62C59,68 51,69 46,63L43,60L43,73C43,79 39,83 33,83C27,83 23,79 23,73Z" />
+    <path
+        android:fillColor="#D7FF5B"
+        android:pathData="M42,28L55,46L65,31L65,50L58,60C56,63 52,63 50,60L42,50Z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M29,72L29,36L38,36L56,59L56,36L65,36L65,72L56,72L38,49L38,72Z" />
-    <path
-        android:fillColor="#C9FF54"
-        android:pathData="M70,35L78,35L70,73L62,73Z" />
+        android:pathData="M31,29C34,29 36,31 36,34L36,72C36,75 34,77 31,77C28,77 26,75 26,72L26,34C26,31 28,29 31,29Z" />
 </vector>

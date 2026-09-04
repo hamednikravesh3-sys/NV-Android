@@ -36,7 +36,8 @@ data class RouteManeuver(
     val instruction: String,
     val roadName: String?,
     val distanceMeters: Double,
-    val direction: Direction
+    val direction: Direction,
+    val coordinate: Coordinate? = null
 ) {
     enum class Direction {
         STRAIGHT,

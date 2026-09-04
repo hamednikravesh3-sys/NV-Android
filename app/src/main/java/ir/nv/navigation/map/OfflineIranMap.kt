@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.Coordinate
 import org.mapsforge.core.graphics.Style
 import org.mapsforge.core.model.LatLong
 import org.mapsforge.core.model.MapPosition
@@ -15,6 +16,7 @@ import org.mapsforge.map.android.util.AndroidUtil
 import org.mapsforge.map.android.view.MapView
 import org.mapsforge.map.layer.cache.TileCache
 import org.mapsforge.map.layer.overlay.Polyline
+import org.mapsforge.map.layer.overlay.Circle
 import org.mapsforge.map.reader.MapFile
 import org.mapsforge.map.rendertheme.internal.MapsforgeThemes
 import java.io.File
@@ -24,6 +26,9 @@ fun OfflineIranMap(
     context: Context,
     mapFile: File,
     route: Route?,
+    currentLocation: Coordinate?,
+    followLocation: Boolean,
+    darkMode: Boolean,
     modifier: Modifier = Modifier
 ) {
     val holder = remember(mapFile.absolutePath) { MapsforgeMapHolder(context, mapFile) }
@@ -37,7 +42,11 @@ fun OfflineIranMap(
     AndroidView(
         factory = { holder.mapView },
         modifier = modifier,
-        update = { holder.showRoute(route) }
+        update = {
+            holder.setDarkMode(darkMode)
+            holder.showRoute(route)
+            holder.showLocation(currentLocation, followLocation)
+        }
     )
 }
 
@@ -46,6 +55,9 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
     private val mapData = MapFile(mapFile)
     private val tileCache: TileCache
     private var routeLayer: Polyline? = null
+    private var locationLayer: Circle? = null
+    private var renderedRoute: Route? = null
+    private var darkMode: Boolean? = null
 
     init {
         mapView.setBuiltInZoomControls(false)
@@ -74,6 +86,8 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
     }
 
     fun showRoute(route: Route?) {
+        if (renderedRoute === route) return
+        renderedRoute = route
         routeLayer?.let { mapView.layerManager.layers.remove(it) }
         routeLayer = route?.takeIf { it.points.size >= 2 }?.let { result ->
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
@@ -86,7 +100,44 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
                 mapView.layerManager.layers.add(line)
             }
         }
+        locationLayer?.let { marker ->
+            mapView.layerManager.layers.remove(marker)
+            mapView.layerManager.layers.add(marker)
+        }
         mapView.layerManager.redrawLayers()
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        if (darkMode == enabled) return
+        darkMode = enabled
+        mapView.applyNightDisplay(enabled)
+    }
+
+    fun showLocation(location: Coordinate?, follow: Boolean) {
+        if (location == null) return
+        val point = LatLong(location.latitude, location.longitude)
+        val marker = locationLayer ?: createLocationMarker(point).also {
+            locationLayer = it
+            mapView.layerManager.layers.add(it)
+        }
+        marker.setLatLong(point)
+        if (follow) {
+            mapView.model.mapViewPosition.mapPosition = MapPosition(point, 16)
+        }
+        mapView.layerManager.redrawLayers()
+    }
+
+    private fun createLocationMarker(point: LatLong): Circle {
+        val fill = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+            setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 18, 104, 232))
+            setStyle(Style.FILL)
+        }
+        val stroke = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+            setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 255, 255, 255))
+            setStrokeWidth(4f * mapView.model.displayModel.scaleFactor)
+            setStyle(Style.STROKE)
+        }
+        return Circle(point, 12f, fill, stroke)
     }
 
     fun destroy() {

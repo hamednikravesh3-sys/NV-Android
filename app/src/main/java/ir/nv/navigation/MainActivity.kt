@@ -19,15 +19,23 @@ class MainActivity : ComponentActivity() {
         setContent {
             val preferences = remember { getSharedPreferences("nv_ui", MODE_PRIVATE) }
             val systemDark = isSystemInDarkTheme()
-            var darkMode by remember {
-                mutableStateOf(preferences.getBoolean("dark_mode", systemDark))
+            var themeOverride by remember {
+                mutableStateOf<Boolean?>(
+                    if (preferences.contains("dark_mode")) {
+                        preferences.getBoolean("dark_mode", systemDark)
+                    } else {
+                        null
+                    }
+                )
             }
+            val darkMode = themeOverride ?: systemDark
             NvTheme(darkTheme = darkMode) {
                 NvApp(
                     darkMode = darkMode,
                     onToggleTheme = {
-                        darkMode = !darkMode
-                        preferences.edit().putBoolean("dark_mode", darkMode).apply()
+                        val nextMode = !darkMode
+                        themeOverride = nextMode
+                        preferences.edit().putBoolean("dark_mode", nextMode).apply()
                     }
                 )
             }

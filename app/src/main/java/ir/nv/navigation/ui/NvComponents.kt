@@ -30,9 +30,11 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.OfflinePin
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Save
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.TurnLeft
 import androidx.compose.material.icons.rounded.TurnRight
@@ -158,6 +160,80 @@ private fun AppIconButton(icon: ImageVector, description: String, onClick: () ->
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchSheet(
+    state: NvUiState,
+    onDismiss: () -> Unit,
+    onOriginChange: (String) -> Unit,
+    onDestinationChange: (String) -> Unit,
+    onOriginSelect: (Place) -> Unit,
+    onDestinationSelect: (Place) -> Unit,
+    onSwap: () -> Unit,
+    onRoute: () -> Unit,
+    onUseCurrentLocation: () -> Unit,
+    onSaveCode: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "انتخاب مسیر",
+                modifier = Modifier.padding(horizontal = 8.dp),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Black
+            )
+            SearchPanel(
+                state = state,
+                onOriginChange = onOriginChange,
+                onDestinationChange = onDestinationChange,
+                onOriginSelect = onOriginSelect,
+                onDestinationSelect = onDestinationSelect,
+                onSwap = onSwap,
+                onRoute = onRoute,
+                onUseCurrentLocation = onUseCurrentLocation,
+                onSaveCode = onSaveCode
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+fun DestinationSearchBar(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(14.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 10.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                Icon(
+                    Icons.Rounded.Search,
+                    contentDescription = null,
+                    modifier = Modifier.padding(9.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("کجا می‌روید؟", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                Text("نام، آدرس یا کد مکان", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 @Composable
 fun SearchPanel(
     state: NvUiState,
@@ -167,6 +243,7 @@ fun SearchPanel(
     onDestinationSelect: (Place) -> Unit,
     onSwap: () -> Unit,
     onRoute: () -> Unit,
+    onUseCurrentLocation: () -> Unit,
     onSaveCode: () -> Unit
 ) {
     ElevatedCard(
@@ -192,7 +269,16 @@ fun SearchPanel(
                     color = OriginBlue,
                     suggestions = state.originSuggestions,
                     onValueChange = onOriginChange,
-                    onSelect = onOriginSelect
+                    onSelect = onOriginSelect,
+                    trailingIcon = {
+                        IconButton(onClick = onUseCurrentLocation, enabled = !state.locating) {
+                            if (state.locating) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Rounded.MyLocation, contentDescription = "استفاده از موقعیت فعلی")
+                            }
+                        }
+                    }
                 )
                 PlaceSearchField(
                     label = "مقصد",
@@ -258,7 +344,8 @@ private fun PlaceSearchField(
     color: Color,
     suggestions: List<Place>,
     onValueChange: (String) -> Unit,
-    onSelect: (Place) -> Unit
+    onSelect: (Place) -> Unit,
+    trailingIcon: (@Composable () -> Unit)? = null
 ) {
     Column {
         OutlinedTextField(
@@ -267,6 +354,7 @@ private fun PlaceSearchField(
             label = { Text(label) },
             placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingIcon = { Box(Modifier.size(12.dp).clip(CircleShape).background(color)) },
+            trailingIcon = trailingIcon,
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
@@ -330,12 +418,18 @@ fun StatusMessage(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun NavigationHud(route: Route, onStop: () -> Unit) {
-    val maneuver = route.maneuvers.firstOrNull()
+fun NavigationHud(
+    route: Route,
+    maneuverIndex: Int,
+    distanceToManeuverMeters: Double,
+    offRoute: Boolean,
+    onStop: () -> Unit
+) {
+    val maneuver = route.maneuvers.getOrNull(maneuverIndex)
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.primary,
+        color = if (offRoute) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
         shadowElevation = 9.dp
     ) {
         Row(
@@ -356,13 +450,18 @@ fun NavigationHud(route: Route, onStop: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    formatDistance(maneuver?.distanceMeters ?: route.distanceMeters),
+                    formatDistance(
+                        distanceToManeuverMeters.takeIf { it > 0.0 }
+                            ?: maneuver?.distanceMeters
+                            ?: route.distanceMeters
+                    ),
                     color = MaterialTheme.colorScheme.onPrimary,
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Black
                 )
                 Text(
-                    maneuver?.instruction ?: "مستقیم به سمت مقصد ادامه دهید",
+                    if (offRoute) "از مسیر خارج شده‌اید؛ مسیر جدید در حال محاسبه است"
+                    else maneuver?.instruction ?: "مستقیم به سمت مقصد ادامه دهید",
                     color = MaterialTheme.colorScheme.onPrimary,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -411,15 +510,32 @@ fun RouteSummaryCard(
     traffic: TrafficSummary?,
     notices: List<RouteNotice>,
     navigationActive: Boolean,
+    remainingDistanceMeters: Double,
+    remainingSeconds: Double,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val totalSeconds = route.travelSeconds + (traffic?.delaySeconds ?: 0.0)
+    val baseSeconds = if (navigationActive && remainingSeconds > 0) remainingSeconds else route.travelSeconds
+    val shownDistance = if (navigationActive && remainingDistanceMeters > 0) {
+        remainingDistanceMeters
+    } else route.distanceMeters
+    val totalSeconds = baseSeconds + (traffic?.delaySeconds ?: 0.0)
     val eta = Instant.now().plusSeconds(totalSeconds.toLong())
         .atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("HH:mm"))
+    if (navigationActive) {
+        ActiveNavigationBar(
+            distanceMeters = shownDistance,
+            seconds = totalSeconds,
+            eta = eta,
+            traffic = traffic,
+            onStop = onStop,
+            modifier = modifier
+        )
+        return
+    }
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -451,7 +567,7 @@ fun RouteSummaryCard(
                 )
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                RouteMetric("مسافت", "%.1f km".format(route.distanceMeters / 1000.0))
+                RouteMetric("مسافت", "%.1f km".format(shownDistance / 1000.0))
                 RouteMetric("زمان", "${(totalSeconds / 60.0).roundToInt()} دقیقه")
                 RouteMetric("رسیدن", eta)
             }
@@ -476,24 +592,69 @@ fun RouteSummaryCard(
                     }
                 }
             }
-            if (navigationActive) {
-                OutlinedButton(
-                    onClick = onStop,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("توقف راهنمای مسیر")
-                }
-            } else {
-                Button(
-                    onClick = onStart,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("شروع حرکت", fontWeight = FontWeight.Black)
-                }
+            Button(
+                onClick = onStart,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("شروع حرکت", fontWeight = FontWeight.Black)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveNavigationBar(
+    distanceMeters: Double,
+    seconds: Double,
+    eta: String,
+    traffic: TrafficSummary?,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(12.dp),
+        shape = RoundedCornerShape(25.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+        shadowElevation = 11.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(eta, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                Text("زمان رسیدن", style = MaterialTheme.typography.labelSmall)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "${(seconds / 60.0).roundToInt()} دقیقه  •  ${formatDistance(distanceMeters)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    if (traffic != null && traffic.delaySeconds > 0) {
+                        "${traffic.delaySeconds.div(60).roundToInt()} دقیقه تأخیر ترافیک"
+                    } else {
+                        "حرکت در مسیر انتخاب‌شده"
+                    },
+                    color = if (traffic != null && traffic.delaySeconds > 0) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            FilledIconButton(onClick = onStop, modifier = Modifier.size(44.dp)) {
+                Text("×", style = MaterialTheme.typography.headlineSmall)
             }
         }
     }

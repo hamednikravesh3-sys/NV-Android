@@ -4,10 +4,10 @@ NV is a Persian-first navigation application for Android 10 and newer. This
 repository replaces the earlier incomplete IranNavApp upload with a standard,
 testable Android project.
 
-## Current architecture (0.3)
+## Current architecture (0.4)
 
 - Android minSdk 29 (Android 10), Kotlin and Jetpack Compose
-- online-first native map and online search/routing
+- online-first native map, type-ahead Photon search and dual-provider routing
 - live network monitoring with automatic offline fallback
 - user-initiated Iran-only map download from a dedicated in-app panel
 - offline Mapsforge vector rendering with no online dependency
@@ -17,9 +17,11 @@ testable Android project.
 - directed edges for one-way roads
 - turn-restriction enforcement using incoming-edge routing state
 - route distance, travel time and ETA
-- map-first Persian Material interface, light/dark mode and adaptive NV icon
+- map-first Persian Material interface with a destination bottom sheet, automatic
+  system day/night mode and an original adaptive NV Fold icon
 - distraction-minimized driving mode with large maneuver HUD, ETA panel,
-  floating controls and Persian voice guidance
+  live remaining-distance updates, off-route rerouting, floating controls and
+  Persian voice guidance
 - a signed local 30-day trial record with rollback detection
 - debug APK CI and a separate secret-backed signed-release workflow
 - unit tests proving one-way and forbidden-turn behavior
@@ -83,6 +85,13 @@ The following cannot truthfully be marked finished only by compiling the APK:
 Local signing alone cannot prevent reinstall abuse. The included signed trial
 record detects edits and clock rollback, while production enforcement must bind
 Play Integrity verdicts and purchase tokens on a server.
+
+The development APK uses public Photon and OSRM-compatible demo endpoints with
+automatic failover. Their public availability is not an SLA; a production
+release must use a contracted provider or an NV-operated routing/geocoding
+backend. Android code also cannot suppress a Play Protect reputation warning:
+the production app must keep one private release key and be distributed through
+Google Play while its developer reputation is established.
 
 ## License and map attribution
 
