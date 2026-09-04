@@ -16,7 +16,7 @@ class PlaceRepository(databaseFile: File) : Closeable {
         SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
     )
 
-    fun search(rawQuery: String, limit: Int = 20): List<Place> {
+    fun search(rawQuery: String, limit: Int = 30): List<Place> {
         val query = rawQuery.trim()
         if (query.isEmpty()) return emptyList()
         val numericCode = query.toLongOrNull()
@@ -32,12 +32,27 @@ class PlaceRepository(databaseFile: File) : Closeable {
             sql = """
                 SELECT code, name, latitude, longitude, category
                 FROM places
-                WHERE normalized_name LIKE ? OR name LIKE ?
-                ORDER BY CASE WHEN normalized_name = ? THEN 0 ELSE 1 END, code
+                WHERE normalized_name LIKE ? OR normalized_name LIKE ? OR name LIKE ?
+                ORDER BY
+                  CASE WHEN normalized_name = ? THEN 0 ELSE 1 END,
+                  CASE
+                    WHEN category IN ('place:city','place:town','place:village','place:suburb') THEN 0
+                    WHEN category LIKE 'place:%' THEN 1
+                    ELSE 2
+                  END,
+                  CASE WHEN normalized_name LIKE ? THEN 0 ELSE 1 END,
+                  code
                 LIMIT ?
             """.trimIndent()
             val normalized = PersianText.normalize(query)
-            args = arrayOf("$normalized%", "%$query%", normalized, limit.toString())
+            args = arrayOf(
+                "$normalized%",
+                "%$normalized%",
+                "%$query%",
+                normalized,
+                "$normalized%",
+                limit.toString()
+            )
         }
         return db.rawQuery(sql, args).use { cursor ->
             buildList {
