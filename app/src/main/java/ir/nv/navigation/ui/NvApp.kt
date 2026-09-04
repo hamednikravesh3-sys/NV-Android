@@ -121,11 +121,13 @@ fun NvApp(
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                if (state.navigationActive && state.route != null) {
-                    NavigationHud(
-                        route = state.route,
-                        onStop = viewModel::stopNavigation
-                    )
+                if (state.navigationActive) {
+                    state.route?.let { activeRoute ->
+                        NavigationHud(
+                            route = activeRoute,
+                            onStop = viewModel::stopNavigation
+                        )
+                    }
                 } else {
                     NavigationTopBar(
                         state = state,
