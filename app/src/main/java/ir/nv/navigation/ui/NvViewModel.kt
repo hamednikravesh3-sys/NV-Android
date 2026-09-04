@@ -7,6 +7,7 @@ import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.TrafficSummary
+import ir.nv.navigation.data.PersonalPlaceStore
 import ir.nv.navigation.data.PlaceRepository
 import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
@@ -14,6 +15,7 @@ import ir.nv.navigation.routing.AStarRouter
 import ir.nv.navigation.routing.SqliteRoutingGraph
 import ir.nv.navigation.weather.WeatherAlertService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,48 +43,51 @@ data class NvUiState(
 
 class NvViewModel(application: Application) : AndroidViewModel(application) {
     private val packManager = IranPackManager(application)
+    private val personalPlaces = PersonalPlaceStore(application)
     private val trialManager = TrialManager(application)
     private val weatherAlerts = WeatherAlertService()
     private val mutableState = MutableStateFlow(
-        NvUiState(trialState = runCatching { trialManager.state() }
-            .getOrDefault(TrialManager.State.Tampered))
+        NvUiState(
+            packStatus = packManager.status(),
+            trialState = runCatching { trialManager.state() }.getOrDefault(TrialManager.State.Tampered)
+        )
     )
     val state: StateFlow<NvUiState> = mutableState.asStateFlow()
 
     private var places: PlaceRepository? = null
     private var graph: SqliteRoutingGraph? = null
     private var router: AStarRouter? = null
+    private var downloadMonitor: Job? = null
 
     init {
-        viewModelScope.launch {
-            if (!packManager.isReady()) packManager.ensureDownloadStarted()
-            while (isActive && !packManager.isReady()) {
-                val status = packManager.status()
-                mutableState.update { it.copy(packStatus = status) }
-                if (status is IranPackManager.Status.Installing) {
-                    val result = packManager.installDownloadedPack()
-                    if (result.isFailure) {
-                        mutableState.update {
-                            it.copy(
-                                packStatus = IranPackManager.Status.Failed(
-                                    result.exceptionOrNull()?.message ?: "نصب بسته ناموفق بود"
-                                )
-                            )
-                        }
-                        break
-                    }
-                }
-                if (status is IranPackManager.Status.Failed) break
-                delay(1_000)
-            }
-            if (packManager.isReady()) openDataPack()
+        if (packManager.isReady()) {
+            viewModelScope.launch { openDataPack() }
+        } else if (packManager.status() !is IranPackManager.Status.NotStarted) {
+            monitorDownload()
         }
+    }
+
+    fun startMapDownload() {
+        mutableState.update { it.copy(message = null) }
+        packManager.startDownload()
+        monitorDownload()
     }
 
     fun retryDownload() {
         mutableState.update { it.copy(message = null) }
         packManager.retry()
-        viewModelScope.launch {
+        monitorDownload()
+    }
+
+    fun cancelDownload() {
+        downloadMonitor?.cancel()
+        packManager.cancelDownload()
+        mutableState.update { it.copy(packStatus = IranPackManager.Status.NotStarted) }
+    }
+
+    private fun monitorDownload() {
+        downloadMonitor?.cancel()
+        downloadMonitor = viewModelScope.launch {
             while (isActive && !packManager.isReady()) {
                 val status = packManager.status()
                 mutableState.update { it.copy(packStatus = status) }
@@ -138,6 +143,15 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun savePersonalCode(place: Place, code: String) {
+        val result = personalPlaces.save(code, place.name, place.coordinate)
+        mutableState.update {
+            it.copy(
+                message = result.exceptionOrNull()?.message ?: "کد شخصی «${code.trim()}» ذخیره شد"
+            )
+        }
+    }
+
     fun calculateRoute() {
         val snapshot = mutableState.value
         val origin = snapshot.origin
@@ -146,7 +160,10 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.update { it.copy(message = "ابتدا مبدأ و مقصد را انتخاب کنید") }
             return
         }
-        val activeRouter = router ?: return
+        val activeRouter = router ?: run {
+            mutableState.update { it.copy(message = "ابتدا نقشه آفلاین را دانلود کنید") }
+            return
+        }
         viewModelScope.launch {
             mutableState.update { it.copy(routing = true, message = null) }
             val result = withContext(Dispatchers.Default) {
@@ -179,7 +196,11 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             val results = withContext(Dispatchers.IO) {
-                places?.search(query).orEmpty()
+                val personal = personalPlaces.search(query)
+                val public = places?.search(query).orEmpty()
+                (personal + public).distinctBy {
+                    Triple(it.name, it.coordinate.latitude, it.coordinate.longitude)
+                }.take(30)
             }
             mutableState.update {
                 if (origin) it.copy(originSuggestions = results)
@@ -207,6 +228,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     fun mapFile() = packManager.mapFile
 
     override fun onCleared() {
+        downloadMonitor?.cancel()
         places?.close()
         graph?.close()
         super.onCleared()
