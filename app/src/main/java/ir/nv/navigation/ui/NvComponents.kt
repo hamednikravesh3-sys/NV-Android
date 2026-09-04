@@ -34,6 +34,9 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Navigation
@@ -803,6 +806,38 @@ fun NavigationVehicleMarker(
                 tint = NvCyan
             )
         }
+    }
+}
+
+@Composable
+fun DrivingZoomControls(
+    zoomLevel: Int,
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    onRecenter: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        AppIconButton(Icons.Rounded.Add, "بزرگ‌نمایی", onZoomIn, dark = true)
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = NvNavy.copy(alpha = 0.96f),
+            border = BorderStroke(1.dp, NvOutline)
+        ) {
+            Text(
+                "$zoomLevel×",
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                color = NvCyan,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Black
+            )
+        }
+        AppIconButton(Icons.Rounded.Remove, "کوچک‌نمایی", onZoomOut, dark = true)
+        AppIconButton(Icons.Rounded.GpsFixed, "بازگشت به دنبال‌کردن خودرو", onRecenter, dark = true)
     }
 }
 

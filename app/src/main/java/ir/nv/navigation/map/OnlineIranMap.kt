@@ -30,6 +30,8 @@ fun OnlineIranMap(
     currentLocation: Coordinate?,
     followLocation: Boolean,
     navigationActive: Boolean,
+    navigationZoomLevel: Int,
+    navigationRecenterToken: Int,
     darkMode: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -45,7 +47,13 @@ fun OnlineIranMap(
         update = {
             holder.setDarkMode(darkMode)
             holder.showRoutes(routes, selectedRouteIndex, traffic)
-            holder.showLocation(currentLocation, followLocation, navigationActive)
+            holder.showLocation(
+                currentLocation,
+                followLocation,
+                navigationActive,
+                navigationZoomLevel,
+                navigationRecenterToken
+            )
         }
     )
 }
@@ -60,12 +68,13 @@ private class OnlineMapHolder(context: Context) {
     private var renderedSelectedRoute = -1
     private var renderedTraffic: TrafficSummary? = null
     private var darkMode: Boolean? = null
+    private var lastRecenterToken = -1
 
     init {
         mapView.setBuiltInZoomControls(false)
         mapView.mapScaleBar.isVisible = false
         mapView.model.mapViewPosition.zoomLevelMin = 4
-        mapView.model.mapViewPosition.zoomLevelMax = 18
+        mapView.model.mapViewPosition.zoomLevelMax = 19
         mapView.model.mapViewPosition.mapPosition = MapPosition(IRAN_CENTER, 5)
 
         tileCache = AndroidUtil.createTileCache(
@@ -144,7 +153,13 @@ private class OnlineMapHolder(context: Context) {
         mapView.applyNightDisplay(enabled)
     }
 
-    fun showLocation(location: Coordinate?, follow: Boolean, navigationActive: Boolean) {
+    fun showLocation(
+        location: Coordinate?,
+        follow: Boolean,
+        navigationActive: Boolean,
+        navigationZoomLevel: Int,
+        recenterToken: Int
+    ) {
         if (location == null) return
         val point = LatLong(location.latitude, location.longitude)
         val marker = locationLayer ?: createLocationMarker(point).also {
@@ -152,11 +167,12 @@ private class OnlineMapHolder(context: Context) {
             mapView.layerManager.layers.add(it)
         }
         marker.setLatLong(point)
-        if (follow) {
+        if (follow || recenterToken != lastRecenterToken) {
             mapView.model.mapViewPosition.mapPosition = MapPosition(
                 point,
-                if (navigationActive) NAVIGATION_ZOOM else BROWSE_LOCATION_ZOOM
+                if (navigationActive) navigationZoomLevel.coerceIn(15, 19).toByte() else BROWSE_LOCATION_ZOOM
             )
+            lastRecenterToken = recenterToken
         }
         mapView.layerManager.redrawLayers()
     }
@@ -189,6 +205,5 @@ private class OnlineMapHolder(context: Context) {
     private companion object {
         val IRAN_CENTER = LatLong(32.4279, 53.6880)
         const val BROWSE_LOCATION_ZOOM: Byte = 16
-        const val NAVIGATION_ZOOM: Byte = 18
     }
 }

@@ -66,6 +66,8 @@ data class NvUiState(
     val currentLocation: Coordinate? = null,
     val speedKmh: Int = 0,
     val bearingDegrees: Float = 0f,
+    val navigationZoomLevel: Int = 18,
+    val navigationRecenterToken: Int = 0,
     val maneuverIndex: Int = 0,
     val distanceToNextManeuverMeters: Double = 0.0,
     val remainingDistanceMeters: Double = 0.0,
@@ -306,6 +308,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update {
             it.copy(
                 navigationActive = true,
+                navigationZoomLevel = DEFAULT_NAVIGATION_ZOOM,
                 message = null,
                 remainingDistanceMeters = route.distanceMeters,
                 remainingSeconds = route.travelSeconds
@@ -321,6 +324,27 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     fun stopNavigation() {
         navigationJob?.cancel()
         mutableState.update { it.copy(navigationActive = false) }
+    }
+
+    fun zoomNavigationIn() {
+        mutableState.update {
+            it.copy(navigationZoomLevel = (it.navigationZoomLevel + 1).coerceAtMost(MAX_NAVIGATION_ZOOM))
+        }
+    }
+
+    fun zoomNavigationOut() {
+        mutableState.update {
+            it.copy(navigationZoomLevel = (it.navigationZoomLevel - 1).coerceAtLeast(MIN_NAVIGATION_ZOOM))
+        }
+    }
+
+    fun recenterNavigation() {
+        mutableState.update {
+            it.copy(
+                navigationZoomLevel = DEFAULT_NAVIGATION_ZOOM,
+                navigationRecenterToken = it.navigationRecenterToken + 1
+            )
+        }
     }
 
     fun toggleVoice() {
@@ -616,5 +640,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     private companion object {
         const val CURRENT_LOCATION_CODE = -9_000_000_001L
+        const val MIN_NAVIGATION_ZOOM = 15
+        const val DEFAULT_NAVIGATION_ZOOM = 18
+        const val MAX_NAVIGATION_ZOOM = 19
     }
 }

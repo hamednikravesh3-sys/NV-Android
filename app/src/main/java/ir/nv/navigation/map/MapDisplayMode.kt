@@ -9,6 +9,7 @@ import org.mapsforge.map.android.view.MapView
 internal fun MapView.applyNightDisplay(enabled: Boolean) {
     if (!enabled) {
         setLayerType(View.LAYER_TYPE_NONE, null)
+        invalidate()
         return
     }
     val nightMatrix = ColorMatrix(
@@ -23,4 +24,5 @@ internal fun MapView.applyNightDisplay(enabled: Boolean) {
         colorFilter = ColorMatrixColorFilter(nightMatrix)
     }
     setLayerType(View.LAYER_TYPE_HARDWARE, paint)
+    invalidate()
 }

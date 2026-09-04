@@ -108,7 +108,8 @@ fun NvApp(
         offlineReady = state.offlineReady,
         preferOffline = state.preferOffline
     )
-    val mapDarkMode = darkMode || state.route != null || state.navigationActive
+    // Day/night must remain a real user choice, including while a route is active.
+    val mapDarkMode = darkMode
     val entitlementBlocked = state.trialState is TrialManager.State.Expired ||
         state.trialState is TrialManager.State.Tampered
 
@@ -214,6 +215,8 @@ fun NvApp(
                     currentLocation = state.currentLocation,
                     followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
                     navigationActive = state.navigationActive,
+                    navigationZoomLevel = state.navigationZoomLevel,
+                    navigationRecenterToken = state.navigationRecenterToken,
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -226,6 +229,8 @@ fun NvApp(
                     currentLocation = state.currentLocation,
                     followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
                     navigationActive = state.navigationActive,
+                    navigationZoomLevel = state.navigationZoomLevel,
+                    navigationRecenterToken = state.navigationRecenterToken,
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -313,6 +318,13 @@ fun NvApp(
                     notice = state.routeNotices.firstOrNull { it.kind == ir.nv.navigation.core.RouteNotice.Kind.WEATHER },
                     onClick = { showRoutePlaces = true },
                     modifier = Modifier.align(Alignment.CenterEnd)
+                )
+                DrivingZoomControls(
+                    zoomLevel = state.navigationZoomLevel,
+                    onZoomIn = viewModel::zoomNavigationIn,
+                    onZoomOut = viewModel::zoomNavigationOut,
+                    onRecenter = viewModel::recenterNavigation,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 104.dp)
                 )
                 FloatingNavigationControls(
                     voiceEnabled = state.voiceEnabled,
