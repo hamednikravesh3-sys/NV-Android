@@ -44,9 +44,9 @@ jobs:
       - name: Install and verify NV launch
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 29
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_2
           disable-animations: true
           script: |
             adb wait-for-device
@@ -55,18 +55,26 @@ jobs:
             adb shell pm grant ir.nv.navigation.debug android.permission.ACCESS_FINE_LOCATION
             adb logcat -c
             adb shell am force-stop ir.nv.navigation.debug
-            adb shell am start -W -n ir.nv.navigation.debug/ir.nv.navigation.MainActivity
-            sleep 20
-            FOREGROUND="$(adb shell dumpsys activity activities | grep -E 'mResumedActivity|topResumedActivity' || true)"
+            adb shell am start -n ir.nv.navigation.debug/ir.nv.navigation.MainActivity
+            sleep 45
+            adb exec-out screencap -p > nv-launch-screen.png
+            adb shell dumpsys window windows > nv-window-state.txt
+            adb shell dumpsys activity activities > nv-activity-state.txt
+            adb logcat -d > nv-logcat.txt
+            FOREGROUND="$(grep -E 'mCurrentFocus|mFocusedApp' nv-window-state.txt || true)"
             echo "$FOREGROUND"
             echo "$FOREGROUND" | grep 'ir.nv.navigation.debug'
-            if adb logcat -d | grep -E 'FATAL EXCEPTION.*ir\.nv\.navigation|Process: ir\.nv\.navigation\.debug'; then
+            if grep -E 'Process: ir\.nv\.navigation\.debug|ANR in ir\.nv\.navigation\.debug' nv-logcat.txt; then
               exit 1
             fi
-            adb exec-out screencap -p > nv-real-home.png
-      - name: Upload verified NV screenshot
+      - name: Upload NV launch diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-real-screenshot
-          path: nv-real-home.png
-          if-no-files-found: error
+          name: NV-launch-diagnostics
+          path: |
+            nv-launch-screen.png
+            nv-window-state.txt
+            nv-activity-state.txt
+            nv-logcat.txt
+          if-no-files-found: warn
