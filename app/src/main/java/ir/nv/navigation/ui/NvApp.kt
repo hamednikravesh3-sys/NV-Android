@@ -320,7 +320,7 @@ fun NvApp(
 
                 RightNavigationBottomBar(
                     remainingDistanceMeters = state.remainingDistanceMeters,
-                    remainingSeconds = state.remainingSeconds,
+                    remainingSeconds = state.remainingSeconds.toLong(),
                     speedKmh = state.speedKmh,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 10.dp, vertical = 10.dp)
                 )
