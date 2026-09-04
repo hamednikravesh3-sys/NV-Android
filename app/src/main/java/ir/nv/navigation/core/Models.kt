@@ -29,6 +29,8 @@ data class Route(
     val travelSeconds: Double
 )
 
+enum class RouteSource { NONE, ONLINE, OFFLINE }
+
 data class TrafficSegment(
     val start: Coordinate,
     val end: Coordinate,

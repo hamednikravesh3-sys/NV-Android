@@ -1,56 +1,110 @@
 package ir.nv.navigation.map
 
-import android.annotation.SuppressLint
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Route
-import org.json.JSONArray
-import org.json.JSONObject
+import org.mapsforge.core.graphics.Style
+import org.mapsforge.core.model.LatLong
+import org.mapsforge.core.model.MapPosition
+import org.mapsforge.map.android.graphics.AndroidGraphicFactory
+import org.mapsforge.map.android.util.AndroidUtil
+import org.mapsforge.map.android.view.MapView
+import org.mapsforge.map.layer.cache.TileCache
+import org.mapsforge.map.layer.download.TileDownloadLayer
+import org.mapsforge.map.layer.download.tilesource.OpenStreetMapMapnik
+import org.mapsforge.map.layer.overlay.Polyline
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun OnlineIranMap(route: Route?, modifier: Modifier = Modifier) {
-    val html = remember {
-        """
-        <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no'>
-        <link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>
-        <style>html,body,#map{height:100%;margin:0;background:#e9eef3}.leaflet-control-attribution{font-size:9px}</style>
-        </head><body><div id='map'></div>
-        <script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>
-        <script>
-        const map=L.map('map',{zoomControl:false}).setView([32.4279,53.6880],5);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
-        let routeLine=null;
-        function showRoute(points){
-          if(routeLine){map.removeLayer(routeLine);routeLine=null;}
-          if(!points||points.length<2)return;
-          routeLine=L.polyline(points,{weight:7,opacity:0.9}).addTo(map);
-          map.fitBounds(routeLine.getBounds(),{padding:[35,35]});
-        }
-        </script></body></html>
-        """.trimIndent()
+fun OnlineIranMap(
+    context: Context,
+    route: Route?,
+    modifier: Modifier = Modifier
+) {
+    val holder = remember { OnlineMapHolder(context) }
+
+    DisposableEffect(holder) {
+        onDispose { holder.destroy() }
     }
 
     AndroidView(
+        factory = { holder.mapView },
         modifier = modifier,
-        factory = { context ->
-            WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                webViewClient = WebViewClient()
-                loadDataWithBaseURL("https://nv.local/", html, "text/html", "UTF-8", null)
-            }
-        },
-        update = { web ->
-            val array = JSONArray()
-            route?.points?.forEach { p ->
-                array.put(JSONArray().put(p.latitude).put(p.longitude))
-            }
-            web.evaluateJavascript("if(window.showRoute){showRoute(${JSONObject.quote(array.toString())} && JSON.parse(${JSONObject.quote(array.toString())}));}", null)
-        }
+        update = { holder.showRoute(route) }
     )
+}
+
+private class OnlineMapHolder(context: Context) {
+    val mapView = MapView(context)
+    private val tileCache: TileCache
+    private val downloadLayer: TileDownloadLayer
+    private var routeLayer: Polyline? = null
+    private var renderedRoute: Route? = null
+
+    init {
+        mapView.setBuiltInZoomControls(false)
+        mapView.mapScaleBar.isVisible = false
+        mapView.model.mapViewPosition.zoomLevelMin = 4
+        mapView.model.mapViewPosition.zoomLevelMax = 18
+        mapView.model.mapViewPosition.mapPosition = MapPosition(IRAN_CENTER, 5)
+
+        tileCache = AndroidUtil.createTileCache(
+            context,
+            "nv-online-map-v1",
+            mapView.model.displayModel.tileSize,
+            1f,
+            mapView.model.frameBufferModel.overdrawFactor
+        )
+        OpenStreetMapMapnik.INSTANCE.setUserAgent("NV-Android/0.3 (hamednikravesh3@gmail.com)")
+        downloadLayer = TileDownloadLayer(
+            tileCache,
+            mapView.model.mapViewPosition,
+            OpenStreetMapMapnik.INSTANCE,
+            AndroidGraphicFactory.INSTANCE
+        )
+        mapView.layerManager.layers.add(downloadLayer)
+        downloadLayer.start()
+    }
+
+    fun showRoute(route: Route?) {
+        if (renderedRoute === route) return
+        renderedRoute = route
+        routeLayer?.let { mapView.layerManager.layers.remove(it) }
+        routeLayer = route?.takeIf { it.points.size >= 2 }?.let { result ->
+            val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+                setColor(AndroidGraphicFactory.INSTANCE.createColor(255, 20, 184, 166))
+                setStrokeWidth(11f * mapView.model.displayModel.scaleFactor)
+                setStyle(Style.STROKE)
+            }
+            Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
+                line.setPoints(result.points.map { LatLong(it.latitude, it.longitude) })
+                mapView.layerManager.layers.add(line)
+                val center = result.points[result.points.lastIndex / 2]
+                mapView.model.mapViewPosition.mapPosition = MapPosition(
+                    LatLong(center.latitude, center.longitude),
+                    routeZoom(result.distanceMeters)
+                )
+            }
+        }
+        mapView.layerManager.redrawLayers()
+    }
+
+    fun destroy() {
+        mapView.destroyAll()
+    }
+
+    private fun routeZoom(distanceMeters: Double): Byte = when {
+        distanceMeters < 4_000 -> 14
+        distanceMeters < 15_000 -> 12
+        distanceMeters < 60_000 -> 10
+        distanceMeters < 250_000 -> 8
+        else -> 6
+    }
+
+    private companion object {
+        val IRAN_CENTER = LatLong(32.4279, 53.6880)
+    }
 }

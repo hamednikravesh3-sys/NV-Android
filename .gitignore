@@ -8,6 +8,8 @@ captures/
 .cxx/
 *.jks
 *.keystore
+# Public development-only key; production keys always remain ignored.
+!keystore/nv-debug.jks
 *.apk
 *.aab
 iran.nvpack
