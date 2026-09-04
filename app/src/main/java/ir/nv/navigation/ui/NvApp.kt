@@ -45,7 +45,8 @@ fun NvApp(
     darkMode: Boolean,
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
-    viewModel: NvViewModel = viewModel()
+    viewModel: NvViewModel = viewModel(),
+    premiumShell: Boolean = false
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -58,6 +59,7 @@ fun NvApp(
     var showSearch by remember { mutableStateOf(false) }
     var showThemeMode by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf(LocationAction.ORIGIN) }
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -68,6 +70,7 @@ fun NvApp(
             }
         }
     }
+
     val requestLocation: (LocationAction) -> Unit = { action ->
         val allowed = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED ||
@@ -88,6 +91,7 @@ fun NvApp(
             )
         }
     }
+
     val sharePlace: (Place) -> Unit = { place ->
         (place.personalCode?.let { "کد شخصی NV: $it" } ?: PlaceCodes.shareCode(place.code))?.let { code ->
             val message = "${place.name}\n$code"
@@ -99,19 +103,14 @@ fun NvApp(
         }
     }
 
-    DisposableEffect(billing) {
-        onDispose { billing.close() }
-    }
-    LaunchedEffect(billingState.purchased) {
-        viewModel.refreshEntitlement(billingState.purchased)
-    }
+    DisposableEffect(billing) { onDispose { billing.close() } }
+    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }
 
     val mapSource = NavigationModeResolver.preferredSource(
         onlineAvailable = state.onlineAvailable,
         offlineReady = state.offlineReady,
         preferOffline = state.preferOffline
     )
-    // Day/night must remain a real user choice, including while a route is active.
     val mapDarkMode = darkMode
     val entitlementBlocked = state.trialState is TrialManager.State.Expired ||
         state.trialState is TrialManager.State.Tampered
@@ -131,10 +130,7 @@ fun NvApp(
             ThemeModeSheet(
                 selected = themeMode,
                 resolvedDark = darkMode,
-                onSelect = {
-                    onThemeModeChange(it)
-                    showThemeMode = false
-                },
+                onSelect = { onThemeModeChange(it); showThemeMode = false },
                 onDismiss = { showThemeMode = false }
             )
         }
@@ -149,19 +145,14 @@ fun NvApp(
                 onModeChange = viewModel::setPreferOffline
             )
         }
-
         if (showPlaceCode) {
             PlaceCodeDialog(
                 place = state.destination ?: state.origin,
                 onDismiss = { showPlaceCode = false },
-                onSave = { place, code ->
-                    viewModel.savePersonalCode(place, code)
-                    showPlaceCode = false
-                },
+                onSave = { place, code -> viewModel.savePersonalCode(place, code); showPlaceCode = false },
                 onShare = sharePlace
             )
         }
-
         if (showPersonalCodes) {
             PersonalCodesSheet(
                 selectedPlace = state.destination ?: state.origin,
@@ -175,7 +166,6 @@ fun NvApp(
                 onShare = sharePlace
             )
         }
-
         if (showRoutePlaces) {
             RoutePlacesSheet(
                 destination = state.destination,
@@ -184,18 +174,11 @@ fun NvApp(
                 onlineAvailable = state.onlineAvailable,
                 offlineReady = state.offlineReady,
                 onDismiss = { showRoutePlaces = false },
-                onShowCode = {
-                    showRoutePlaces = false
-                    showPlaceCode = true
-                },
+                onShowCode = { showRoutePlaces = false; showPlaceCode = true },
                 onShare = sharePlace,
-                onOpenOfflineMaps = {
-                    showRoutePlaces = false
-                    showOfflineMaps = true
-                }
+                onOpenOfflineMaps = { showRoutePlaces = false; showOfflineMaps = true }
             )
         }
-
         if (showSearch) {
             SearchSheet(
                 state = state,
@@ -205,15 +188,11 @@ fun NvApp(
                 onOriginSelect = viewModel::selectOrigin,
                 onDestinationSelect = viewModel::selectDestination,
                 onSwap = viewModel::swapEndpoints,
-                onRoute = {
-                    viewModel.calculateRoute()
-                    showSearch = false
-                },
+                onRoute = { viewModel.calculateRoute(); showSearch = false },
                 onUseCurrentLocation = { requestLocation(LocationAction.ORIGIN) },
                 onSaveCode = { showPlaceCode = true }
             )
         }
-
         if (entitlementBlocked && !billingState.purchased) {
             PurchaseDialog(
                 trialState = state.trialState,
@@ -232,8 +211,7 @@ fun NvApp(
                     traffic = state.traffic,
                     trafficSegments = state.trafficSegments,
                     currentLocation = state.currentLocation,
-                    followLocation = (state.navigationActive && state.followNavigation) ||
-                        (state.route == null && state.currentLocation != null),
+                    followLocation = state.navigationActive && state.followNavigation,
                     navigationActive = state.navigationActive,
                     navigationZoomLevel = state.navigationZoomLevel,
                     navigationRecenterToken = state.navigationRecenterToken,
@@ -242,7 +220,6 @@ fun NvApp(
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
-
                 state.onlineAvailable -> OnlineIranMap(
                     context = context,
                     routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) },
@@ -252,8 +229,7 @@ fun NvApp(
                     codedPlaces = (state.personalPlaces + state.recentPlaces + listOfNotNull(state.origin, state.destination))
                         .distinctBy { it.personalCode ?: it.code.toString() },
                     currentLocation = state.currentLocation,
-                    followLocation = (state.navigationActive && state.followNavigation) ||
-                        (state.route == null && state.currentLocation != null),
+                    followLocation = state.navigationActive && state.followNavigation,
                     navigationActive = state.navigationActive,
                     navigationZoomLevel = state.navigationZoomLevel,
                     navigationRecenterToken = state.navigationRecenterToken,
@@ -262,16 +238,12 @@ fun NvApp(
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
-
                 else -> NoMapConnection(modifier = Modifier.fillMaxSize())
             }
 
-            if (!state.navigationActive) {
+            if (!state.navigationActive && !premiumShell) {
                 state.destination?.let { destination ->
-                    MapCodeBadge(
-                        place = destination,
-                        modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
-                    )
+                    MapCodeBadge(place = destination, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp))
                 }
             }
 
@@ -292,7 +264,7 @@ fun NvApp(
                             onStop = viewModel::stopNavigation
                         )
                     }
-                } else {
+                } else if (!premiumShell) {
                     if (state.route == null && (state.onlineAvailable || state.offlineReady)) {
                         DestinationSearchBar(
                             recentPlaces = state.recentPlaces,
@@ -300,10 +272,7 @@ fun NvApp(
                             onlineAvailable = state.onlineAvailable,
                             offlineReady = state.offlineReady,
                             onClick = { showSearch = true },
-                            onRecentClick = { place ->
-                                viewModel.selectDestination(place)
-                                showSearch = true
-                            }
+                            onRecentClick = { place -> viewModel.selectDestination(place); showSearch = true }
                         )
                     } else if (state.route != null) {
                         SelectedRouteHeader(
@@ -313,53 +282,39 @@ fun NvApp(
                             onSwap = viewModel::swapEndpoints
                         )
                     }
-                    state.message?.let {
-                        StatusMessage(text = it, modifier = Modifier.padding(top = 8.dp))
-                    }
+                    state.message?.let { StatusMessage(text = it, modifier = Modifier.padding(top = 8.dp)) }
                 }
             }
 
-            state.route?.let { route ->
-                RouteSummaryCard(
-                    route = route,
-                    destination = state.destination,
-                    alternatives = state.routeAlternatives,
-                    selectedRouteIndex = state.selectedRouteIndex,
-                    source = state.routeSource,
-                    traffic = state.traffic,
-                    notices = state.routeNotices,
-                    insightsLoading = state.routeInsightsLoading,
-                    navigationActive = state.navigationActive,
-                    remainingDistanceMeters = state.remainingDistanceMeters,
-                    remainingSeconds = state.remainingSeconds,
-                    onStart = { requestLocation(LocationAction.NAVIGATE) },
-                    onRouteSelect = viewModel::selectRoute,
-                    onOpenPlaces = { showRoutePlaces = true },
-                    onOpenCode = { showPlaceCode = true },
-                    onStop = viewModel::stopNavigation,
-                    onClose = viewModel::clearRoute,
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
+            if (!state.navigationActive) {
+                state.route?.let { route ->
+                    RouteSummaryCard(
+                        route = route,
+                        destination = state.destination,
+                        alternatives = state.routeAlternatives,
+                        selectedRouteIndex = state.selectedRouteIndex,
+                        source = state.routeSource,
+                        traffic = state.traffic,
+                        notices = state.routeNotices,
+                        insightsLoading = state.routeInsightsLoading,
+                        navigationActive = false,
+                        remainingDistanceMeters = state.remainingDistanceMeters,
+                        remainingSeconds = state.remainingSeconds,
+                        onStart = { requestLocation(LocationAction.NAVIGATE) },
+                        onRouteSelect = viewModel::selectRoute,
+                        onOpenPlaces = { showRoutePlaces = true },
+                        onOpenCode = { showPlaceCode = true },
+                        onStop = viewModel::stopNavigation,
+                        onClose = viewModel::clearRoute,
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
+                }
             }
 
             if (state.navigationActive) {
                 if (state.followNavigation) {
-                    NavigationVehicleMarker(
-                        // The navigation camera itself is heading-up, so the car remains
-                        // upright while the vector map rotates underneath it.
-                        bearingDegrees = 0f,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    NavigationVehicleMarker(bearingDegrees = 0f, modifier = Modifier.align(Alignment.Center))
                 }
-                NavigationTrafficRail(
-                    traffic = state.traffic,
-                    modifier = Modifier.align(Alignment.CenterStart)
-                )
-                NavigationWeatherCard(
-                    notice = state.routeNotices.firstOrNull { it.kind == ir.nv.navigation.core.RouteNotice.Kind.WEATHER },
-                    onClick = { showRoutePlaces = true },
-                    modifier = Modifier.align(Alignment.CenterEnd)
-                )
                 DrivingZoomControls(
                     zoomLevel = state.navigationZoomLevel,
                     automatic = state.cameraAutomatic,
@@ -367,7 +322,7 @@ fun NvApp(
                     onZoomIn = viewModel::zoomNavigationIn,
                     onZoomOut = viewModel::zoomNavigationOut,
                     onRecenter = viewModel::recenterNavigation,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 104.dp)
+                    modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 18.dp)
                 )
                 FloatingNavigationControls(
                     voiceEnabled = state.voiceEnabled,
@@ -375,9 +330,9 @@ fun NvApp(
                     onToggleVoice = viewModel::toggleVoice,
                     onToggleTheme = { showThemeMode = true },
                     onOpenOfflineMaps = { showOfflineMaps = true },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 104.dp)
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 18.dp)
                 )
-            } else if (state.route == null && (state.onlineAvailable || state.offlineReady)) {
+            } else if (!premiumShell && state.route == null && (state.onlineAvailable || state.offlineReady)) {
                 HomeMapControls(
                     darkMode = darkMode,
                     onMyLocation = { requestLocation(LocationAction.ORIGIN) },
@@ -387,7 +342,7 @@ fun NvApp(
                 )
             }
 
-            if (!state.navigationActive && state.route == null && (state.onlineAvailable || state.offlineReady)) {
+            if (!premiumShell && !state.navigationActive && state.route == null && (state.onlineAvailable || state.offlineReady)) {
                 NvHomeDock(
                     onRoute = { showSearch = true },
                     onCodes = { showPersonalCodes = true },
@@ -399,10 +354,7 @@ fun NvApp(
             }
 
             if (state.route == null && !state.onlineAvailable && !state.offlineReady) {
-                OfflinePrompt(
-                    onOpenOfflineMaps = { showOfflineMaps = true },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
+                OfflinePrompt(onOpenOfflineMaps = { showOfflineMaps = true }, modifier = Modifier.align(Alignment.BottomCenter))
             }
         }
     }
