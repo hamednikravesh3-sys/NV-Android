@@ -251,16 +251,18 @@ fun NvApp(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 10.dp, vertical = 7.dp)
             ) {
                 if (state.navigationActive) {
                     state.route?.let { activeRoute ->
-                        NavigationHud(
+                        RightNavigationHud(
                             route = activeRoute,
                             maneuverIndex = state.maneuverIndex,
                             distanceToManeuverMeters = state.distanceToNextManeuverMeters,
                             speedKmh = state.speedKmh,
                             offRoute = state.offRoute,
+                            voiceEnabled = state.voiceEnabled,
+                            onToggleVoice = viewModel::toggleVoice,
                             onStop = viewModel::stopNavigation
                         )
                     }
@@ -315,6 +317,14 @@ fun NvApp(
                 if (state.followNavigation) {
                     NavigationVehicleMarker(bearingDegrees = 0f, modifier = Modifier.align(Alignment.Center))
                 }
+
+                RightNavigationBottomBar(
+                    remainingDistanceMeters = state.remainingDistanceMeters,
+                    remainingSeconds = state.remainingSeconds,
+                    speedKmh = state.speedKmh,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 10.dp, vertical = 10.dp)
+                )
+
                 DrivingZoomControls(
                     zoomLevel = state.navigationZoomLevel,
                     automatic = state.cameraAutomatic,
@@ -322,7 +332,7 @@ fun NvApp(
                     onZoomIn = viewModel::zoomNavigationIn,
                     onZoomOut = viewModel::zoomNavigationOut,
                     onRecenter = viewModel::recenterNavigation,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 18.dp)
+                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
                 )
                 FloatingNavigationControls(
                     voiceEnabled = state.voiceEnabled,
@@ -330,7 +340,7 @@ fun NvApp(
                     onToggleVoice = viewModel::toggleVoice,
                     onToggleTheme = { showThemeMode = true },
                     onOpenOfflineMaps = { showOfflineMaps = true },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 18.dp)
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
                 )
             } else if (!premiumShell && state.route == null && (state.onlineAvailable || state.offlineReady)) {
                 HomeMapControls(
