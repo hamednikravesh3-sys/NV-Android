@@ -90,6 +90,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.text.input.KeyboardType
@@ -107,10 +108,12 @@ import ir.nv.navigation.entitlement.BillingState
 import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
 import ir.nv.navigation.data.PlaceCodes
+import ir.nv.navigation.ui.theme.AppThemeMode
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import coil.compose.AsyncImage
 
 private val OnlineGreen = Color(0xFF00A884)
 private val OfflineAmber = Color(0xFFFFA000)
@@ -240,6 +243,74 @@ fun SearchSheet(
                 onUseCurrentLocation = onUseCurrentLocation,
                 onSaveCode = onSaveCode
             )
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ThemeModeSheet(
+    selected: AppThemeMode,
+    resolvedDark: Boolean,
+    onSelect: (AppThemeMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = NvNavy,
+        contentColor = NvText,
+        dragHandle = {
+            Box(
+                Modifier.padding(vertical = 10.dp).width(42.dp).height(4.dp)
+                    .clip(CircleShape).background(NvMuted.copy(alpha = 0.6f))
+            )
+        }
+    ) {
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("نمای نقشه", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            Text(
+                "حالت فعال: ${if (resolvedDark) "شب" else "روز"}",
+                color = NvCyan,
+                fontWeight = FontWeight.Bold
+            )
+            AppThemeMode.entries.forEach { mode ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable { onSelect(mode) },
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (selected == mode) NvPanelHigh else NvPanel,
+                    border = BorderStroke(1.dp, if (selected == mode) NvCyan else NvOutline)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(18.dp).clip(CircleShape).background(
+                                if (selected == mode) NvCyan else NvOutline
+                            )
+                        )
+                        Spacer(Modifier.width(11.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(mode.title, color = NvText, fontWeight = FontWeight.Black)
+                            Text(mode.description, color = NvMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text(
+                            when (mode) {
+                                AppThemeMode.AUTO -> "A"
+                                AppThemeMode.DAY -> "☀"
+                                AppThemeMode.NIGHT -> "☾"
+                            },
+                            color = if (selected == mode) NvCyan else NvMuted,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -812,6 +883,8 @@ fun NavigationVehicleMarker(
 @Composable
 fun DrivingZoomControls(
     zoomLevel: Int,
+    automatic: Boolean,
+    following: Boolean,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
     onRecenter: () -> Unit,
@@ -829,7 +902,7 @@ fun DrivingZoomControls(
             border = BorderStroke(1.dp, NvOutline)
         ) {
             Text(
-                "$zoomLevel×",
+                if (automatic) "خودکار $zoomLevel×" else "$zoomLevel×",
                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                 color = NvCyan,
                 style = MaterialTheme.typography.labelMedium,
@@ -837,7 +910,20 @@ fun DrivingZoomControls(
             )
         }
         AppIconButton(Icons.Rounded.Remove, "کوچک‌نمایی", onZoomOut, dark = true)
-        AppIconButton(Icons.Rounded.GpsFixed, "بازگشت به دنبال‌کردن خودرو", onRecenter, dark = true)
+        Surface(
+            shape = CircleShape,
+            color = if (following) NvCyan else NvNavy.copy(alpha = 0.96f),
+            border = BorderStroke(1.dp, if (following) NvCyan else NvOutline),
+            shadowElevation = 5.dp
+        ) {
+            IconButton(onClick = onRecenter) {
+                Icon(
+                    Icons.Rounded.GpsFixed,
+                    contentDescription = "بازگشت به دنبال‌کردن خودرو",
+                    tint = if (following) NvInk else NvText
+                )
+            }
+        }
     }
 }
 
@@ -1042,6 +1128,29 @@ fun RouteSummaryCard(
                 RouteMetric("مسافت", "%.1f km".format(shownDistance / 1000.0))
                 RouteMetric("زمان", "${(totalSeconds / 60.0).roundToInt()} دقیقه")
                 RouteMetric("رسیدن", eta)
+            }
+            route.maneuvers.firstOrNull { it.roadName == "اتصال مسیر خاکی" }?.let { connector ->
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF3A2C16),
+                    border = BorderStroke(1.dp, Color(0xFFFFB52E))
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.DirectionsCar, null, tint = Color(0xFFFFB52E))
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("اتصال از مسیر خاکی", color = NvText, fontWeight = FontWeight.Black)
+                            Text(
+                                "${formatDistance(connector.distanceMeters)} تا نزدیک‌ترین جاده قابل‌مسیریابی",
+                                color = NvMuted,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
             }
             if (alternatives.size > 1) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -1448,21 +1557,37 @@ fun RoutePlacesSheet(
                     border = BorderStroke(1.dp, NvOutline)
                 ) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            when (notice.kind) {
-                                RouteNotice.Kind.ATTRACTION -> Icons.Rounded.Explore
-                                RouteNotice.Kind.SERVICE -> Icons.Rounded.DirectionsCar
-                                RouteNotice.Kind.WEATHER -> Icons.Rounded.CloudDone
-                                RouteNotice.Kind.TRAFFIC -> Icons.Rounded.Info
-                            },
-                            null,
-                            tint = when (notice.kind) {
-                                RouteNotice.Kind.ATTRACTION -> NvLime
-                                RouteNotice.Kind.SERVICE -> NvCyan
-                                RouteNotice.Kind.WEATHER -> Color(0xFFFFB52E)
-                                RouteNotice.Kind.TRAFFIC -> Color(0xFFFF7185)
+                        if (notice.imageUrl != null) {
+                            AsyncImage(
+                                model = notice.imageUrl,
+                                contentDescription = "تصویر ${notice.title}",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(58.dp).clip(RoundedCornerShape(13.dp))
+                            )
+                        } else {
+                            Surface(
+                                modifier = Modifier.size(44.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                color = NvPanel
+                            ) {
+                                Icon(
+                                    when (notice.kind) {
+                                        RouteNotice.Kind.ATTRACTION -> Icons.Rounded.Explore
+                                        RouteNotice.Kind.SERVICE -> Icons.Rounded.DirectionsCar
+                                        RouteNotice.Kind.WEATHER -> Icons.Rounded.CloudDone
+                                        RouteNotice.Kind.TRAFFIC -> Icons.Rounded.Info
+                                    },
+                                    null,
+                                    modifier = Modifier.padding(9.dp),
+                                    tint = when (notice.kind) {
+                                        RouteNotice.Kind.ATTRACTION -> NvLime
+                                        RouteNotice.Kind.SERVICE -> NvCyan
+                                        RouteNotice.Kind.WEATHER -> Color(0xFFFFB52E)
+                                        RouteNotice.Kind.TRAFFIC -> Color(0xFFFF7185)
+                                    }
+                                )
                             }
-                        )
+                        }
                         Spacer(Modifier.width(9.dp))
                         Column(Modifier.weight(1f)) {
                             Text(notice.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)

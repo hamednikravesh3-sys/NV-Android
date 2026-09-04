@@ -37,4 +37,25 @@ class RoutePointSamplerTest {
         assertEquals(end, sample.coordinate)
         assertTrue(sample.distanceAheadMeters in 850.0..1_050.0)
     }
+
+    @Test
+    fun `remaining route starts near current driver position`() {
+        val route = Route(
+            points = listOf(
+                Coordinate(35.0, 51.0),
+                Coordinate(35.0, 51.1),
+                Coordinate(35.0, 51.2)
+            ),
+            edgeIds = emptyList(),
+            distanceMeters = 18_000.0,
+            travelSeconds = 1_000.0
+        )
+
+        val remaining = requireNotNull(
+            RoutePointSampler.remainingRoute(route, Coordinate(35.001, 51.12))
+        )
+
+        assertTrue(remaining.points.first().longitude in 51.11..51.13)
+        assertTrue(remaining.distanceMeters < route.distanceMeters / 2)
+    }
 }

@@ -10,7 +10,11 @@ data class Place(
     val personalCode: String? = null
 ) {
     val displayName: String
-        get() = if (personalCode.isNullOrBlank()) "$name — $code" else "$name — $personalCode"
+        get() = when {
+            !personalCode.isNullOrBlank() -> "$name — $personalCode"
+            code > 0 -> "$name — $code"
+            else -> name
+        }
 }
 
 data class RoadEdge(
@@ -67,12 +71,18 @@ data class TrafficSummary(
     val delaySeconds: Double
 )
 
+data class TrafficReport(
+    val summary: TrafficSummary,
+    val segments: List<TrafficSegment>
+)
+
 data class RouteNotice(
     val title: String,
     val detail: String,
     val distanceAheadMeters: Double,
     val kind: Kind,
-    val placeCode: Long? = null
+    val placeCode: Long? = null,
+    val imageUrl: String? = null
 ) {
     enum class Kind { ATTRACTION, SERVICE, WEATHER, TRAFFIC }
 }

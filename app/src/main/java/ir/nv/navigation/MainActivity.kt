@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import ir.nv.navigation.ui.NvApp
+import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
 
 class MainActivity : ComponentActivity() {
@@ -19,23 +20,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             val preferences = remember { getSharedPreferences("nv_ui", MODE_PRIVATE) }
             val systemDark = isSystemInDarkTheme()
-            var themeOverride by remember {
-                mutableStateOf<Boolean?>(
-                    if (preferences.contains("dark_mode")) {
-                        preferences.getBoolean("dark_mode", systemDark)
-                    } else {
-                        null
-                    }
+            var themeMode by remember {
+                val legacy = preferences.getBoolean("dark_mode", systemDark)
+                    .takeIf { preferences.contains("dark_mode") }
+                mutableStateOf(
+                    AppThemeMode.restore(preferences.getString("theme_mode", null), legacy)
                 )
             }
-            val darkMode = themeOverride ?: systemDark
+            val darkMode = themeMode.resolve(systemDark)
             NvTheme(darkTheme = darkMode) {
                 NvApp(
                     darkMode = darkMode,
-                    onToggleTheme = {
-                        val nextMode = !darkMode
-                        themeOverride = nextMode
-                        preferences.edit().putBoolean("dark_mode", nextMode).apply()
+                    themeMode = themeMode,
+                    onThemeModeChange = { selected ->
+                        themeMode = selected
+                        preferences.edit()
+                            .putString("theme_mode", selected.name)
+                            .remove("dark_mode")
+                            .apply()
                     }
                 )
             }

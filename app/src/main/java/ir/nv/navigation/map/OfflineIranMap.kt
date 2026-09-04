@@ -1,6 +1,7 @@
 package ir.nv.navigation.map
 
 import android.content.Context
+import android.view.MotionEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -8,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.TrafficSummary
+import ir.nv.navigation.core.TrafficSegment
 import ir.nv.navigation.core.Coordinate
 import org.mapsforge.core.graphics.Style
 import org.mapsforge.core.model.LatLong
@@ -29,11 +31,13 @@ fun OfflineIranMap(
     routes: List<Route>,
     selectedRouteIndex: Int,
     traffic: TrafficSummary?,
+    trafficSegments: List<TrafficSegment>,
     currentLocation: Coordinate?,
     followLocation: Boolean,
     navigationActive: Boolean,
     navigationZoomLevel: Int,
     navigationRecenterToken: Int,
+    onManualGesture: () -> Unit,
     darkMode: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -49,8 +53,14 @@ fun OfflineIranMap(
         factory = { holder.mapView },
         modifier = modifier,
         update = {
+            it.setOnTouchListener { _, event ->
+                if (navigationActive && event.actionMasked == MotionEvent.ACTION_MOVE) {
+                    onManualGesture()
+                }
+                false
+            }
             holder.setDarkMode(darkMode)
-            holder.showRoutes(routes, selectedRouteIndex, traffic)
+            holder.showRoutes(routes, selectedRouteIndex, traffic, trafficSegments)
             holder.showLocation(
                 currentLocation,
                 followLocation,
@@ -71,8 +81,9 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
     private var renderedRoutes: List<Route> = emptyList()
     private var renderedSelectedRoute = -1
     private var renderedTraffic: TrafficSummary? = null
+    private var renderedTrafficSegments: List<TrafficSegment> = emptyList()
     private var darkMode: Boolean? = null
-    private var lastRecenterToken = -1
+    private var lastRecenterToken = 0
 
     init {
         mapView.setBuiltInZoomControls(false)
@@ -100,11 +111,19 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
         mapView.layerManager.layers.add(renderer)
     }
 
-    fun showRoutes(routes: List<Route>, selectedRouteIndex: Int, traffic: TrafficSummary?) {
-        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex && renderedTraffic == traffic) return
+    fun showRoutes(
+        routes: List<Route>,
+        selectedRouteIndex: Int,
+        traffic: TrafficSummary?,
+        trafficSegments: List<TrafficSegment>
+    ) {
+        if (renderedRoutes == routes && renderedSelectedRoute == selectedRouteIndex &&
+            renderedTraffic == traffic && renderedTrafficSegments == trafficSegments
+        ) return
         renderedRoutes = routes
         renderedSelectedRoute = selectedRouteIndex
         renderedTraffic = traffic
+        renderedTrafficSegments = trafficSegments
         routeLayers.forEach { mapView.layerManager.layers.remove(it) }
         routeLayers.clear()
         val ordered = routes.indices.sortedBy { if (it == selectedRouteIndex) 1 else 0 }
@@ -140,6 +159,50 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
                 routeLayers += line
             }
         }
+        routes.getOrNull(selectedRouteIndex)?.takeIf {
+            it.points.size >= 2 && it.maneuvers.firstOrNull()?.roadName == "اتصال مسیر خاکی"
+        }?.let { route ->
+            val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+                color = AndroidGraphicFactory.INSTANCE.createColor(255, 255, 181, 46)
+                strokeWidth = 9f * mapView.model.displayModel.scaleFactor
+                setStyle(Style.STROKE)
+            }
+            Polyline(paint, AndroidGraphicFactory.INSTANCE).also { connector ->
+                connector.setPoints(
+                    route.points.take(2).map { LatLong(it.latitude, it.longitude) }
+                )
+                mapView.layerManager.layers.add(connector)
+                routeLayers += connector
+            }
+        }
+        trafficSegments.forEach { segment ->
+            if (segment.start == segment.end) return@forEach
+            val routeColor = when {
+                segment.delaySeconds >= 600.0 -> intArrayOf(230, 64, 69)
+                segment.delaySeconds >= 120.0 -> intArrayOf(255, 181, 46)
+                else -> intArrayOf(100, 214, 109)
+            }
+            val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
+                color = AndroidGraphicFactory.INSTANCE.createColor(
+                    255,
+                    routeColor[0],
+                    routeColor[1],
+                    routeColor[2]
+                )
+                strokeWidth = 9f * mapView.model.displayModel.scaleFactor
+                setStyle(Style.STROKE)
+            }
+            Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
+                line.setPoints(
+                    listOf(
+                        LatLong(segment.start.latitude, segment.start.longitude),
+                        LatLong(segment.end.latitude, segment.end.longitude)
+                    )
+                )
+                mapView.layerManager.layers.add(line)
+                routeLayers += line
+            }
+        }
         locationLayer?.let { marker ->
             mapView.layerManager.layers.remove(marker)
             mapView.layerManager.layers.add(marker)
@@ -167,7 +230,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
             mapView.layerManager.layers.add(it)
         }
         marker.setLatLong(point)
-        if (follow || recenterToken != lastRecenterToken) {
+        if (follow || (navigationActive && recenterToken != lastRecenterToken)) {
             mapView.model.mapViewPosition.mapPosition = MapPosition(
                 point,
                 if (navigationActive) navigationZoomLevel.coerceIn(15, 19).toByte() else BROWSE_LOCATION_ZOOM

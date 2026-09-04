@@ -33,6 +33,54 @@ object RoutePointSampler {
         return Sample(route.points.last(), completed)
     }
 
+    /** Returns route geometry beginning at the driver's closest projected point. */
+    fun remainingRoute(route: Route, location: Coordinate): Route? {
+        if (route.points.size < 2) return null
+        var bestIndex = -1
+        var bestFraction = 0.0
+        var bestDistance = Double.POSITIVE_INFINITY
+        route.points.zipWithNext().forEachIndexed { index, (start, end) ->
+            val meanLatitude = Math.toRadians((start.latitude + end.latitude + location.latitude) / 3.0)
+            val metersPerLongitude = 111_320.0 * cos(meanLatitude)
+            val ax = start.longitude * metersPerLongitude
+            val ay = start.latitude * 111_320.0
+            val bx = end.longitude * metersPerLongitude
+            val by = end.latitude * 111_320.0
+            val px = location.longitude * metersPerLongitude
+            val py = location.latitude * 111_320.0
+            val dx = bx - ax
+            val dy = by - ay
+            val squared = dx * dx + dy * dy
+            val fraction = if (squared <= 0.01) 0.0 else
+                (((px - ax) * dx + (py - ay) * dy) / squared).coerceIn(0.0, 1.0)
+            val projectedX = ax + fraction * dx
+            val projectedY = ay + fraction * dy
+            val offset = sqrt((px - projectedX) * (px - projectedX) + (py - projectedY) * (py - projectedY))
+            if (offset < bestDistance) {
+                bestDistance = offset
+                bestIndex = index
+                bestFraction = fraction
+            }
+        }
+        if (bestIndex < 0) return null
+        val start = route.points[bestIndex]
+        val end = route.points[bestIndex + 1]
+        val projected = Coordinate(
+            start.latitude + (end.latitude - start.latitude) * bestFraction,
+            start.longitude + (end.longitude - start.longitude) * bestFraction
+        )
+        val remainingPoints = (listOf(projected) + route.points.drop(bestIndex + 1)).distinct()
+        if (remainingPoints.size < 2) return null
+        val geometryMeters = remainingPoints.zipWithNext().sumOf { (a, b) -> haversine(a, b) }
+        val originalGeometry = route.points.zipWithNext().sumOf { (a, b) -> haversine(a, b) }.coerceAtLeast(1.0)
+        val ratio = (geometryMeters / originalGeometry).coerceIn(0.0, 1.0)
+        return route.copy(
+            points = remainingPoints,
+            distanceMeters = route.distanceMeters * ratio,
+            travelSeconds = route.travelSeconds * ratio
+        )
+    }
+
     private fun haversine(a: Coordinate, b: Coordinate): Double {
         val lat1 = Math.toRadians(a.latitude)
         val lat2 = Math.toRadians(b.latitude)

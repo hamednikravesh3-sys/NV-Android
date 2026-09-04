@@ -10,7 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import java.util.Locale
 
 @Composable
-fun NavigationVoice(active: Boolean, enabled: Boolean, instruction: String?) {
+fun NavigationVoice(active: Boolean, enabled: Boolean, instruction: String?, safetyAlert: String?) {
     val context = LocalContext.current
     val speaker = remember { GuidanceSpeaker(context.applicationContext) }
 
@@ -22,6 +22,11 @@ fun NavigationVoice(active: Boolean, enabled: Boolean, instruction: String?) {
             speaker.speak(instruction)
         } else if (!active || !enabled) {
             speaker.stop()
+        }
+    }
+    LaunchedEffect(active, enabled, safetyAlert) {
+        if (active && enabled && !safetyAlert.isNullOrBlank()) {
+            speaker.speakAlert(safetyAlert)
         }
     }
 }
@@ -51,6 +56,14 @@ private class GuidanceSpeaker(context: Context) : TextToSpeech.OnInitListener, A
             return
         }
         engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nv-guidance")
+    }
+
+    fun speakAlert(text: String) {
+        if (!ready) {
+            pending = text
+            return
+        }
+        engine.speak(text, TextToSpeech.QUEUE_ADD, null, "nv-safety-alert")
     }
 
     fun stop() {

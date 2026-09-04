@@ -12,6 +12,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 /** Online POIs for the first 10 km; the installed Iran pack remains the offline source. */
 class OnlinePlacesService(
@@ -45,6 +47,7 @@ class OnlinePlacesService(
             check(response.isSuccessful) { "Places HTTP ${response.code}" }
             val elements = JSONObject(requireNotNull(response.body).string()).optJSONArray("elements")
                 ?: return emptyList()
+            val imageUrls = mutableMapOf<Triple<String, Double, Double>, String>()
             val places = buildList {
                 for (index in 0 until elements.length()) {
                     val element = elements.optJSONObject(index) ?: continue
@@ -56,22 +59,34 @@ class OnlinePlacesService(
                     val category = category(tags) ?: continue
                     val name = tags.optString("name:fa").ifBlank { tags.optString("name") }
                     if (name.isBlank()) continue
-                    add(
-                        Place(
-                            code = -element.optLong("id", index.toLong() + 1L),
-                            name = name,
-                            coordinate = Coordinate(latitude, longitude),
-                            category = category
-                        )
+                    val place = Place(
+                        code = -element.optLong("id", index.toLong() + 1L),
+                        name = name,
+                        coordinate = Coordinate(latitude, longitude),
+                        category = category
                     )
+                    add(place)
+                    imageUrl(tags)?.let { url ->
+                        imageUrls[Triple(name, latitude, longitude)] = url
+                    }
                 }
             }
+            val uniquePlaces = places.distinctBy {
+                Triple(it.name, it.coordinate.latitude, it.coordinate.longitude)
+            }
+            val placesByTitle = uniquePlaces.associateBy(Place::displayName)
             return RouteInsightEngine.placesAhead(
                 route = route,
-                places = places.distinctBy { Triple(it.name, it.coordinate.latitude, it.coordinate.longitude) },
+                places = uniquePlaces,
                 limit = 12,
                 maxAheadMeters = MAX_AHEAD_METERS
-            )
+            ).map { notice ->
+                val matchingPlace = placesByTitle[notice.title]
+                val url = matchingPlace?.let {
+                    imageUrls[Triple(it.name, it.coordinate.latitude, it.coordinate.longitude)]
+                }
+                notice.copy(imageUrl = url)
+            }
         }
     }
 
@@ -81,6 +96,15 @@ class OnlinePlacesService(
         tags.has("natural") -> "natural:${tags.optString("natural")}"
         tags.has("amenity") -> "amenity:${tags.optString("amenity")}"
         else -> null
+    }
+
+    private fun imageUrl(tags: JSONObject): String? {
+        val direct = tags.optString("image").takeIf { it.startsWith("https://") }
+        if (direct != null) return direct
+        val commons = tags.optString("wikimedia_commons").removePrefix("File:").trim()
+        if (commons.isBlank()) return null
+        val encoded = URLEncoder.encode(commons, StandardCharsets.UTF_8.toString()).replace("+", "%20")
+        return "https://commons.wikimedia.org/wiki/Special:Redirect/file/$encoded?width=320"
     }
 
     private companion object {

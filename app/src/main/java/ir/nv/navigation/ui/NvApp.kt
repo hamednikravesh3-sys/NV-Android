@@ -37,12 +37,14 @@ import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.data.PlaceCodes
+import ir.nv.navigation.ui.theme.AppThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NvApp(
     darkMode: Boolean,
-    onToggleTheme: () -> Unit,
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit,
     viewModel: NvViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -54,6 +56,7 @@ fun NvApp(
     var showPersonalCodes by remember { mutableStateOf(false) }
     var showRoutePlaces by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showThemeMode by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf(LocationAction.ORIGIN) }
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -116,10 +119,25 @@ fun NvApp(
     NavigationVoice(
         active = state.navigationActive,
         enabled = state.voiceEnabled,
-        instruction = state.route?.maneuvers?.getOrNull(state.maneuverIndex)?.instruction
+        instruction = state.route?.maneuvers?.getOrNull(state.maneuverIndex)?.instruction,
+        safetyAlert = state.routeNotices.firstOrNull {
+            it.kind == ir.nv.navigation.core.RouteNotice.Kind.WEATHER &&
+                it.title.startsWith("هشدار") && it.distanceAheadMeters <= 10_000.0
+        }?.let { "${it.title}. ${it.detail}" }
     )
 
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        if (showThemeMode) {
+            ThemeModeSheet(
+                selected = themeMode,
+                resolvedDark = darkMode,
+                onSelect = {
+                    onThemeModeChange(it)
+                    showThemeMode = false
+                },
+                onDismiss = { showThemeMode = false }
+            )
+        }
         if (showOfflineMaps) {
             OfflineMapsSheet(
                 state = state,
@@ -212,11 +230,14 @@ fun NvApp(
                     routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) },
                     selectedRouteIndex = state.selectedRouteIndex,
                     traffic = state.traffic,
+                    trafficSegments = state.trafficSegments,
                     currentLocation = state.currentLocation,
-                    followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
+                    followLocation = (state.navigationActive && state.followNavigation) ||
+                        (state.route == null && state.currentLocation != null),
                     navigationActive = state.navigationActive,
                     navigationZoomLevel = state.navigationZoomLevel,
                     navigationRecenterToken = state.navigationRecenterToken,
+                    onManualGesture = viewModel::pauseNavigationFollow,
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -226,11 +247,14 @@ fun NvApp(
                     routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) },
                     selectedRouteIndex = state.selectedRouteIndex,
                     traffic = state.traffic,
+                    trafficSegments = state.trafficSegments,
                     currentLocation = state.currentLocation,
-                    followLocation = state.navigationActive || (state.route == null && state.currentLocation != null),
+                    followLocation = (state.navigationActive && state.followNavigation) ||
+                        (state.route == null && state.currentLocation != null),
                     navigationActive = state.navigationActive,
                     navigationZoomLevel = state.navigationZoomLevel,
                     navigationRecenterToken = state.navigationRecenterToken,
+                    onManualGesture = viewModel::pauseNavigationFollow,
                     darkMode = mapDarkMode,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -306,10 +330,12 @@ fun NvApp(
             }
 
             if (state.navigationActive) {
-                NavigationVehicleMarker(
-                    bearingDegrees = state.bearingDegrees,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+                if (state.followNavigation) {
+                    NavigationVehicleMarker(
+                        bearingDegrees = state.bearingDegrees,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
                 NavigationTrafficRail(
                     traffic = state.traffic,
                     modifier = Modifier.align(Alignment.CenterStart)
@@ -321,6 +347,8 @@ fun NvApp(
                 )
                 DrivingZoomControls(
                     zoomLevel = state.navigationZoomLevel,
+                    automatic = state.cameraAutomatic,
+                    following = state.followNavigation,
                     onZoomIn = viewModel::zoomNavigationIn,
                     onZoomOut = viewModel::zoomNavigationOut,
                     onRecenter = viewModel::recenterNavigation,
@@ -330,7 +358,7 @@ fun NvApp(
                     voiceEnabled = state.voiceEnabled,
                     darkMode = darkMode,
                     onToggleVoice = viewModel::toggleVoice,
-                    onToggleTheme = onToggleTheme,
+                    onToggleTheme = { showThemeMode = true },
                     onOpenOfflineMaps = { showOfflineMaps = true },
                     modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 104.dp)
                 )
@@ -339,7 +367,7 @@ fun NvApp(
                     darkMode = darkMode,
                     onMyLocation = { requestLocation(LocationAction.ORIGIN) },
                     onOpenOfflineMaps = { showOfflineMaps = true },
-                    onToggleTheme = onToggleTheme,
+                    onToggleTheme = { showThemeMode = true },
                     modifier = Modifier.align(Alignment.CenterStart)
                 )
             }
@@ -350,7 +378,7 @@ fun NvApp(
                     onCodes = { showPersonalCodes = true },
                     onOfflineMaps = { showOfflineMaps = true },
                     darkMode = darkMode,
-                    onToggleTheme = onToggleTheme,
+                    onToggleTheme = { showThemeMode = true },
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
             }

@@ -9,6 +9,7 @@ import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.TrafficSummary
+import ir.nv.navigation.core.TrafficSegment
 import ir.nv.navigation.data.PersonalPlaceStore
 import ir.nv.navigation.data.IranCityIndex
 import ir.nv.navigation.data.PersianText
@@ -26,6 +27,8 @@ import ir.nv.navigation.routing.AStarRouter
 import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.routing.RouteProgressEngine
 import ir.nv.navigation.routing.RouteOriginConnector
+import ir.nv.navigation.routing.NavigationCameraPolicy
+import ir.nv.navigation.routing.RoutePointSampler
 import ir.nv.navigation.routing.SqliteRoutingGraph
 import ir.nv.navigation.weather.WeatherAlertService
 import ir.nv.navigation.traffic.LiveTrafficService
@@ -68,6 +71,8 @@ data class NvUiState(
     val bearingDegrees: Float = 0f,
     val navigationZoomLevel: Int = 18,
     val navigationRecenterToken: Int = 0,
+    val cameraAutomatic: Boolean = true,
+    val followNavigation: Boolean = true,
     val maneuverIndex: Int = 0,
     val distanceToNextManeuverMeters: Double = 0.0,
     val remainingDistanceMeters: Double = 0.0,
@@ -76,6 +81,7 @@ data class NvUiState(
     val routeNotices: List<RouteNotice> = emptyList(),
     val routeInsightsLoading: Boolean = false,
     val traffic: TrafficSummary? = null,
+    val trafficSegments: List<TrafficSegment> = emptyList(),
     val routing: Boolean = false,
     val message: String? = null,
     val onlineAvailable: Boolean = false,
@@ -114,8 +120,10 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private var downloadMonitor: Job? = null
     private var searchJob: Job? = null
     private var navigationJob: Job? = null
+    private var insightsRefreshJob: Job? = null
     private var offRouteSamples = 0
     private var lastRerouteAt = 0L
+    private var lastInsightsRemainingMeters = Double.NaN
 
     init {
         viewModelScope.launch {
@@ -250,14 +258,18 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 remainingDistanceMeters = selected.distanceMeters,
                 remainingSeconds = selected.travelSeconds,
                 routeNotices = emptyList(),
-                routeInsightsLoading = true
+                routeInsightsLoading = true,
+                traffic = null,
+                trafficSegments = emptyList()
             )
         }
-        viewModelScope.launch { loadRouteNotices(selected) }
+        lastInsightsRemainingMeters = selected.distanceMeters
+        viewModelScope.launch { loadRouteNotices(selected, selected) }
     }
 
     fun swapEndpoints() {
         navigationJob?.cancel()
+        insightsRefreshJob?.cancel()
         mutableState.update {
             it.copy(
                 origin = it.destination,
@@ -274,13 +286,16 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 offRoute = false,
                 routeSource = RouteSource.NONE,
                 routeNotices = emptyList(),
-                routeInsightsLoading = false
+                routeInsightsLoading = false,
+                traffic = null,
+                trafficSegments = emptyList()
             )
         }
     }
 
     fun clearRoute() {
         navigationJob?.cancel()
+        insightsRefreshJob?.cancel()
         mutableState.update {
             it.copy(
                 route = null,
@@ -292,7 +307,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 routeSource = RouteSource.NONE,
                 routeNotices = emptyList(),
                 routeInsightsLoading = false,
-                traffic = null
+                traffic = null,
+                trafficSegments = emptyList()
             )
         }
     }
@@ -305,10 +321,13 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         }
         navigationJob?.cancel()
         offRouteSamples = 0
+        lastInsightsRemainingMeters = route.distanceMeters
         mutableState.update {
             it.copy(
                 navigationActive = true,
                 navigationZoomLevel = DEFAULT_NAVIGATION_ZOOM,
+                cameraAutomatic = true,
+                followNavigation = true,
                 message = null,
                 remainingDistanceMeters = route.distanceMeters,
                 remainingSeconds = route.travelSeconds
@@ -328,13 +347,23 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun zoomNavigationIn() {
         mutableState.update {
-            it.copy(navigationZoomLevel = (it.navigationZoomLevel + 1).coerceAtMost(MAX_NAVIGATION_ZOOM))
+            it.copy(
+                navigationZoomLevel = (it.navigationZoomLevel + 1).coerceAtMost(MAX_NAVIGATION_ZOOM),
+                cameraAutomatic = false,
+                followNavigation = true,
+                navigationRecenterToken = it.navigationRecenterToken + 1
+            )
         }
     }
 
     fun zoomNavigationOut() {
         mutableState.update {
-            it.copy(navigationZoomLevel = (it.navigationZoomLevel - 1).coerceAtLeast(MIN_NAVIGATION_ZOOM))
+            it.copy(
+                navigationZoomLevel = (it.navigationZoomLevel - 1).coerceAtLeast(MIN_NAVIGATION_ZOOM),
+                cameraAutomatic = false,
+                followNavigation = true,
+                navigationRecenterToken = it.navigationRecenterToken + 1
+            )
         }
     }
 
@@ -342,8 +371,17 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update {
             it.copy(
                 navigationZoomLevel = DEFAULT_NAVIGATION_ZOOM,
+                cameraAutomatic = true,
+                followNavigation = true,
                 navigationRecenterToken = it.navigationRecenterToken + 1
             )
+        }
+    }
+
+    fun pauseNavigationFollow() {
+        mutableState.update { state ->
+            if (!state.navigationActive || !state.followNavigation) state
+            else state.copy(followNavigation = false)
         }
     }
 
@@ -452,6 +490,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     routeNotices = emptyList(),
                     routeInsightsLoading = result != null,
                     traffic = null,
+                    trafficSegments = emptyList(),
                     message = when {
                         result != null -> null
                         source == RouteSource.OFFLINE && snapshot.onlineAvailable -> "سرویس آنلاین پاسخ نداد؛ مسیر با داده آفلاین محاسبه شد"
@@ -461,7 +500,10 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
             }
-            result?.let { loadRouteNotices(it) }
+            result?.let {
+                lastInsightsRemainingMeters = it.distanceMeters
+                loadRouteNotices(it, it)
+            }
         }
     }
 
@@ -541,9 +583,9 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun mapFile() = packManager.mapFile
 
-    private suspend fun loadRouteNotices(route: Route) {
+    private suspend fun loadRouteNotices(route: Route, ownerRoute: Route) {
         val onlineNow = networkMonitor.isOnline()
-        val (notices, traffic) = withContext(Dispatchers.IO) {
+        val (notices, trafficReport) = withContext(Dispatchers.IO) {
             coroutineScope {
                 val offlinePlaces = async { runCatching { places?.noticesAlong(route, 12).orEmpty() }.getOrDefault(emptyList()) }
                 val remotePlaces = async {
@@ -555,7 +597,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     else emptyList()
                 }
                 val currentTraffic = async {
-                    if (onlineNow) runCatching { liveTraffic.summary(route) }.getOrNull() else null
+                    if (onlineNow) runCatching { liveTraffic.report(route) }.getOrNull() else null
                 }
                 val merged = (weather.await() + offlinePlaces.await() + remotePlaces.await())
                     .distinctBy { Triple(it.kind, it.title, it.distanceAheadMeters.toInt() / 250) }
@@ -565,8 +607,13 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         mutableState.update { state ->
-            if (state.route === route) {
-                state.copy(routeNotices = notices, routeInsightsLoading = false, traffic = traffic)
+            if (state.route === ownerRoute) {
+                state.copy(
+                    routeNotices = notices,
+                    routeInsightsLoading = false,
+                    traffic = trafficReport?.summary,
+                    trafficSegments = trafficReport?.segments.orEmpty()
+                )
             } else state
         }
     }
@@ -581,6 +628,9 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 currentLocation = coordinate,
                 speedKmh = fix.speedKmh.toInt().coerceIn(0, 240),
                 bearingDegrees = fix.bearingDegrees,
+                navigationZoomLevel = if (it.cameraAutomatic) {
+                    NavigationCameraPolicy.zoomLevel(fix.speedKmh.toInt(), progress.distanceToManeuverMeters)
+                } else it.navigationZoomLevel,
                 maneuverIndex = progress.maneuverIndex,
                 distanceToNextManeuverMeters = progress.distanceToManeuverMeters,
                 remainingDistanceMeters = progress.remainingDistanceMeters,
@@ -596,6 +646,17 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             lastRerouteAt = now
             rerouteFrom(coordinate)
             offRouteSamples = 0
+        }
+        val shouldRefreshInsights = lastInsightsRemainingMeters.isNaN() ||
+            lastInsightsRemainingMeters - progress.remainingDistanceMeters >= INSIGHTS_REFRESH_DISTANCE_METERS
+        if (shouldRefreshInsights) {
+            lastInsightsRemainingMeters = progress.remainingDistanceMeters
+            RoutePointSampler.remainingRoute(route, coordinate)?.let { remainingRoute ->
+                insightsRefreshJob?.cancel()
+                insightsRefreshJob = viewModelScope.launch {
+                    loadRouteNotices(remainingRoute, route)
+                }
+            }
         }
     }
 
@@ -622,16 +683,20 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 remainingDistanceMeters = replacement.distanceMeters,
                 remainingSeconds = replacement.travelSeconds,
                 offRoute = false,
+                cameraAutomatic = true,
+                followNavigation = true,
                 message = "مسیر با موقعیت جدید اصلاح شد"
             )
         }
-        loadRouteNotices(replacement)
+        lastInsightsRemainingMeters = replacement.distanceMeters
+        loadRouteNotices(replacement, replacement)
     }
 
     override fun onCleared() {
         downloadMonitor?.cancel()
         searchJob?.cancel()
         navigationJob?.cancel()
+        insightsRefreshJob?.cancel()
         places?.close()
         graph?.close()
         networkMonitor.close()
@@ -643,5 +708,6 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         const val MIN_NAVIGATION_ZOOM = 15
         const val DEFAULT_NAVIGATION_ZOOM = 18
         const val MAX_NAVIGATION_ZOOM = 19
+        const val INSIGHTS_REFRESH_DISTANCE_METERS = 2_500.0
     }
 }
