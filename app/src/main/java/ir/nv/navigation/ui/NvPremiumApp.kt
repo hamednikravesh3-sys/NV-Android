@@ -100,7 +100,8 @@ fun NvPremiumApp(
             darkMode = darkMode,
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
-            viewModel = viewModel
+            viewModel = viewModel,
+            premiumShell = true
         )
 
         if (!state.navigationActive && state.route == null && (state.onlineAvailable || state.offlineReady)) {
@@ -158,10 +159,10 @@ private fun PremiumHomeHeader(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        color = PremiumNavy,
+        color = PremiumNavy.copy(alpha = 0.94f),
         contentColor = PremiumText,
         shadowElevation = 18.dp,
-        border = BorderStroke(1.dp, PremiumOutline)
+        border = BorderStroke(1.dp, PremiumCyan.copy(alpha = 0.24f))
     ) {
         Column(Modifier.fillMaxWidth().padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -180,7 +181,7 @@ private fun PremiumHomeHeader(
                 Surface(
                     modifier = Modifier.weight(1f).clickable(onClick = onOpenPlanner),
                     shape = RoundedCornerShape(16.dp),
-                    color = PremiumPanelHigh,
+                    color = PremiumPanelHigh.copy(alpha = 0.92f),
                     border = BorderStroke(1.dp, PremiumOutline)
                 ) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -198,17 +199,11 @@ private fun PremiumHomeHeader(
                 Icon(Icons.Rounded.AccountCircle, null, tint = PremiumMuted, modifier = Modifier.size(31.dp))
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("مبدأ و مقصد مستقل", color = PremiumCyan, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black)
-                    Text(
-                        "هر دو نقطه را با نام، کد NV یا جستجو انتخاب کنید؛ GPS فقط یک گزینه اختیاری برای مبدأ است.",
-                        color = PremiumMuted,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text("GPS فقط در صورت انتخاب شما استفاده می‌شود.", color = PremiumMuted, style = MaterialTheme.typography.bodySmall)
                 }
                 IconButton(onClick = onSwap) { Icon(Icons.Rounded.SwapVert, "جابه‌جایی", tint = PremiumCyan) }
             }
@@ -216,7 +211,7 @@ private fun PremiumHomeHeader(
             EndpointRow(
                 label = "مبدأ",
                 place = state.origin,
-                emptyText = "مبدأ را خودم انتخاب می‌کنم",
+                emptyText = "مبدأ را انتخاب کنید",
                 marker = PremiumOrigin,
                 onClick = onOpenPlanner,
                 trailing = {
@@ -230,7 +225,7 @@ private fun PremiumHomeHeader(
                             if (state.locating) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = PremiumCyan)
                             else Icon(Icons.Rounded.MyLocation, null, tint = PremiumCyan, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(5.dp))
-                            Text("GPS اختیاری", color = PremiumCyan, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                            Text("موقعیت من", color = PremiumCyan, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -239,7 +234,7 @@ private fun PremiumHomeHeader(
             EndpointRow(
                 label = "مقصد",
                 place = state.destination,
-                emptyText = "مقصد را خودم انتخاب می‌کنم",
+                emptyText = "مقصد را انتخاب کنید",
                 marker = PremiumDestination,
                 onClick = onOpenPlanner,
                 trailing = { Icon(Icons.Rounded.Place, null, tint = PremiumDestination, modifier = Modifier.size(22.dp)) }
@@ -261,7 +256,7 @@ private fun PremiumHomeHeader(
                 if (state.routing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = PremiumInk)
                 else Icon(Icons.Rounded.DirectionsCar, null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (state.origin != null && state.destination != null) "نمایش مسیرهای پیشنهادی" else "انتخاب آزاد مبدأ و مقصد", fontWeight = FontWeight.Black)
+                Text(if (state.origin != null && state.destination != null) "نمایش مسیرهای پیشنهادی" else "انتخاب مبدأ و مقصد", fontWeight = FontWeight.Black)
             }
         }
     }
@@ -286,9 +281,10 @@ private fun EndpointRow(
             Text(label, color = PremiumMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
             Text(place?.name ?: emptyText, color = PremiumText, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             place?.let {
-                val displayCode = it.personalCode?.takeIf(String::isNotBlank) ?: it.code.takeIf { code -> code > 0 }?.let { code -> "NV:$code" }
-                if (displayCode != null) {
-                    Text(displayCode, color = PremiumCyan, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
+                val publicCode = it.code.takeIf { code -> code > 0 }?.let { code -> "NV:$code" }
+                if (publicCode != null) Text(publicCode, color = PremiumCyan, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
+                it.personalCode?.takeIf(String::isNotBlank)?.let { personal ->
+                    Text("شخصی: $personal", color = PremiumMuted, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -311,8 +307,8 @@ private fun PremiumPoiRail(modifier: Modifier = Modifier) {
 private fun PoiButton(icon: ImageVector, label: String) {
     Surface(
         shape = RoundedCornerShape(15.dp),
-        color = PremiumNavy,
-        border = BorderStroke(1.dp, PremiumOutline),
+        color = PremiumNavy.copy(alpha = 0.92f),
+        border = BorderStroke(1.dp, PremiumCyan.copy(alpha = 0.22f)),
         shadowElevation = 8.dp
     ) {
         Column(Modifier.padding(horizontal = 9.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
