@@ -25,7 +25,9 @@ class AStarRouter(private val graph: RoutingGraph) {
         if (limit <= 1 || primary.edgeIds.size < 2) return listOf(primary)
         val attempts = (limit * 2).coerceAtMost(MAX_ALTERNATIVE_ATTEMPTS)
         val avoidIndices = (1..attempts).map {
-            (primary.edgeIds.lastIndex * it / (attempts + 1)).coerceIn(0, primary.edgeIds.lastIndex)
+            // Use the edge count rather than lastIndex so short routes still
+            // sample both their first and last edge.
+            (primary.edgeIds.size * it / (attempts + 1)).coerceIn(0, primary.edgeIds.lastIndex)
         }.distinct()
         val candidates = avoidIndices.mapNotNull { index ->
             routeAvoiding(origin, destination, setOf(primary.edgeIds[index]))
