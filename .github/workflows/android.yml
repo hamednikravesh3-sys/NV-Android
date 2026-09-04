@@ -61,7 +61,7 @@ jobs:
             adb shell dumpsys window windows > nv-window-state.txt
             adb shell dumpsys activity activities > nv-activity-state.txt
             adb logcat -d > nv-logcat.txt
-            FOREGROUND="$(grep -E 'mCurrentFocus|mFocusedApp' nv-window-state.txt || true)"
+            FOREGROUND="$(grep -E 'mCurrentFocus|mFocusedApp' nv-window-state.txt; grep -E 'mResumedActivity|ResumedActivity:' nv-activity-state.txt || true)"
             echo "$FOREGROUND"
             echo "$FOREGROUND" | grep 'ir.nv.navigation.debug'
             if grep -E 'Process: ir\.nv\.navigation\.debug|ANR in ir\.nv\.navigation\.debug' nv-logcat.txt; then

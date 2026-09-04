@@ -401,7 +401,9 @@ private class VectorMapHolder(context: Context) {
     private fun emptyFeatures(): FeatureCollection = FeatureCollection.fromFeatures(emptyList())
 
     private companion object {
-        const val DAY_STYLE_URL = "https://tiles.openfreemap.org/styles/3d"
+        // OpenFreeMap's documented mobile style URL. NV adds its own building
+        // extrusion layer below instead of relying on the removed /styles/3d URL.
+        const val DAY_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
         const val DARK_STYLE_URL = "https://tiles.openfreemap.org/styles/dark"
         const val OPEN_MAP_TILES_SOURCE = "openmaptiles"
         const val BUILDING_LAYER_ID = "nv-building-3d"
