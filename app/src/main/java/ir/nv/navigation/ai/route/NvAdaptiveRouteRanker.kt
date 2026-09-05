@@ -134,9 +134,9 @@ class NvAdaptiveRouteRanker : RouteRanker {
     private companion object {
         const val REFERENCE_SPEED_MPS = 13.89
         const val AERODYNAMIC_FACTOR = 0.35
-        const val ROAD_QUALITY_WEIGHT = 0.08
-        const val ACCIDENT_RISK_WEIGHT = 0.12
-        const val WEATHER_WEIGHT = 0.08
-        const val RESTRICTION_WEIGHT = 0.20
+        const val ROAD_QUALITY_WEIGHT = 0.12
+        const val ACCIDENT_RISK_WEIGHT = 0.35
+        const val WEATHER_WEIGHT = 0.20
+        const val RESTRICTION_WEIGHT = 0.55
     }
 }
