@@ -167,7 +167,7 @@ fun NvReferenceV6(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
-                    .padding(end = 8.dp, top = 8.dp)
+                    .padding(end = 6.dp, top = 118.dp)
             )
         }
 
@@ -323,60 +323,79 @@ private fun V6RightInfoPanel(state: NvUiState, modifier: Modifier = Modifier) {
     val weatherVisual = weatherVisual(weather?.detail)
 
     Column(
-        modifier.widthIn(min = 118.dp, max = 150.dp),
+        modifier.widthIn(min = 92.dp, max = 116.dp),
         horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(7.dp)
+        verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Surface(
-            shape = RoundedCornerShape(17.dp),
+            shape = RoundedCornerShape(14.dp),
             color = V6Panel,
-            border = BorderStroke(1.dp, weatherVisual.second.copy(alpha = 0.58f)),
-            shadowElevation = 7.dp
+            border = BorderStroke(1.dp, weatherVisual.second.copy(alpha = 0.50f)),
+            shadowElevation = 5.dp
         ) {
-            Row(Modifier.padding(horizontal = 9.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = weatherVisual.second.copy(alpha = 0.15f)) {
-                    Box(Modifier.size(35.dp), contentAlignment = Alignment.Center) {
-                        Icon(weatherVisual.first, contentDescription = "وضعیت آب‌وهوا", tint = weatherVisual.second, modifier = Modifier.size(23.dp))
+            Row(Modifier.padding(horizontal = 7.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = CircleShape, color = weatherVisual.second.copy(alpha = 0.14f)) {
+                    Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                        Icon(weatherVisual.first, contentDescription = "وضعیت آب‌وهوا", tint = weatherVisual.second, modifier = Modifier.size(18.dp))
                     }
                 }
-                Spacer(Modifier.width(7.dp))
+                Spacer(Modifier.width(5.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(temperature?.let { "$it°" } ?: "هوا", color = V6Text, fontWeight = FontWeight.Black, maxLines = 1)
-                    Text(weatherLabel(weather?.detail), color = V6Muted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        temperature?.let { "$it°" } ?: "هوا",
+                        color = V6Text,
+                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1
+                    )
+                    Text(
+                        weatherLabel(weather?.detail),
+                        color = V6Muted,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
 
         if (attraction != null) {
             Surface(
-                shape = RoundedCornerShape(17.dp),
+                shape = RoundedCornerShape(14.dp),
                 color = V6Panel,
-                border = BorderStroke(1.dp, V6Gold.copy(alpha = 0.58f)),
-                shadowElevation = 7.dp
+                border = BorderStroke(1.dp, V6Gold.copy(alpha = 0.50f)),
+                shadowElevation = 5.dp
             ) {
-                Column(Modifier.padding(7.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Column(Modifier.padding(5.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     if (!attraction.imageUrl.isNullOrBlank()) {
                         AsyncImage(
                             model = attraction.imageUrl,
                             contentDescription = attraction.title,
-                            modifier = Modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(12.dp)),
+                            modifier = Modifier.fillMaxWidth().height(50.dp).clip(RoundedCornerShape(9.dp)),
                             contentScale = ContentScale.Crop
                         )
                     } else {
                         Surface(
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            color = V6Gold.copy(alpha = 0.12f)
+                            modifier = Modifier.fillMaxWidth().height(36.dp),
+                            shape = RoundedCornerShape(9.dp),
+                            color = V6Gold.copy(alpha = 0.11f)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.PhotoCamera, contentDescription = null, tint = V6Gold, modifier = Modifier.size(25.dp))
+                                Icon(Icons.Rounded.PhotoCamera, contentDescription = null, tint = V6Gold, modifier = Modifier.size(20.dp))
                             }
                         }
                     }
-                    Text("دیدنی جلو مسیر", color = V6Gold, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    Text(attraction.title, color = V6Text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("دیدنی", color = V6Gold, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                     Text(
-                        "${(attraction.distanceAheadMeters / 1000.0).coerceAtLeast(0.1).let { String.format("%.1f", it) }} km جلوتر",
+                        attraction.title,
+                        color = V6Text,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "${(attraction.distanceAheadMeters / 1000.0).coerceAtLeast(0.1).let { String.format("%.1f", it) }} km",
                         color = V6Muted,
                         style = MaterialTheme.typography.labelSmall
                     )
