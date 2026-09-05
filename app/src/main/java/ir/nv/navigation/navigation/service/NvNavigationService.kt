@@ -35,7 +35,7 @@ class NvNavigationService : Service() {
 
     private fun buildNotification(destination: String, remaining: String) =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_nv_navigation)
             .setContentTitle(if (destination.isBlank()) "NV Navigation" else "در مسیر $destination")
             .setContentText(remaining.ifBlank { "راهنمای مسیر فعال است" })
             .setOnlyAlertOnce(true)
