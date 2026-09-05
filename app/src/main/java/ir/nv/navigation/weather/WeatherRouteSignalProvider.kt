@@ -11,7 +11,10 @@ class WeatherRouteSignalProvider(
     override suspend fun signals(route: Route, context: RouteIntelligenceContext): RouteSignals {
         val notices = service.alertsAhead(route)
         if (notices.isEmpty()) return RouteSignals()
-        val penalty = notices.maxOfOrNull { notice -> penaltyFromDetail(notice.detail) } ?: return RouteSignals()
+        val penalty = notices
+            .mapNotNull { notice -> penaltyFromDetail(notice.detail) }
+            .maxOrNull()
+            ?: return RouteSignals()
         return RouteSignals(weatherPenalty = penalty)
     }
 
