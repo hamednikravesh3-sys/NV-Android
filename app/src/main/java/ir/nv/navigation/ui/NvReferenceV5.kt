@@ -38,6 +38,7 @@ private val V5Text = Color(0xFFF6FBFF)
 private val V5Muted = Color(0xFFA7BBC8)
 private val V5Green = Color(0xFF42E66A)
 private enum class V5Sheet { MENU, SEARCH, ROUTES, FAVORITES, WEATHER, SETTINGS }
+private enum class SearchTarget { ORIGIN, DESTINATION }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +52,7 @@ fun NvReferenceV5(
     val context = LocalContext.current
     var sheet by remember { mutableStateOf<V5Sheet?>(null) }
     var quickSearchVisible by remember { mutableStateOf(false) }
+    var searchTarget by remember { mutableStateOf(SearchTarget.ORIGIN) }
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { p ->
         if (p.values.any { it }) viewModel.startNavigation()
@@ -62,8 +64,11 @@ fun NvReferenceV5(
         if (ok) viewModel.startNavigation() else permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
-    fun openSearch(q: String = "") {
-        if (q.isNotBlank()) viewModel.updateDestinationQuery(q)
+    fun openSearch(q: String = "", target: SearchTarget = SearchTarget.DESTINATION) {
+        searchTarget = target
+        if (q.isNotBlank()) {
+            if (target == SearchTarget.ORIGIN) viewModel.updateOriginQuery(q) else viewModel.updateDestinationQuery(q)
+        }
         quickSearchVisible = true
         sheet = null
     }
@@ -75,21 +80,21 @@ fun NvReferenceV5(
             state = state,
             vm = viewModel,
             visible = quickSearchVisible,
-            onOpen = { quickSearchVisible = true },
+            target = searchTarget,
+            onTargetChange = { searchTarget = it },
+            onOpen = {
+                searchTarget = if (state.origin == null) SearchTarget.ORIGIN else SearchTarget.DESTINATION
+                quickSearchVisible = true
+            },
             onClose = { quickSearchVisible = false },
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(start = 12.dp, top = 10.dp)
+            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start = 12.dp, top = 10.dp)
         )
 
-        V5MiniWeather(
+        V5RightInfoRail(
             state = state,
-            onClick = { sheet = V5Sheet.WEATHER },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(end = 10.dp, top = 12.dp)
+            onWeather = { sheet = V5Sheet.WEATHER },
+            onAttraction = { sheet = V5Sheet.WEATHER },
+            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end = 10.dp, top = 12.dp)
         )
 
         if (state.navigationActive && state.route != null) {
@@ -166,7 +171,7 @@ fun NvReferenceV5(
             ) {
                 when (sheet) {
                     V5Sheet.MENU -> V5MenuSheet(
-                        onSearch = { openSearch() },
+                        onSearch = { openSearch(target = if (state.origin == null) SearchTarget.ORIGIN else SearchTarget.DESTINATION) },
                         onRoutes = { sheet = if (state.route == null) V5Sheet.SEARCH else V5Sheet.ROUTES },
                         onFavorites = { sheet = V5Sheet.FAVORITES },
                         onWeather = { sheet = V5Sheet.WEATHER },
@@ -194,6 +199,8 @@ private fun V5QuickSearch(
     state: NvUiState,
     vm: NvViewModel,
     visible: Boolean,
+    target: SearchTarget,
+    onTargetChange: (SearchTarget) -> Unit,
     onOpen: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
@@ -212,22 +219,47 @@ private fun V5QuickSearch(
         return
     }
 
-    Column(modifier.widthIn(min = 250.dp, max = 340.dp)) {
+    val isOrigin = target == SearchTarget.ORIGIN
+    val query = if (isOrigin) state.originQuery else state.destinationQuery
+    val suggestions = if (isOrigin) state.originSuggestions else state.destinationSuggestions
+
+    Column(modifier.widthIn(min = 260.dp, max = 350.dp)) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = V5Panel,
+            border = BorderStroke(1.dp, V5Cyan.copy(alpha = .5f))
+        ) {
+            Row(Modifier.padding(5.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                FilterChip(
+                    selected = isOrigin,
+                    onClick = { onTargetChange(SearchTarget.ORIGIN) },
+                    label = { Text(if (state.origin != null) "مبدأ ✓" else "مبدأ") },
+                    leadingIcon = { Icon(Icons.Rounded.MyLocation, null, modifier = Modifier.size(16.dp)) }
+                )
+                FilterChip(
+                    selected = !isOrigin,
+                    onClick = { onTargetChange(SearchTarget.DESTINATION) },
+                    label = { Text(if (state.destination != null) "مقصد ✓" else "مقصد") },
+                    leadingIcon = { Icon(Icons.Rounded.Place, null, modifier = Modifier.size(16.dp)) }
+                )
+            }
+        }
+        Spacer(Modifier.height(5.dp))
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = V5Panel,
             border = BorderStroke(1.dp, V5Cyan.copy(alpha = .65f))
         ) {
             OutlinedTextField(
-                value = state.destinationQuery,
-                onValueChange = vm::updateDestinationQuery,
+                value = query,
+                onValueChange = { if (isOrigin) vm.updateOriginQuery(it) else vm.updateDestinationQuery(it) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                placeholder = { Text("جستجوی مقصد یا کد NV", color = V5Muted) },
-                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = V5Cyan) },
+                placeholder = { Text(if (isOrigin) "جستجوی مبدأ یا کد NV" else "جستجوی مقصد یا کد NV", color = V5Muted) },
+                leadingIcon = { Icon(if (isOrigin) Icons.Rounded.MyLocation else Icons.Rounded.Place, null, tint = V5Cyan) },
                 trailingIcon = {
                     IconButton(onClick = {
-                        vm.updateDestinationQuery("")
+                        if (isOrigin) vm.updateOriginQuery("") else vm.updateDestinationQuery("")
                         onClose()
                     }) { Icon(Icons.Rounded.Close, contentDescription = "بستن", tint = V5Text) }
                 },
@@ -241,7 +273,26 @@ private fun V5QuickSearch(
             )
         }
 
-        if (state.destinationQuery.isNotBlank() && state.destinationSuggestions.isNotEmpty()) {
+        if (isOrigin) {
+            Spacer(Modifier.height(5.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable {
+                    vm.useCurrentLocationAsOrigin()
+                    onTargetChange(SearchTarget.DESTINATION)
+                },
+                shape = RoundedCornerShape(14.dp),
+                color = V5Panel,
+                border = BorderStroke(1.dp, V5Green.copy(alpha = .45f))
+            ) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.GpsFixed, null, tint = V5Green, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("استفاده از موقعیت فعلی به‌عنوان مبدأ", color = V5Text, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+
+        if (query.isNotBlank() && suggestions.isNotEmpty()) {
             Spacer(Modifier.height(5.dp))
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -249,17 +300,25 @@ private fun V5QuickSearch(
                 border = BorderStroke(1.dp, V5Cyan.copy(alpha = .35f))
             ) {
                 LazyColumn(Modifier.heightIn(max = 210.dp)) {
-                    items(state.destinationSuggestions.take(6)) { place ->
+                    items(suggestions.take(6)) { place ->
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                vm.selectDestination(place)
-                                onClose()
+                                if (isOrigin) {
+                                    vm.selectOrigin(place)
+                                    onTargetChange(SearchTarget.DESTINATION)
+                                } else {
+                                    vm.selectDestination(place)
+                                    onClose()
+                                }
                             }.padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Rounded.Place, null, tint = V5Cyan, modifier = Modifier.size(18.dp))
+                            Icon(if (isOrigin) Icons.Rounded.MyLocation else Icons.Rounded.Place, null, tint = V5Cyan, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(place.name, color = V5Text, modifier = Modifier.weight(1f))
+                            Column(Modifier.weight(1f)) {
+                                Text(place.name, color = V5Text)
+                                Text(if (isOrigin) "انتخاب به‌عنوان مبدأ" else "انتخاب به‌عنوان مقصد", color = V5Muted, style = MaterialTheme.typography.labelSmall)
+                            }
                             Text(place.personalCode ?: place.code.toString(), color = V5Muted, style = MaterialTheme.typography.labelSmall)
                         }
                     }
@@ -270,16 +329,36 @@ private fun V5QuickSearch(
 }
 
 @Composable
-private fun V5MiniWeather(
+private fun V5RightInfoRail(
     state: NvUiState,
-    onClick: () -> Unit,
+    onWeather: () -> Unit,
+    onAttraction: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val weather = state.routeNotices.firstOrNull { it.kind == RouteNotice.Kind.WEATHER }
+    val attraction = state.routeNotices.firstOrNull { it.kind == RouteNotice.Kind.ATTRACTION }
     val temperature = weather?.detail?.let { Regex("(-?\\d+)°").find(it)?.groupValues?.getOrNull(1) }
 
+    Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        V5MiniInfoChip(
+            icon = Icons.Rounded.Cloud,
+            text = temperature?.let { "$it°" } ?: "هوا",
+            onClick = onWeather
+        )
+        if (attraction != null) {
+            V5MiniInfoChip(
+                icon = Icons.Rounded.PhotoCamera,
+                text = attraction.title.take(13),
+                onClick = onAttraction
+            )
+        }
+    }
+}
+
+@Composable
+private fun V5MiniInfoChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, onClick: () -> Unit) {
     Surface(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = Modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
         color = V5Panel,
         border = BorderStroke(1.dp, V5Cyan.copy(alpha = .4f))
@@ -289,13 +368,8 @@ private fun V5MiniWeather(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(Icons.Rounded.Cloud, contentDescription = "آب‌وهوا", tint = V5Cyan, modifier = Modifier.size(16.dp))
-            Text(
-                text = temperature?.let { "$it°" } ?: "هوا",
-                color = V5Text,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Icon(icon, null, tint = V5Cyan, modifier = Modifier.size(16.dp))
+            Text(text, color = V5Text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -343,7 +417,7 @@ private fun V5MenuSheet(
         Text("NV", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
         Text("همه ابزارها فقط هنگام نیاز باز می‌شوند", color = V5Muted)
         val rows = listOf(
-            Triple("جستجو", Icons.Rounded.Search, onSearch),
+            Triple("جستجوی مبدأ / مقصد", Icons.Rounded.Search, onSearch),
             Triple("مسیرهای پیشنهادی", Icons.Rounded.Route, onRoutes),
             Triple("مکان‌های ذخیره‌شده", Icons.Rounded.Bookmark, onFavorites),
             Triple("آب‌وهوا و وضعیت مسیر", Icons.Rounded.Cloud, onWeather),
