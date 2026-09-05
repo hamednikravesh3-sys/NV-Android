@@ -1,12 +1,12 @@
 package ir.nv.navigation.ui.theme
 
 enum class AppThemeMode(val title: String, val description: String) {
-    AUTO("خودکار", "هماهنگ با تنظیمات روز و شب گوشی"),
+    AUTO("خودکار", "تغییر خودکار روز و شب بر اساس ساعت محلی"),
     DAY("روز", "نقشه روشن با بیشترین خوانایی"),
     NIGHT("شب", "نور کمتر و کنتراست مناسب رانندگی");
 
-    fun resolve(systemDark: Boolean): Boolean = when (this) {
-        AUTO -> systemDark
+    fun resolve(automaticDark: Boolean): Boolean = when (this) {
+        AUTO -> automaticDark
         DAY -> false
         NIGHT -> true
     }
