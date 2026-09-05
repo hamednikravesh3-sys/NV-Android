@@ -6,6 +6,8 @@ import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.RouteManeuver
 import ir.nv.navigation.data.PlaceCodes
+import ir.nv.navigation.routing.RouteDecisionEngine
+import ir.nv.navigation.traffic.LiveTrafficService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -26,6 +28,7 @@ class OnlineNavigationService {
         .callTimeout(15, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
+    private val liveTraffic = LiveTrafficService()
     private val searchCache = object : LinkedHashMap<String, List<Place>>(80, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Place>>?): Boolean = size > 80
     }
@@ -134,10 +137,20 @@ class OnlineNavigationService {
                     parseRoutes(JSONObject(response.body?.string().orEmpty()))
                 }
             }
-            result.getOrNull()?.takeIf { it.isNotEmpty() }?.let { return@withContext it }
+            result.getOrNull()?.takeIf { it.isNotEmpty() }?.let { candidates ->
+                return@withContext rankRoutes(candidates)
+            }
             failures += result.exceptionOrNull()?.message ?: "پاسخ نامعتبر"
         }
         throw IOException("هیچ سرویس مسیر آنلاینی پاسخ نداد: ${failures.joinToString("، ")}")
+    }
+
+    private fun rankRoutes(routes: List<Route>): List<Route> {
+        if (routes.size <= 1) return routes
+        val traffic = if (liveTraffic.isConfigured()) {
+            routes.map { route -> runCatching { liveTraffic.summary(route) }.getOrNull() }
+        } else emptyList()
+        return RouteDecisionEngine.rank(routes, traffic)
     }
 
     private fun parsePhoton(root: JSONObject, fallbackName: String): List<Place> {
@@ -267,7 +280,7 @@ class OnlineNavigationService {
             for (index in 0 until routes.length()) {
                 add(parseRoute(routes.getJSONObject(index)))
             }
-        }.sortedBy { it.travelSeconds }
+        }
     }
 
     private fun parseRoute(value: JSONObject): Route {
