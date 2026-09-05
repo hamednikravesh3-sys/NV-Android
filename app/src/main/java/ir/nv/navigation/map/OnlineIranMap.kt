@@ -304,19 +304,19 @@ private class VectorMapHolder(context: Context) {
             val route = renderedRoutes.getOrNull(index)
             source.setGeoJson(route?.toFeatureCollection() ?: emptyFeatures())
             val selected = index == renderedSelectedRoute && route != null
-            val routeColor = when {
-                selected -> Color.rgb(24, 212, 255)
-                index % 2 == 0 -> Color.rgb(215, 255, 91)
-                else -> Color.rgb(150, 160, 174)
-            }
+            val routeColor = routeColor(index)
+            val offset = if (selected) 0f else alternativeOffset(index)
             routeLayers[index].setProperties(
                 PropertyFactory.lineColor(routeColor),
-                PropertyFactory.lineWidth(if (selected) 10f else 6f),
-                PropertyFactory.lineOpacity(if (route == null) 0f else 0.96f)
+                PropertyFactory.lineWidth(if (selected) 10f else 7f),
+                PropertyFactory.lineOffset(offset),
+                PropertyFactory.lineOpacity(if (route == null) 0f else 0.98f)
             )
             routeGlowLayers[index].setProperties(
-                PropertyFactory.lineColor(Color.argb(100, 24, 212, 255)),
-                PropertyFactory.lineOpacity(if (selected) 0.8f else 0f)
+                PropertyFactory.lineColor(routeColor),
+                PropertyFactory.lineWidth(20f),
+                PropertyFactory.lineOffset(0f),
+                PropertyFactory.lineOpacity(if (selected) 0.42f else 0f)
             )
         }
     }
@@ -419,6 +419,20 @@ private class VectorMapHolder(context: Context) {
         else -> 6.5
     }
 
+    private fun routeColor(index: Int): Int = when (index % 4) {
+        0 -> Color.rgb(22, 217, 255)
+        1 -> Color.rgb(66, 230, 106)
+        2 -> Color.rgb(255, 214, 90)
+        else -> Color.rgb(181, 140, 255)
+    }
+
+    private fun alternativeOffset(index: Int): Float = when (index % 4) {
+        0 -> -5f
+        1 -> 5f
+        2 -> -10f
+        else -> 10f
+    }
+
     private fun emptyFeatures(): FeatureCollection = FeatureCollection.fromFeatures(emptyList())
 
     private fun satelliteStyleJson(night: Boolean): String {
@@ -497,8 +511,6 @@ private class VectorMapHolder(context: Context) {
     }
 
     private companion object {
-        // OpenFreeMap's documented mobile style URL. NV adds its own building
-        // extrusion layer below instead of relying on the removed /styles/3d URL.
         const val DAY_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
         const val DARK_STYLE_URL = "https://tiles.openfreemap.org/styles/dark"
         const val SATELLITE_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
