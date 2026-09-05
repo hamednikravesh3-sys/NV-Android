@@ -20,11 +20,13 @@ import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
 import ir.nv.navigation.location.DeviceLocationProvider
 import ir.nv.navigation.location.NavigationFix
+import ir.nv.navigation.navigation.NvNavigationPlatform
+import ir.nv.navigation.navigation.RouteProfile
+import ir.nv.navigation.navigation.RouteRequest
 import ir.nv.navigation.network.NetworkMonitor
 import ir.nv.navigation.online.OnlineNavigationService
 import ir.nv.navigation.online.OnlinePlacesService
 import ir.nv.navigation.routing.AStarRouter
-import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.routing.RouteProgressEngine
 import ir.nv.navigation.routing.RouteOriginConnector
 import ir.nv.navigation.routing.NavigationCameraPolicy
@@ -118,6 +120,13 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private var places: PlaceRepository? = null
     private var graph: SqliteRoutingGraph? = null
     private var router: AStarRouter? = null
+    private val navigationPlatform by lazy {
+        NvNavigationPlatform(
+            onlineService = online,
+            routerProvider = { router },
+            liveTrafficService = liveTraffic
+        )
+    }
     private var downloadMonitor: Job? = null
     private var searchJob: Job? = null
     private var navigationJob: Job? = null
@@ -498,31 +507,27 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 mutableState.update { it.copy(routing = true, locating = false, message = null) }
             }
+
             val snapshot = mutableState.value
-            val preferredSource = NavigationModeResolver.preferredSource(
+            val request = RouteRequest(
+                origin = origin.coordinate,
+                destination = destination.coordinate,
+                profile = RouteProfile.SMART,
+                preferOffline = snapshot.preferOffline,
                 onlineAvailable = snapshot.onlineAvailable,
-                offlineReady = snapshot.offlineReady,
-                preferOffline = snapshot.preferOffline
+                offlineAvailable = snapshot.offlineReady && router != null
             )
-            var source = RouteSource.NONE
-            var onlineError: String? = null
-            val rawResults: List<Route> = if (preferredSource == RouteSource.OFFLINE) {
-                val activeRouter = router
-                if (activeRouter == null) emptyList() else withContext(Dispatchers.Default) {
-                    activeRouter.routes(origin.coordinate, destination.coordinate)
-                }.also { if (it.isNotEmpty()) source = RouteSource.OFFLINE }
-            } else if (preferredSource == RouteSource.ONLINE) {
-                runCatching { online.routes(origin.coordinate, destination.coordinate) }
-                    .onFailure { onlineError = it.message }
-                    .getOrNull()?.takeIf { it.isNotEmpty() }
-                    ?.also { source = RouteSource.ONLINE }
-                    ?: router?.let { r ->
-                        withContext(Dispatchers.Default) { r.routes(origin.coordinate, destination.coordinate) }
-                            .also { if (it.isNotEmpty()) source = RouteSource.OFFLINE }
-                    }.orEmpty()
-            } else emptyList()
-            val results = rawResults.map { RouteOriginConnector.attach(origin.coordinate, it) }
+            val plan = runCatching { navigationPlatform.routeCoordinator.plan(request) }
+                .getOrElse { error ->
+                    mutableState.update {
+                        it.copy(routing = false, message = error.message ?: "محاسبه مسیر ناموفق بود")
+                    }
+                    return@launch
+                }
+            val candidates = plan.candidates
+            val results = candidates.map { RouteOriginConnector.attach(origin.coordinate, it.route) }
             val result = results.firstOrNull()
+            val source = candidates.firstOrNull()?.source ?: RouteSource.NONE
 
             mutableState.update {
                 it.copy(
@@ -540,13 +545,15 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     routeSource = source,
                     routeNotices = emptyList(),
                     routeInsightsLoading = result != null,
-                    traffic = null,
+                    traffic = candidates.firstOrNull()?.traffic,
                     trafficSegments = emptyList(),
                     message = when {
-                        result != null -> null
-                        source == RouteSource.OFFLINE && snapshot.onlineAvailable -> "سرویس آنلاین پاسخ نداد؛ مسیر با داده آفلاین محاسبه شد"
-                        !snapshot.onlineAvailable && !packManager.isReady() -> "اینترنت در دسترس نیست و نقشه آفلاین دانلود نشده است"
-                        onlineError != null -> onlineError
+                        result != null && plan.fallbackUsed && source == RouteSource.OFFLINE ->
+                            "سرویس آنلاین پاسخ نداد؛ مسیر با داده آفلاین محاسبه شد"
+                        result != null -> plan.warning
+                        !snapshot.onlineAvailable && !snapshot.offlineReady ->
+                            "اینترنت در دسترس نیست و نقشه آفلاین دانلود نشده است"
+                        plan.warning != null -> plan.warning
                         else -> "برای این دو نقطه مسیر پیدا نشد"
                     }
                 )
@@ -716,20 +723,24 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun rerouteFrom(coordinate: Coordinate) {
         val snapshot = mutableState.value
         val destination = snapshot.destination ?: return
-        val rawReplacement = if (snapshot.onlineAvailable) {
-            runCatching { online.route(coordinate, destination.coordinate) }.getOrNull()
-        } else {
-            router?.let { active ->
-                withContext(Dispatchers.Default) { active.route(coordinate, destination.coordinate) }
-            }
-        } ?: return
-        val replacement = RouteOriginConnector.attach(coordinate, rawReplacement)
+        val request = RouteRequest(
+            origin = coordinate,
+            destination = destination.coordinate,
+            profile = RouteProfile.SMART,
+            preferOffline = snapshot.preferOffline,
+            onlineAvailable = snapshot.onlineAvailable,
+            offlineAvailable = snapshot.offlineReady && router != null
+        )
+        val plan = runCatching { navigationPlatform.routeCoordinator.plan(request) }.getOrNull() ?: return
+        val candidate = plan.selected ?: return
+        val replacement = RouteOriginConnector.attach(coordinate, candidate.route)
+        val alternatives = plan.candidates.map { RouteOriginConnector.attach(coordinate, it.route) }
         mutableState.update {
             it.copy(
                 route = replacement,
-                routeAlternatives = listOf(replacement),
+                routeAlternatives = alternatives,
                 selectedRouteIndex = 0,
-                routeSource = if (snapshot.onlineAvailable) RouteSource.ONLINE else RouteSource.OFFLINE,
+                routeSource = candidate.source,
                 maneuverIndex = 0,
                 distanceToNextManeuverMeters = replacement.maneuvers.firstOrNull()?.distanceMeters
                     ?: replacement.distanceMeters,
@@ -738,7 +749,13 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 offRoute = false,
                 cameraAutomatic = true,
                 followNavigation = true,
-                message = "مسیر با موقعیت جدید اصلاح شد"
+                traffic = candidate.traffic,
+                trafficSegments = emptyList(),
+                message = if (plan.fallbackUsed) {
+                    "مسیر با موقعیت جدید و منبع جایگزین اصلاح شد"
+                } else {
+                    "مسیر با موقعیت جدید اصلاح شد"
+                }
             )
         }
         lastInsightsRemainingMeters = replacement.distanceMeters
