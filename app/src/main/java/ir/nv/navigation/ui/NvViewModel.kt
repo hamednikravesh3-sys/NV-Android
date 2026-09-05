@@ -35,6 +35,8 @@ import ir.nv.navigation.routing.RouteOriginConnector
 import ir.nv.navigation.routing.NavigationCameraPolicy
 import ir.nv.navigation.routing.RoutePointSampler
 import ir.nv.navigation.routing.SqliteRoutingGraph
+import ir.nv.navigation.search.HybridSearchEngine
+import ir.nv.navigation.search.PlaceSearchProvider
 import ir.nv.navigation.weather.WeatherAlertService
 import ir.nv.navigation.traffic.LiveTrafficService
 import kotlinx.coroutines.Dispatchers
@@ -128,6 +130,18 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             onlineService = online,
             routerProvider = { router },
             liveTrafficService = liveTraffic
+        )
+    }
+    private val hybridSearchEngine by lazy {
+        HybridSearchEngine(
+            offline = PlaceSearchProvider { query ->
+                combineSearchResults(
+                    personalPlaces.search(query) +
+                        places?.search(query).orEmpty() +
+                        IranCityIndex.search(query)
+                )
+            },
+            online = PlaceSearchProvider { query -> online.search(query) }
         )
     }
     private var downloadMonitor: Job? = null
@@ -587,10 +601,11 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         }
         searchJob = viewModelScope.launch {
             val immediate = withContext(Dispatchers.IO) {
-                val personal = personalPlaces.search(query)
-                val local = places?.search(query).orEmpty()
-                val cities = IranCityIndex.search(query)
-                combineSearchResults(personal + local + cities)
+                hybridSearchEngine.searchDetailed(
+                    query = query,
+                    onlineAvailable = false,
+                    preferOffline = true
+                ).items
             }
             mutableState.update {
                 if (origin) {
@@ -601,26 +616,33 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val publicCode = PlaceCodes.publicCode(query)
+            val snapshot = mutableState.value
             val needsOnline = query.trim().length >= 2 &&
                 (publicCode == null || PlaceCodes.onlineIdentity(publicCode) != null) &&
-                networkMonitor.isOnline() && !mutableState.value.preferOffline
+                snapshot.onlineAvailable && !snapshot.preferOffline
             if (!needsOnline) return@launch
+
             delay(220)
             mutableState.update {
                 if (origin) it.copy(originSearching = true) else it.copy(destinationSearching = true)
             }
-            val remoteResult = withContext(Dispatchers.IO) { runCatching { online.search(query) } }
+            val detailed = withContext(Dispatchers.IO) {
+                hybridSearchEngine.searchDetailed(
+                    query = query,
+                    onlineAvailable = true,
+                    preferOffline = false
+                )
+            }
             val activeQuery = if (origin) mutableState.value.originQuery else mutableState.value.destinationQuery
             if (activeQuery != query) return@launch
-            val combined = combineSearchResults(immediate + remoteResult.getOrDefault(emptyList()))
+            val warning = if (detailed.onlineFailed && immediate.isEmpty()) {
+                "جست‌وجوی آنلاین پاسخ نداد؛ اتصال اینترنت را بررسی کنید"
+            } else null
             mutableState.update {
-                val warning = remoteResult.exceptionOrNull()?.let {
-                    if (immediate.isEmpty()) "جست‌وجوی آنلاین پاسخ نداد؛ اتصال اینترنت را بررسی کنید" else null
-                }
                 if (origin) {
-                    it.copy(originSuggestions = combined, originSearching = false, searchMessage = warning)
+                    it.copy(originSuggestions = detailed.items, originSearching = false, searchMessage = warning)
                 } else {
-                    it.copy(destinationSuggestions = combined, destinationSearching = false, searchMessage = warning)
+                    it.copy(destinationSuggestions = detailed.items, destinationSearching = false, searchMessage = warning)
                 }
             }
         }
