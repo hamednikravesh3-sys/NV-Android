@@ -21,7 +21,19 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-sleep 8
+first_frame=0
+for _ in $(seq 1 60); do
+  if adb logcat -d | grep -F "Displayed $PACKAGE/$ACTIVITY" >/dev/null; then
+    first_frame=1
+    break
+  fi
+  if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
+sleep 3
 adb exec-out screencap -p > nv-launch-screen.png
 adb shell dumpsys window windows > nv-window-state.txt
 adb shell dumpsys activity activities > nv-activity-state.txt
@@ -35,6 +47,11 @@ printf '%s\n' "$foreground"
 
 if [[ "$app_alive" -ne 1 ]]; then
   echo "NV process did not stay alive after launch"
+  exit 1
+fi
+
+if [[ "$first_frame" -ne 1 ]]; then
+  echo "NV did not render its first frame before the timeout"
   exit 1
 fi
 
