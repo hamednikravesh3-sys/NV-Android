@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp"
+    android:height="88dp"
+    android:viewportWidth="64"
+    android:viewportHeight="88">
+
+    <!-- shadow -->
+    <path android:fillColor="#55000000" android:pathData="M18,7 C12,12 10,20 10,30 L10,58 C10,69 14,79 22,83 L42,83 C50,79 54,69 54,58 L54,30 C54,20 52,12 46,7 Z"/>
+
+    <!-- tyres -->
+    <path android:fillColor="#111820" android:pathData="M7,20 L13,20 L13,35 L7,35 Z M51,20 L57,20 L57,35 L51,35 Z M7,53 L13,53 L13,68 L7,68 Z M51,53 L57,53 L57,68 L51,68 Z"/>
+    <path android:fillColor="#39454D" android:pathData="M8,22 L12,22 L12,33 L8,33 Z M52,22 L56,22 L56,33 L52,33 Z M8,55 L12,55 L12,66 L8,66 Z M52,55 L56,55 L56,66 L52,66 Z"/>
+
+    <!-- mirrors -->
+    <path android:fillColor="#AAB5BC" android:pathData="M10,37 L16,35 L16,42 L10,43 Z M54,37 L48,35 L48,42 L54,43 Z"/>
+
+    <!-- metallic body -->
+    <path android:fillColor="#E7ECEF" android:strokeColor="#FFFFFF" android:strokeWidth="1.2" android:pathData="M24,5 C17,7 14,13 14,23 L14,65 C14,75 19,82 27,84 L37,84 C45,82 50,75 50,65 L50,23 C50,13 47,7 40,5 Z"/>
+    <path android:fillColor="#C3CDD3" android:pathData="M22,9 C18,12 17,18 17,25 L17,63 C17,72 21,78 27,80 L37,80 C43,78 47,72 47,63 L47,25 C47,18 46,12 42,9 Z"/>
+    <path android:fillColor="#F6F8F9" android:pathData="M24,10 C21,13 20,18 20,25 L20,62 C20,69 23,75 28,77 L36,77 C41,75 44,69 44,62 L44,25 C44,18 43,13 40,10 Z"/>
+
+    <!-- bonnet -->
+    <path android:fillColor="#D7DEE2" android:pathData="M22,11 C25,9 39,9 42,11 L43,22 L21,22 Z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M24,12 L40,12 L40,13 L24,13 Z"/>
+
+    <!-- front windshield -->
+    <path android:fillColor="#17394A" android:pathData="M22,25 L42,25 L45,37 L19,37 Z"/>
+    <path android:fillColor="#3D6174" android:pathData="M24,27 L34,27 L40,35 L21,35 Z"/>
+
+    <!-- roof -->
+    <path android:fillColor="#D6DDE1" android:pathData="M21,38 C23,36 41,36 43,38 L43,49 C41,51 23,51 21,49 Z"/>
+    <path android:fillColor="#F4F6F7" android:pathData="M24,40 L40,40 L40,47 L24,47 Z"/>
+
+    <!-- rear window -->
+    <path android:fillColor="#17394A" android:pathData="M20,51 L44,51 L41,64 L23,64 Z"/>
+    <path android:fillColor="#3D6174" android:pathData="M23,53 L41,53 L39,61 L25,61 Z"/>
+
+    <!-- trunk -->
+    <path android:fillColor="#D8E0E4" android:pathData="M22,65 L42,65 L40,76 C37,78 27,78 24,76 Z"/>
+    <path android:fillColor="#A6B1B7" android:pathData="M25,70 L39,70 L39,71 L25,71 Z"/>
+
+    <!-- headlights -->
+    <path android:fillColor="#FFF6B5" android:strokeColor="#FFFFFF" android:strokeWidth="0.6" android:pathData="M21,13 C22,11 26,11 27,13 L26,17 C24,18 22,17 21,16 Z M43,13 C42,11 38,11 37,13 L38,17 C40,18 42,17 43,16 Z"/>
+
+    <!-- tail lights -->
+    <path android:fillColor="#FF4B55" android:pathData="M22,72 C24,71 27,72 28,74 L27,78 C25,79 23,78 22,76 Z M42,72 C40,71 37,72 36,74 L37,78 C39,79 41,78 42,76 Z"/>
+    <path android:fillColor="#FF8D93" android:pathData="M23,73 L27,73 L26,75 L23,75 Z M41,73 L37,73 L38,75 L41,75 Z"/>
+
+    <!-- grille -->
+    <path android:fillColor="#68777F" android:pathData="M27,18 L37,18 L37,19.5 L27,19.5 Z"/>
+
+    <!-- license plate -->
+    <path android:fillColor="#EEF2F5" android:strokeColor="#4E606A" android:strokeWidth="0.5" android:pathData="M27,76 L37,76 L37,80 L27,80 Z"/>
+    <path android:fillColor="#2B6CA3" android:pathData="M28,77 L36,77 L36,78 L28,78 Z"/>
+
+    <!-- subtle forward marker -->
+    <path android:fillColor="#16D9FF" android:pathData="M32,1 L29,6 L35,6 Z"/>
+</vector>
