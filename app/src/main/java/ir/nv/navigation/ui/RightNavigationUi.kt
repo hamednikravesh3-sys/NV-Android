@@ -1,9 +1,7 @@
 package ir.nv.navigation.ui
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,7 +13,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.LocalGasStation
 import androidx.compose.material.icons.rounded.Navigation
+import androidx.compose.material.icons.rounded.TurnLeft
+import androidx.compose.material.icons.rounded.TurnRight
+import androidx.compose.material.icons.rounded.UTurnLeft
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,19 +32,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.RouteManeuver
+import ir.nv.navigation.core.RouteNotice
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
-private val DriveNavy = Color(0xEC061A2D)
-private val DrivePanel = Color(0xF20A2944)
-private val DriveCyan = Color(0xFF16D8FF)
-private val DriveLime = Color(0xFF89F36B)
+private val DriveNavy = Color(0xF2071728)
+private val DrivePanel = Color(0xF20B2942)
+private val DriveCyan = Color(0xFF18D9FF)
+private val DriveLime = Color(0xFFB7FF65)
 private val DriveText = Color(0xFFF7FBFF)
-private val DriveMuted = Color(0xFF9AB3C7)
-private val DriveOutline = Color(0xFF1C6F96)
+private val DriveMuted = Color(0xFFA0B6C7)
+private val DriveOutline = Color(0xFF216D91)
 
 @Composable
 fun RightNavigationHud(
@@ -48,6 +60,7 @@ fun RightNavigationHud(
     speedKmh: Int,
     offRoute: Boolean,
     voiceEnabled: Boolean,
+    notices: List<RouteNotice> = emptyList(),
     onToggleVoice: () -> Unit,
     onStop: () -> Unit
 ) {
@@ -55,66 +68,44 @@ fun RightNavigationHud(
     val distance = if (distanceToManeuverMeters > 0.0) distanceToManeuverMeters else maneuver?.distanceMeters ?: route.distanceMeters
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = if (offRoute) Color(0xE08A2232) else DriveNavy,
-        border = BorderStroke(1.dp, if (offRoute) Color(0xFFFF7185) else DriveOutline),
-        shadowElevation = 14.dp
+        shape = RoundedCornerShape(22.dp),
+        color = if (offRoute) Color(0xF28A2232) else DriveNavy,
+        border = BorderStroke(1.dp, if (offRoute) Color(0xFFFF7185) else DriveCyan.copy(alpha = .45f)),
+        shadowElevation = 18.dp
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onStop, modifier = Modifier.size(42.dp)) {
-                    Icon(Icons.Rounded.Close, "توقف", tint = DriveText)
-                }
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = DriveCyan.copy(alpha = 0.13f),
-                    border = BorderStroke(1.dp, DriveCyan.copy(alpha = 0.45f))
-                ) {
-                    Icon(
-                        Icons.Rounded.Navigation,
-                        null,
-                        tint = DriveCyan,
-                        modifier = Modifier.padding(9.dp).size(38.dp)
-                    )
+                IconButton(onClick = onStop, modifier = Modifier.size(40.dp)) { Icon(Icons.Rounded.Close, "توقف", tint = DriveText) }
+                Surface(shape = RoundedCornerShape(15.dp), color = DriveCyan.copy(alpha = .14f), border = BorderStroke(1.dp, DriveCyan.copy(alpha = .5f))) {
+                    Icon(maneuverIcon(maneuver?.direction), null, tint = DriveCyan, modifier = Modifier.padding(9.dp).size(40.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(formatDriveDistance(distance), color = DriveText, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-                    Text(
-                        if (offRoute) "خارج از مسیر؛ محاسبه مسیر جدید…" else maneuver?.instruction ?: "ادامه مسیر",
-                        color = DriveText,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(if (offRoute) "خارج از مسیر؛ در حال محاسبه مسیر جدید…" else maneuver?.instruction ?: "ادامه مسیر", color = DriveText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    maneuver?.roadName?.takeIf { it.isNotBlank() }?.let { Text(it, color = DriveCyan, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
                 }
-                IconButton(onClick = onToggleVoice, modifier = Modifier.size(42.dp)) {
-                    Icon(Icons.Rounded.VolumeUp, "صدا", tint = if (voiceEnabled) DriveCyan else DriveMuted)
+                IconButton(onClick = onToggleVoice, modifier = Modifier.size(40.dp)) {
+                    Icon(if (voiceEnabled) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff, "صدا", tint = if (voiceEnabled) DriveCyan else DriveMuted)
                 }
             }
-
             if (!offRoute && !maneuver?.lanes.isNullOrEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    maneuver?.lanes?.take(5)?.forEach { lane ->
-                        Surface(
-                            modifier = Modifier.padding(horizontal = 3.dp),
-                            shape = RoundedCornerShape(9.dp),
-                            color = if (lane.recommended) DriveCyan.copy(alpha = 0.25f) else DrivePanel.copy(alpha = 0.75f),
-                            border = BorderStroke(1.dp, if (lane.recommended) DriveCyan else DriveOutline.copy(alpha = 0.45f))
-                        ) {
-                            Text(
-                                "↑",
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 3.dp),
-                                color = if (lane.recommended) DriveCyan else DriveMuted,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Black
-                            )
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.Center) {
+                    maneuver!!.lanes.take(6).forEach { lane ->
+                        Surface(modifier = Modifier.padding(horizontal = 3.dp), shape = RoundedCornerShape(9.dp), color = if (lane.recommended) DriveCyan.copy(alpha = .24f) else DrivePanel, border = BorderStroke(1.dp, if (lane.recommended) DriveCyan else DriveOutline.copy(alpha = .45f))) {
+                            Icon(maneuverIcon(lane.direction), null, tint = if (lane.recommended) DriveCyan else DriveMuted, modifier = Modifier.padding(horizontal = 13.dp, vertical = 4.dp).size(22.dp))
                         }
+                    }
+                }
+            }
+            val insight = notices.firstOrNull { it.distanceAheadMeters in 0.0..10000.0 && (it.kind == RouteNotice.Kind.WEATHER || it.kind == RouteNotice.Kind.ATTRACTION || it.kind == RouteNotice.Kind.SERVICE) }
+            insight?.let { notice ->
+                Surface(modifier = Modifier.fillMaxWidth().padding(top = 6.dp), shape = RoundedCornerShape(12.dp), color = DrivePanel.copy(alpha = .92f), border = BorderStroke(1.dp, DriveOutline.copy(alpha = .55f))) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(noticeIcon(notice.kind), null, tint = DriveLime, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text(notice.title, color = DriveText, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(formatDriveDistance(notice.distanceAheadMeters), color = DriveCyan, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -129,38 +120,42 @@ fun RightNavigationBottomBar(
     speedKmh: Int,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = DriveNavy,
-        border = BorderStroke(1.dp, DriveOutline),
-        shadowElevation = 12.dp
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Surface(shape = CircleShape, color = Color(0xFF08253A), border = BorderStroke(2.dp, DriveLime)) {
-                Column(
-                    modifier = Modifier.size(62.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+    val eta = Instant.now().plusSeconds(remainingSeconds.coerceAtLeast(0L)).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
+    Surface(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = DriveNavy, border = BorderStroke(1.dp, DriveCyan.copy(alpha = .42f)), shadowElevation = 16.dp) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Surface(shape = CircleShape, color = DrivePanel, border = BorderStroke(2.dp, DriveLime)) {
+                Column(Modifier.size(62.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Text("$speedKmh", color = DriveLime, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
                     Text("km/h", color = DriveMuted, style = MaterialTheme.typography.labelSmall)
                 }
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(formatDriveTime(remainingSeconds), color = DriveText, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
-                Text("زمان باقی‌مانده", color = DriveMuted, style = MaterialTheme.typography.labelSmall)
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(formatDriveDistance(remainingDistanceMeters), color = DriveText, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
-                Text("تا مقصد", color = DriveMuted, style = MaterialTheme.typography.labelSmall)
-            }
+            Metric(eta, "زمان رسیدن")
+            Metric(formatDriveTime(remainingSeconds), "باقی‌مانده")
+            Metric(formatDriveDistance(remainingDistanceMeters), "تا مقصد")
         }
     }
+}
+
+@Composable
+private fun Metric(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, color = DriveText, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleSmall)
+        Text(label, color = DriveMuted, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+private fun maneuverIcon(direction: RouteManeuver.Direction?): ImageVector = when (direction) {
+    RouteManeuver.Direction.LEFT, RouteManeuver.Direction.SLIGHT_LEFT, RouteManeuver.Direction.SHARP_LEFT -> Icons.Rounded.TurnLeft
+    RouteManeuver.Direction.RIGHT, RouteManeuver.Direction.SLIGHT_RIGHT, RouteManeuver.Direction.SHARP_RIGHT -> Icons.Rounded.TurnRight
+    RouteManeuver.Direction.UTURN -> Icons.Rounded.UTurnLeft
+    else -> Icons.Rounded.ArrowUpward
+}
+
+private fun noticeIcon(kind: RouteNotice.Kind): ImageVector = when (kind) {
+    RouteNotice.Kind.WEATHER -> Icons.Rounded.Cloud
+    RouteNotice.Kind.ATTRACTION -> Icons.Rounded.Explore
+    RouteNotice.Kind.SERVICE -> Icons.Rounded.LocalGasStation
+    else -> Icons.Rounded.Navigation
 }
 
 private fun formatDriveDistance(meters: Double): String = if (meters >= 1000.0) {
