@@ -28,11 +28,26 @@ class NvAdaptiveRouteRanker : RouteRanker {
         val weights = weightsFor(context)
 
         return raw.map { row ->
-            val score = weights.time * timeRange.normalize(row.effectiveTime) +
+            val signals = row.candidate.signals.normalized()
+            var score = weights.time * timeRange.normalize(row.effectiveTime) +
                 weights.traffic * trafficRange.normalize(row.trafficDelay) +
                 weights.distance * distanceRange.normalize(row.distance) +
                 weights.energy * energyRange.normalize(row.energy)
-            row.candidate.copy(score = score)
+            var activeWeight = weights.time + weights.traffic + weights.distance + weights.energy
+
+            fun addSignal(value: Double?, weight: Double) {
+                if (value != null) {
+                    score += weight * value
+                    activeWeight += weight
+                }
+            }
+
+            addSignal(signals.roadQualityPenalty, ROAD_QUALITY_WEIGHT)
+            addSignal(signals.accidentRiskPenalty, ACCIDENT_RISK_WEIGHT)
+            addSignal(signals.weatherPenalty, WEATHER_WEIGHT)
+            addSignal(signals.restrictionPenalty, RESTRICTION_WEIGHT)
+
+            row.candidate.copy(score = score / activeWeight.coerceAtLeast(1e-9))
         }.sortedBy { it.score }
     }
 
@@ -47,15 +62,27 @@ class NvAdaptiveRouteRanker : RouteRanker {
             RouteProfile.AVOID_HIGHWAY,
             RouteProfile.SMART -> Weights(0.45, 0.25, 0.15, 0.15)
         }
+
+        val timePriority = context.userTimePriority.coerceIn(0.0, 1.0)
+        val ecoPriority = context.userEcoPriority.coerceIn(0.0, 1.0)
+        weights = weights.copy(
+            time = weights.time + 0.15 * (timePriority - 0.5),
+            energy = weights.energy + 0.15 * (ecoPriority - 0.5)
+        )
+
         if (context.electricVehicle) {
-            weights = weights.copy(energy = weights.energy + 0.15, time = (weights.time - 0.10).coerceAtLeast(0.1))
+            weights = weights.copy(
+                energy = weights.energy + 0.15,
+                time = (weights.time - 0.10).coerceAtLeast(0.05)
+            )
         }
         if (context.rainOrSnow && context.avoidRisk) {
-            // Until a road-risk feed exists, avoid pretending to score accident risk.
-            // We conservatively reduce aggressive time optimization and favor lower-energy/lower-speed alternatives.
-            weights = weights.copy(time = (weights.time - 0.10).coerceAtLeast(0.1), energy = weights.energy + 0.10)
+            weights = weights.copy(
+                time = (weights.time - 0.08).coerceAtLeast(0.05),
+                energy = weights.energy + 0.08
+            )
         }
-        return weights.normalized()
+        return weights.nonNegative().normalized()
     }
 
     private fun energyIndex(distanceMeters: Double, travelSeconds: Double): Double {
@@ -80,6 +107,13 @@ class NvAdaptiveRouteRanker : RouteRanker {
         val distance: Double,
         val energy: Double
     ) {
+        fun nonNegative() = Weights(
+            time.coerceAtLeast(0.0),
+            traffic.coerceAtLeast(0.0),
+            distance.coerceAtLeast(0.0),
+            energy.coerceAtLeast(0.0)
+        )
+
         fun normalized(): Weights {
             val sum = (time + traffic + distance + energy).coerceAtLeast(1e-9)
             return Weights(time / sum, traffic / sum, distance / sum, energy / sum)
@@ -100,5 +134,9 @@ class NvAdaptiveRouteRanker : RouteRanker {
     private companion object {
         const val REFERENCE_SPEED_MPS = 13.89
         const val AERODYNAMIC_FACTOR = 0.35
+        const val ROAD_QUALITY_WEIGHT = 0.08
+        const val ACCIDENT_RISK_WEIGHT = 0.12
+        const val WEATHER_WEIGHT = 0.08
+        const val RESTRICTION_WEIGHT = 0.20
     }
 }
