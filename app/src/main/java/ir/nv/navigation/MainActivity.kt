@@ -5,7 +5,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -14,10 +13,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.navigation.service.NvNavigationService
-import ir.nv.navigation.ui.NvReferenceV6
+import ir.nv.navigation.ui.NvReferenceV7
 import ir.nv.navigation.ui.NvViewModel
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
+import kotlinx.coroutines.delay
+import java.time.LocalTime
 
 class MainActivity : ComponentActivity() {
     private lateinit var navigationViewModel: NvViewModel
@@ -29,12 +30,22 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val preferences = remember { getSharedPreferences("nv_ui", MODE_PRIVATE) }
-            val systemDark = isSystemInDarkTheme()
             var themeMode by remember {
-                val legacy = preferences.getBoolean("dark_mode", systemDark).takeIf { preferences.contains("dark_mode") }
+                val legacy = preferences.getBoolean("dark_mode", false).takeIf { preferences.contains("dark_mode") }
                 mutableStateOf(AppThemeMode.restore(preferences.getString("theme_mode", null), legacy))
             }
-            val darkMode = themeMode.resolve(systemDark)
+            var automaticNight by remember { mutableStateOf(isNightNow()) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    automaticNight = isNightNow()
+                    delay(60_000)
+                }
+            }
+            val darkMode = when (themeMode) {
+                AppThemeMode.AUTO -> automaticNight
+                AppThemeMode.DAY -> false
+                AppThemeMode.NIGHT -> true
+            }
             val navigationState by navigationViewModel.state.collectAsState()
 
             LaunchedEffect(navigationState.navigationActive) {
@@ -51,7 +62,7 @@ class MainActivity : ComponentActivity() {
             }
 
             NvTheme(darkTheme = darkMode) {
-                NvReferenceV6(
+                NvReferenceV7(
                     darkMode = darkMode,
                     themeMode = themeMode,
                     onThemeModeChange = { selected ->
@@ -74,5 +85,10 @@ class MainActivity : ComponentActivity() {
         if (::navigationViewModel.isInitialized && intent?.action == NvNavigationService.ACTION_STOP_NAVIGATION) {
             navigationViewModel.stopNavigation()
         }
+    }
+
+    private fun isNightNow(): Boolean {
+        val hour = LocalTime.now().hour
+        return hour < 6 || hour >= 18
     }
 }
