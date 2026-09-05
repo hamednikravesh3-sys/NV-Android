@@ -20,6 +20,8 @@ import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.absoluteValue
+import kotlin.math.cos
+import kotlin.math.roundToLong
 
 class OnlineNavigationService {
     private val client = OkHttpClient.Builder()
@@ -127,22 +129,145 @@ class OnlineNavigationService {
         val failures = mutableListOf<String>()
 
         providers.forEach { provider ->
-            val url = provider + "/route/v1/driving/" +
-                "${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}" +
-                "?overview=full&geometries=geojson&steps=true&alternatives=3"
-            val result = runCatching {
-                val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
-                    parseRoutes(JSONObject(response.body?.string().orEmpty()))
+            val primaryResult = runCatching {
+                requestRoutes(
+                    provider = provider,
+                    waypoints = listOf(origin, destination),
+                    alternatives = 3
+                )
+            }
+            primaryResult.getOrNull()?.takeIf { it.isNotEmpty() }?.let { primary ->
+                val diversified = if (primary.size < TARGET_ROUTE_COUNT) {
+                    generateDiversifiedRoutes(
+                        provider = provider,
+                        origin = origin,
+                        destination = destination,
+                        baseline = primary
+                    )
+                } else {
+                    emptyList()
+                }
+                val candidates = keepUsefulDistinctRoutes(primary + diversified)
+                if (candidates.isNotEmpty()) {
+                    return@withContext rankRoutes(candidates).take(TARGET_ROUTE_COUNT)
                 }
             }
-            result.getOrNull()?.takeIf { it.isNotEmpty() }?.let { candidates ->
-                return@withContext rankRoutes(candidates)
-            }
-            failures += result.exceptionOrNull()?.message ?: "پاسخ نامعتبر"
+            failures += primaryResult.exceptionOrNull()?.message ?: "پاسخ نامعتبر"
         }
         throw IOException("هیچ سرویس مسیر آنلاینی پاسخ نداد: ${failures.joinToString("، ")}")
+    }
+
+    private fun requestRoutes(
+        provider: String,
+        waypoints: List<Coordinate>,
+        alternatives: Int
+    ): List<Route> {
+        require(waypoints.size >= 2)
+        val coordinates = waypoints.joinToString(";") { "${it.longitude},${it.latitude}" }
+        val url = provider + "/route/v1/driving/" + coordinates +
+            "?overview=full&geometries=geojson&steps=true&alternatives=$alternatives"
+        val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            parseRoutes(JSONObject(response.body?.string().orEmpty()))
+        }
+    }
+
+    /**
+     * Public OSRM-compatible providers sometimes return only one alternative even when
+     * alternatives=3 is requested. NV asks the same routing engine for additional,
+     * fully routable candidates through lateral midpoint waypoints. No synthetic route
+     * geometry is ever drawn: every candidate must be accepted and snapped by the
+     * routing provider, then pass the distance/time and geometry diversity filters.
+     */
+    private fun generateDiversifiedRoutes(
+        provider: String,
+        origin: Coordinate,
+        destination: Coordinate,
+        baseline: List<Route>
+    ): List<Route> {
+        val best = baseline.minByOrNull { it.travelSeconds } ?: return emptyList()
+        if (best.distanceMeters < MIN_DIVERSIFY_DISTANCE_METERS) return emptyList()
+
+        val directKm = approximateDistanceKm(origin, destination).coerceAtLeast(1.0)
+        val offsetKm = (directKm * DIVERSIFY_OFFSET_RATIO).coerceIn(MIN_OFFSET_KM, MAX_OFFSET_KM)
+        val offsets = listOf(-1.0, 1.0, -1.65, 1.65).map { it * offsetKm }
+
+        return buildList {
+            offsets.forEach { lateralOffsetKm ->
+                val via = lateralWaypoint(origin, destination, lateralOffsetKm)
+                val candidate = runCatching {
+                    requestRoutes(
+                        provider = provider,
+                        waypoints = listOf(origin, via, destination),
+                        alternatives = 0
+                    ).firstOrNull()
+                }.getOrNull() ?: return@forEach
+
+                if (candidate.distanceMeters <= best.distanceMeters * MAX_ALTERNATIVE_DISTANCE_RATIO &&
+                    candidate.travelSeconds <= best.travelSeconds * MAX_ALTERNATIVE_TIME_RATIO
+                ) {
+                    add(candidate)
+                }
+            }
+        }
+    }
+
+    private fun keepUsefulDistinctRoutes(routes: List<Route>): List<Route> {
+        if (routes.isEmpty()) return emptyList()
+        val best = routes.minByOrNull { it.travelSeconds } ?: return emptyList()
+        return routes
+            .filter { route ->
+                route.points.size >= 2 &&
+                    route.distanceMeters > 0.0 &&
+                    route.travelSeconds > 0.0 &&
+                    route.distanceMeters <= best.distanceMeters * MAX_ALTERNATIVE_DISTANCE_RATIO &&
+                    route.travelSeconds <= best.travelSeconds * MAX_ALTERNATIVE_TIME_RATIO
+            }
+            .distinctBy(::routeFingerprint)
+            .take(MAX_ROUTE_CANDIDATES)
+    }
+
+    private fun routeFingerprint(route: Route): String {
+        if (route.points.isEmpty()) return "empty"
+        val sampleCount = 9.coerceAtMost(route.points.size)
+        val geometry = (0 until sampleCount).joinToString("|") { sample ->
+            val index = if (sampleCount == 1) 0 else sample * (route.points.lastIndex) / (sampleCount - 1)
+            val point = route.points[index]
+            val lat = (point.latitude * 1_000.0).roundToLong()
+            val lon = (point.longitude * 1_000.0).roundToLong()
+            "$lat,$lon"
+        }
+        val distanceBucket = (route.distanceMeters / 500.0).roundToLong()
+        return "$geometry#$distanceBucket"
+    }
+
+    private fun lateralWaypoint(
+        origin: Coordinate,
+        destination: Coordinate,
+        lateralOffsetKm: Double
+    ): Coordinate {
+        val midLat = (origin.latitude + destination.latitude) / 2.0
+        val midLon = (origin.longitude + destination.longitude) / 2.0
+        val cosLat = cos(Math.toRadians(midLat)).coerceAtLeast(0.2)
+        val dxKm = (destination.longitude - origin.longitude) * KM_PER_DEGREE_LON * cosLat
+        val dyKm = (destination.latitude - origin.latitude) * KM_PER_DEGREE_LAT
+        val length = kotlin.math.sqrt(dxKm * dxKm + dyKm * dyKm).coerceAtLeast(0.001)
+        val perpendicularX = -dyKm / length
+        val perpendicularY = dxKm / length
+        val lon = midLon + (perpendicularX * lateralOffsetKm) / (KM_PER_DEGREE_LON * cosLat)
+        val lat = midLat + (perpendicularY * lateralOffsetKm) / KM_PER_DEGREE_LAT
+        return Coordinate(
+            latitude = lat.coerceIn(24.0, 40.0),
+            longitude = lon.coerceIn(44.0, 64.0)
+        )
+    }
+
+    private fun approximateDistanceKm(a: Coordinate, b: Coordinate): Double {
+        val midLat = (a.latitude + b.latitude) / 2.0
+        val dx = (b.longitude - a.longitude) * KM_PER_DEGREE_LON * cos(Math.toRadians(midLat))
+        val dy = (b.latitude - a.latitude) * KM_PER_DEGREE_LAT
+        return kotlin.math.sqrt(dx * dx + dy * dy)
     }
 
     private fun rankRoutes(routes: List<Route>): List<Route> {
@@ -392,5 +517,15 @@ class OnlineNavigationService {
     private companion object {
         const val USER_AGENT = "NV-Android/0.6 (contact: hamednikravesh3@gmail.com)"
         const val NOMINATIM_CODE_OFFSET = 4_000_000_000L
+        const val TARGET_ROUTE_COUNT = 4
+        const val MAX_ROUTE_CANDIDATES = 8
+        const val MIN_DIVERSIFY_DISTANCE_METERS = 3_000.0
+        const val DIVERSIFY_OFFSET_RATIO = 0.14
+        const val MIN_OFFSET_KM = 0.8
+        const val MAX_OFFSET_KM = 10.0
+        const val MAX_ALTERNATIVE_DISTANCE_RATIO = 1.75
+        const val MAX_ALTERNATIVE_TIME_RATIO = 1.65
+        const val KM_PER_DEGREE_LAT = 110.574
+        const val KM_PER_DEGREE_LON = 111.320
     }
 }
