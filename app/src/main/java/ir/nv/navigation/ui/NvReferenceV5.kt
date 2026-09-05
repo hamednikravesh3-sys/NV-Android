@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ir.nv.navigation.core.Place
+import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.map.OfflineIranMap
 import ir.nv.navigation.map.OnlineIranMap
@@ -49,6 +50,7 @@ fun NvReferenceV5(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     var sheet by remember { mutableStateOf<V5Sheet?>(null) }
+    var quickSearchVisible by remember { mutableStateOf(false) }
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { p ->
         if (p.values.any { it }) viewModel.startNavigation()
@@ -62,11 +64,33 @@ fun NvReferenceV5(
 
     fun openSearch(q: String = "") {
         if (q.isNotBlank()) viewModel.updateDestinationQuery(q)
-        sheet = V5Sheet.SEARCH
+        quickSearchVisible = true
+        sheet = null
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF07121C))) {
         V5Map(state, viewModel, darkMode)
+
+        V5QuickSearch(
+            state = state,
+            vm = viewModel,
+            visible = quickSearchVisible,
+            onOpen = { quickSearchVisible = true },
+            onClose = { quickSearchVisible = false },
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .statusBarsPadding()
+                .padding(start = 12.dp, top = 10.dp)
+        )
+
+        V5MiniWeather(
+            state = state,
+            onClick = { sheet = V5Sheet.WEATHER },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(end = 10.dp, top = 12.dp)
+        )
 
         if (state.navigationActive && state.route != null) {
             val maneuver = state.route?.maneuvers?.getOrNull(state.maneuverIndex)
@@ -120,7 +144,6 @@ fun NvReferenceV5(
             }
         }
 
-        // تنها کنترل دائمی روی نقشه: Handle کوچک برای باز کردن همه ماژول‌ها.
         Surface(
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 8.dp).clickable { sheet = V5Sheet.MENU },
             shape = RoundedCornerShape(18.dp),
@@ -162,6 +185,117 @@ fun NvReferenceV5(
                     null -> Unit
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun V5QuickSearch(
+    state: NvUiState,
+    vm: NvViewModel,
+    visible: Boolean,
+    onOpen: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (!visible) {
+        Surface(
+            modifier = modifier.size(44.dp).clickable(onClick = onOpen),
+            shape = CircleShape,
+            color = V5Panel,
+            border = BorderStroke(1.dp, V5Cyan.copy(alpha = .65f))
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Search, contentDescription = "جستجو", tint = V5Cyan, modifier = Modifier.size(22.dp))
+            }
+        }
+        return
+    }
+
+    Column(modifier.widthIn(min = 250.dp, max = 340.dp)) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = V5Panel,
+            border = BorderStroke(1.dp, V5Cyan.copy(alpha = .65f))
+        ) {
+            OutlinedTextField(
+                value = state.destinationQuery,
+                onValueChange = vm::updateDestinationQuery,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("جستجوی مقصد یا کد NV", color = V5Muted) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null, tint = V5Cyan) },
+                trailingIcon = {
+                    IconButton(onClick = {
+                        vm.updateDestinationQuery("")
+                        onClose()
+                    }) { Icon(Icons.Rounded.Close, contentDescription = "بستن", tint = V5Text) }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = V5Text,
+                    unfocusedTextColor = V5Text,
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = V5Cyan
+                )
+            )
+        }
+
+        if (state.destinationQuery.isNotBlank() && state.destinationSuggestions.isNotEmpty()) {
+            Spacer(Modifier.height(5.dp))
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = V5Panel,
+                border = BorderStroke(1.dp, V5Cyan.copy(alpha = .35f))
+            ) {
+                LazyColumn(Modifier.heightIn(max = 210.dp)) {
+                    items(state.destinationSuggestions.take(6)) { place ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                vm.selectDestination(place)
+                                onClose()
+                            }.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Place, null, tint = V5Cyan, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(place.name, color = V5Text, modifier = Modifier.weight(1f))
+                            Text(place.personalCode ?: place.code.toString(), color = V5Muted, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun V5MiniWeather(
+    state: NvUiState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val weather = state.routeNotices.firstOrNull { it.kind == RouteNotice.Kind.WEATHER }
+    val temperature = weather?.detail?.let { Regex("(-?\\d+)°").find(it)?.groupValues?.getOrNull(1) }
+
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = V5Panel,
+        border = BorderStroke(1.dp, V5Cyan.copy(alpha = .4f))
+    ) {
+        Row(
+            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(Icons.Rounded.Cloud, contentDescription = "آب‌وهوا", tint = V5Cyan, modifier = Modifier.size(16.dp))
+            Text(
+                text = temperature?.let { "$it°" } ?: "هوا",
+                color = V5Text,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -209,7 +343,7 @@ private fun V5MenuSheet(
         Text("NV", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
         Text("همه ابزارها فقط هنگام نیاز باز می‌شوند", color = V5Muted)
         val rows = listOf(
-            Triple("جستجوی مبدأ و مقصد", Icons.Rounded.Search, onSearch),
+            Triple("جستجو", Icons.Rounded.Search, onSearch),
             Triple("مسیرهای پیشنهادی", Icons.Rounded.Route, onRoutes),
             Triple("مکان‌های ذخیره‌شده", Icons.Rounded.Bookmark, onFavorites),
             Triple("آب‌وهوا و وضعیت مسیر", Icons.Rounded.Cloud, onWeather),
