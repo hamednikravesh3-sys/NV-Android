@@ -9,7 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import ir.nv.navigation.ui.NvReferenceV4
+import ir.nv.navigation.ui.NvReferenceV5
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
 
@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
             }
             val darkMode = themeMode.resolve(systemDark)
             NvTheme(darkTheme = darkMode) {
-                NvReferenceV4(darkMode = darkMode, themeMode = themeMode, onThemeModeChange = { selected ->
+                NvReferenceV5(darkMode = darkMode, themeMode = themeMode, onThemeModeChange = { selected ->
                     themeMode = selected
                     preferences.edit().putString("theme_mode", selected.name).remove("dark_mode").apply()
                 })
