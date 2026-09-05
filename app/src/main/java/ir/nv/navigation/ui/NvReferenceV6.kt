@@ -4,6 +4,11 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -29,7 +34,6 @@ import androidx.compose.material.icons.rounded.AcUnit
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DirectionsCar
-import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Thunderstorm
@@ -66,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import ir.nv.navigation.core.RouteManeuver
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.ui.theme.AppThemeMode
 
@@ -166,8 +171,11 @@ fun NvReferenceV6(
             )
         }
 
-        if (state.navigationActive && state.currentLocation != null) {
+        if (state.navigationActive && state.currentLocation != null && state.followNavigation) {
+            val maneuver = state.route?.maneuvers?.getOrNull(state.maneuverIndex)
             V6CarMarker(
+                direction = maneuver?.direction,
+                distanceToManeuverMeters = state.distanceToNextManeuverMeters,
                 modifier = Modifier.align(Alignment.Center)
             )
         }
@@ -272,9 +280,7 @@ private fun V6EndpointSummary(origin: String, destination: String) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = CircleShape, color = V6Green.copy(alpha = 0.18f)) {
-                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-                        Text("●", color = V6Green)
-                    }
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { Text("●", color = V6Green) }
                 }
                 Spacer(Modifier.width(8.dp))
                 Text("مبدأ", color = V6Muted, style = MaterialTheme.typography.labelMedium)
@@ -283,9 +289,7 @@ private fun V6EndpointSummary(origin: String, destination: String) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = CircleShape, color = V6Rose.copy(alpha = 0.18f)) {
-                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
-                        Text("●", color = V6Rose)
-                    }
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { Text("●", color = V6Rose) }
                 }
                 Spacer(Modifier.width(8.dp))
                 Text("مقصد", color = V6Muted, style = MaterialTheme.typography.labelMedium)
@@ -329,10 +333,7 @@ private fun V6RightInfoPanel(state: NvUiState, modifier: Modifier = Modifier) {
             border = BorderStroke(1.dp, weatherVisual.second.copy(alpha = 0.58f)),
             shadowElevation = 7.dp
         ) {
-            Row(
-                Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(Modifier.padding(horizontal = 9.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = CircleShape, color = weatherVisual.second.copy(alpha = 0.15f)) {
                     Box(Modifier.size(35.dp), contentAlignment = Alignment.Center) {
                         Icon(weatherVisual.first, contentDescription = "وضعیت آب‌وهوا", tint = weatherVisual.second, modifier = Modifier.size(23.dp))
@@ -414,45 +415,78 @@ private fun weatherLabel(detail: String?): String {
 }
 
 @Composable
-private fun V6CarMarker(modifier: Modifier = Modifier) {
+private fun V6CarMarker(
+    direction: RouteManeuver.Direction?,
+    distanceToManeuverMeters: Double,
+    modifier: Modifier = Modifier
+) {
+    val signal = when (direction) {
+        RouteManeuver.Direction.LEFT,
+        RouteManeuver.Direction.SLIGHT_LEFT,
+        RouteManeuver.Direction.SHARP_LEFT -> -1
+        RouteManeuver.Direction.RIGHT,
+        RouteManeuver.Direction.SLIGHT_RIGHT,
+        RouteManeuver.Direction.SHARP_RIGHT -> 1
+        RouteManeuver.Direction.UTURN -> 2
+        else -> 0
+    }
+    val signalActive = signal != 0 && distanceToManeuverMeters in 0.0..900.0
+    val transition = rememberInfiniteTransition(label = "nv-turn-signal")
+    val blinkAlpha by transition.animateFloat(
+        initialValue = 0.10f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(animation = tween(360), repeatMode = RepeatMode.Reverse),
+        label = "nv-turn-signal-alpha"
+    )
+    val indicatorAlpha = if (signalActive) blinkAlpha else 0f
+
     Surface(
-        modifier = modifier.size(62.dp),
+        modifier = modifier.size(70.dp),
         shape = CircleShape,
-        color = Color(0xE70A1D2D),
-        border = BorderStroke(2.dp, V6Cyan),
-        shadowElevation = 12.dp
+        color = Color(0xD7071724),
+        border = BorderStroke(2.dp, V6Cyan.copy(alpha = 0.92f)),
+        shadowElevation = 14.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Canvas(Modifier.width(34.dp).height(48.dp)) {
-                val bodyLeft = size.width * 0.18f
-                val bodyWidth = size.width * 0.64f
+            Canvas(Modifier.width(42.dp).height(58.dp)) {
+                val body = Color(0xFFF4F7FA)
+                val glass = Color(0xFF173B4F)
+                val tire = Color(0xFF03090D)
+                val trim = Color(0xFF93A9B5)
+                val amber = Color(0xFFFFB300)
+
                 drawRoundRect(
-                    color = Color(0xFFF2F7FA),
-                    topLeft = Offset(bodyLeft, size.height * 0.05f),
-                    size = Size(bodyWidth, size.height * 0.90f),
+                    color = body,
+                    topLeft = Offset(size.width * 0.18f, size.height * 0.045f),
+                    size = Size(size.width * 0.64f, size.height * 0.91f),
                     cornerRadius = CornerRadius(size.width * 0.18f, size.width * 0.18f)
                 )
-                drawRoundRect(
-                    color = Color(0xFF17394A),
-                    topLeft = Offset(size.width * 0.26f, size.height * 0.23f),
-                    size = Size(size.width * 0.48f, size.height * 0.22f),
-                    cornerRadius = CornerRadius(5f, 5f)
-                )
-                drawRoundRect(
-                    color = Color(0xFF17394A),
-                    topLeft = Offset(size.width * 0.28f, size.height * 0.57f),
-                    size = Size(size.width * 0.44f, size.height * 0.17f),
-                    cornerRadius = CornerRadius(5f, 5f)
-                )
-                val wheelColor = Color(0xFF07121C)
-                drawRoundRect(wheelColor, Offset(size.width * 0.08f, size.height * 0.24f), Size(size.width * 0.13f, size.height * 0.20f), CornerRadius(4f, 4f))
-                drawRoundRect(wheelColor, Offset(size.width * 0.79f, size.height * 0.24f), Size(size.width * 0.13f, size.height * 0.20f), CornerRadius(4f, 4f))
-                drawRoundRect(wheelColor, Offset(size.width * 0.08f, size.height * 0.61f), Size(size.width * 0.13f, size.height * 0.20f), CornerRadius(4f, 4f))
-                drawRoundRect(wheelColor, Offset(size.width * 0.79f, size.height * 0.61f), Size(size.width * 0.13f, size.height * 0.20f), CornerRadius(4f, 4f))
-                drawCircle(V6Gold, radius = size.width * 0.07f, center = Offset(size.width * 0.34f, size.height * 0.10f))
-                drawCircle(V6Gold, radius = size.width * 0.07f, center = Offset(size.width * 0.66f, size.height * 0.10f))
-                drawCircle(V6Rose, radius = size.width * 0.055f, center = Offset(size.width * 0.34f, size.height * 0.89f))
-                drawCircle(V6Rose, radius = size.width * 0.055f, center = Offset(size.width * 0.66f, size.height * 0.89f))
+                drawRoundRect(trim, Offset(size.width * 0.235f, size.height * 0.18f), Size(size.width * 0.53f, size.height * 0.62f), CornerRadius(8f, 8f))
+                drawRoundRect(glass, Offset(size.width * 0.27f, size.height * 0.22f), Size(size.width * 0.46f, size.height * 0.22f), CornerRadius(7f, 7f))
+                drawRoundRect(glass, Offset(size.width * 0.29f, size.height * 0.57f), Size(size.width * 0.42f, size.height * 0.17f), CornerRadius(6f, 6f))
+                drawRoundRect(body, Offset(size.width * 0.25f, size.height * 0.465f), Size(size.width * 0.50f, size.height * 0.075f), CornerRadius(4f, 4f))
+
+                drawRoundRect(tire, Offset(size.width * 0.045f, size.height * 0.22f), Size(size.width * 0.16f, size.height * 0.21f), CornerRadius(4f, 4f))
+                drawRoundRect(tire, Offset(size.width * 0.795f, size.height * 0.22f), Size(size.width * 0.16f, size.height * 0.21f), CornerRadius(4f, 4f))
+                drawRoundRect(tire, Offset(size.width * 0.045f, size.height * 0.62f), Size(size.width * 0.16f, size.height * 0.21f), CornerRadius(4f, 4f))
+                drawRoundRect(tire, Offset(size.width * 0.795f, size.height * 0.62f), Size(size.width * 0.16f, size.height * 0.21f), CornerRadius(4f, 4f))
+
+                drawRoundRect(trim, Offset(size.width * 0.08f, size.height * 0.42f), Size(size.width * 0.12f, size.height * 0.08f), CornerRadius(4f, 4f))
+                drawRoundRect(trim, Offset(size.width * 0.80f, size.height * 0.42f), Size(size.width * 0.12f, size.height * 0.08f), CornerRadius(4f, 4f))
+
+                drawCircle(Color(0xFFFFF3B0), radius = size.width * 0.065f, center = Offset(size.width * 0.34f, size.height * 0.095f))
+                drawCircle(Color(0xFFFFF3B0), radius = size.width * 0.065f, center = Offset(size.width * 0.66f, size.height * 0.095f))
+                drawCircle(Color(0xFFFF4B55), radius = size.width * 0.055f, center = Offset(size.width * 0.34f, size.height * 0.90f))
+                drawCircle(Color(0xFFFF4B55), radius = size.width * 0.055f, center = Offset(size.width * 0.66f, size.height * 0.90f))
+
+                if (signal == -1 || signal == 2) {
+                    drawCircle(amber.copy(alpha = indicatorAlpha), radius = size.width * 0.072f, center = Offset(size.width * 0.19f, size.height * 0.10f))
+                    drawCircle(amber.copy(alpha = indicatorAlpha), radius = size.width * 0.072f, center = Offset(size.width * 0.19f, size.height * 0.89f))
+                }
+                if (signal == 1 || signal == 2) {
+                    drawCircle(amber.copy(alpha = indicatorAlpha), radius = size.width * 0.072f, center = Offset(size.width * 0.81f, size.height * 0.10f))
+                    drawCircle(amber.copy(alpha = indicatorAlpha), radius = size.width * 0.072f, center = Offset(size.width * 0.81f, size.height * 0.89f))
+                }
             }
         }
     }
