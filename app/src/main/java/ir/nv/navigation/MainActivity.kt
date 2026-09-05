@@ -1,5 +1,6 @@
 package ir.nv.navigation
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,7 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.navigation.service.NvNavigationService
 import ir.nv.navigation.ui.NvReferenceV5
 import ir.nv.navigation.ui.NvViewModel
@@ -19,8 +20,12 @@ import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
 
 class MainActivity : ComponentActivity() {
+    private lateinit var navigationViewModel: NvViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        navigationViewModel = ViewModelProvider(this)[NvViewModel::class.java]
+        handleNavigationIntent(intent)
         enableEdgeToEdge()
         setContent {
             val preferences = remember { getSharedPreferences("nv_ui", MODE_PRIVATE) }
@@ -30,7 +35,6 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(AppThemeMode.restore(preferences.getString("theme_mode", null), legacy))
             }
             val darkMode = themeMode.resolve(systemDark)
-            val navigationViewModel: NvViewModel = viewModel()
             val navigationState by navigationViewModel.state.collectAsState()
 
             LaunchedEffect(navigationState.navigationActive) {
@@ -57,6 +61,18 @@ class MainActivity : ComponentActivity() {
                     viewModel = navigationViewModel
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNavigationIntent(intent)
+    }
+
+    private fun handleNavigationIntent(intent: Intent?) {
+        if (::navigationViewModel.isInitialized && intent?.action == NvNavigationService.ACTION_STOP_NAVIGATION) {
+            navigationViewModel.stopNavigation()
         }
     }
 }
