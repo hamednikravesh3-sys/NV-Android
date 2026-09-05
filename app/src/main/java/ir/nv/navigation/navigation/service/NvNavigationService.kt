@@ -19,7 +19,7 @@ class NvNavigationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
+        if (intent?.action == ACTION_STOP_SERVICE) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -55,10 +55,13 @@ class NvNavigationService : Service() {
             .addAction(
                 0,
                 "پایان مسیر",
-                PendingIntent.getService(
+                PendingIntent.getActivity(
                     this,
                     1,
-                    Intent(this, NvNavigationService::class.java).setAction(ACTION_STOP),
+                    Intent(this, MainActivity::class.java).apply {
+                        action = ACTION_STOP_NAVIGATION
+                        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             )
@@ -80,11 +83,12 @@ class NvNavigationService : Service() {
     }
 
     companion object {
+        const val ACTION_STOP_NAVIGATION = "ir.nv.navigation.action.STOP_NAVIGATION"
+        private const val ACTION_STOP_SERVICE = "ir.nv.navigation.action.STOP_NAVIGATION_SERVICE"
         private const val CHANNEL_ID = "nv_navigation"
         private const val NOTIFICATION_ID = 101
         private const val EXTRA_DESTINATION = "destination"
         private const val EXTRA_REMAINING = "remaining"
-        private const val ACTION_STOP = "ir.nv.navigation.action.STOP_NAVIGATION"
 
         fun start(context: Context, destination: String?, remaining: String? = null) {
             val intent = Intent(context, NvNavigationService::class.java)
@@ -95,7 +99,7 @@ class NvNavigationService : Service() {
 
         fun stop(context: Context) {
             context.startService(
-                Intent(context, NvNavigationService::class.java).setAction(ACTION_STOP)
+                Intent(context, NvNavigationService::class.java).setAction(ACTION_STOP_SERVICE)
             )
         }
     }
