@@ -145,7 +145,7 @@ fun NvPremiumApp(
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .imePadding()
-                    .padding(horizontal = 10.dp, bottom = 82.dp)
+                    .padding(start = 10.dp, end = 10.dp, bottom = 82.dp)
             )
         }
         if (showPlanner && !state.navigationActive) {
