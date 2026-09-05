@@ -64,39 +64,48 @@ fun NvPremiumApp(
         if (state.navigationActive) {
             showPlanner = false
             dashboardPanel = null
+            selectedTab = DashboardTab.NAVIGATION
         }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 600.dp
         NvApp(darkMode = darkMode, themeMode = themeMode, onThemeModeChange = onThemeModeChange, viewModel = viewModel, premiumShell = true)
-        if (!state.navigationActive && (state.onlineAvailable || state.offlineReady)) {
-            Box(Modifier.matchParentSize().background(dashboardEdgeScrim()))
+
+        if (state.onlineAvailable || state.offlineReady) {
+            Box(Modifier.matchParentSize().background(if (state.navigationActive) referenceDrivingScrim() else dashboardEdgeScrim()))
             NvDashboardHeader(
                 destinationName = state.destination?.name,
                 weatherNotice = state.routeNotices.firstOrNull { it.kind == ir.nv.navigation.core.RouteNotice.Kind.WEATHER && it.distanceAheadMeters <= 10_000.0 },
                 compact = compact,
-                onSearch = { openPlanner() },
+                onSearch = { if (!state.navigationActive) openPlanner() },
                 onWeather = {
-                    selectedTab = DashboardTab.WEATHER
-                    dashboardPanel = DashboardPanelType.WEATHER
-                    showPlanner = false
+                    if (!state.navigationActive) {
+                        selectedTab = DashboardTab.WEATHER
+                        dashboardPanel = DashboardPanelType.WEATHER
+                        showPlanner = false
+                    }
                 },
                 onProfile = {
-                    selectedTab = DashboardTab.FAVORITES
-                    dashboardPanel = DashboardPanelType.FAVORITES
-                    showPlanner = false
+                    if (!state.navigationActive) {
+                        selectedTab = DashboardTab.FAVORITES
+                        dashboardPanel = DashboardPanelType.FAVORITES
+                        showPlanner = false
+                    }
                 },
                 modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp)
             )
+
             if (!showPlanner && dashboardPanel == null) {
                 NvDashboardServiceRail(
                     satelliteMode = state.satelliteMode,
                     onLayers = viewModel::toggleSatelliteMode,
-                    onCategory = ::openPlanner,
+                    onCategory = { query -> if (!state.navigationActive) openPlanner(query) },
                     onMore = {
-                        selectedTab = DashboardTab.SETTINGS
-                        dashboardPanel = DashboardPanelType.SETTINGS
+                        if (!state.navigationActive) {
+                            selectedTab = DashboardTab.SETTINGS
+                            dashboardPanel = DashboardPanelType.SETTINGS
+                        }
                     },
                     modifier = Modifier.align(Alignment.CenterStart).padding(start = 7.dp)
                 )
@@ -104,22 +113,24 @@ fun NvPremiumApp(
                     selected = selectedTab,
                     compact = compact,
                     onSelect = { tab ->
-                        selectedTab = tab
-                        when (tab) {
-                            DashboardTab.NAVIGATION,
-                            DashboardTab.SEARCH,
-                            DashboardTab.ROUTES -> openPlanner()
-                            DashboardTab.FAVORITES -> {
-                                dashboardPanel = DashboardPanelType.FAVORITES
-                                showPlanner = false
-                            }
-                            DashboardTab.WEATHER -> {
-                                dashboardPanel = DashboardPanelType.WEATHER
-                                showPlanner = false
-                            }
-                            DashboardTab.SETTINGS -> {
-                                dashboardPanel = DashboardPanelType.SETTINGS
-                                showPlanner = false
+                        if (!state.navigationActive) {
+                            selectedTab = tab
+                            when (tab) {
+                                DashboardTab.NAVIGATION,
+                                DashboardTab.SEARCH,
+                                DashboardTab.ROUTES -> openPlanner()
+                                DashboardTab.FAVORITES -> {
+                                    dashboardPanel = DashboardPanelType.FAVORITES
+                                    showPlanner = false
+                                }
+                                DashboardTab.WEATHER -> {
+                                    dashboardPanel = DashboardPanelType.WEATHER
+                                    showPlanner = false
+                                }
+                                DashboardTab.SETTINGS -> {
+                                    dashboardPanel = DashboardPanelType.SETTINGS
+                                    showPlanner = false
+                                }
                             }
                         }
                     },
@@ -127,6 +138,16 @@ fun NvPremiumApp(
                 )
             }
         }
+
+        if (state.navigationActive) {
+            NvReferenceDrivingDashboard(
+                state = state,
+                onSelectRoute = viewModel::selectRoute,
+                onStopNavigation = viewModel::stopNavigation,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+
         dashboardPanel?.takeIf { !state.navigationActive }?.let { panel ->
             NvDashboardQuickPanel(
                 type = panel,
@@ -212,6 +233,20 @@ private fun CompactRoutePlanner(
                 Text("مسیر", color = PremiumText, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
                 IconButton(onClick = onSwap, enabled = state.origin != null && state.destination != null, modifier = Modifier.size(34.dp)) { Icon(Icons.Rounded.SwapVert, "جابجایی", tint = PremiumCyan) }
                 IconButton(onClick = onClose, modifier = Modifier.size(34.dp)) { Icon(Icons.Rounded.Close, "بستن", tint = PremiumMuted) }
+            }
+            if (state.origin == null || state.originQuery.isBlank()) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AssistChip(
+                        onClick = onMyLocation,
+                        label = { Text("موقعیت فعلی من") },
+                        leadingIcon = { Icon(Icons.Rounded.MyLocation, null, modifier = Modifier.size(18.dp)) }
+                    )
+                    AssistChip(
+                        onClick = { onOriginChange("") },
+                        label = { Text("انتخاب مبدأ دیگر") },
+                        leadingIcon = { Icon(Icons.Rounded.EditLocationAlt, null, modifier = Modifier.size(18.dp)) }
+                    )
+                }
             }
             CompactPlaceField("مبدأ", state.originQuery, state.originSuggestions, state.originSearching, onOriginChange, onOriginSelect, onMyLocation)
             CompactPlaceField("مقصد", state.destinationQuery, state.destinationSuggestions, state.destinationSearching, onDestinationChange, onDestinationSelect, null)
