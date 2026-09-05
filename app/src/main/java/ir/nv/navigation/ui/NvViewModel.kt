@@ -20,9 +20,12 @@ import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
 import ir.nv.navigation.location.DeviceLocationProvider
 import ir.nv.navigation.location.NavigationFix
+import ir.nv.navigation.navigation.ContinuousRerouteEngine
+import ir.nv.navigation.navigation.ContinuousReroutePolicy
 import ir.nv.navigation.navigation.NvNavigationPlatform
 import ir.nv.navigation.navigation.RouteProfile
 import ir.nv.navigation.navigation.RouteRequest
+import ir.nv.navigation.navigation.mapmatching.RawLocationSample
 import ir.nv.navigation.network.NetworkMonitor
 import ir.nv.navigation.online.OnlineNavigationService
 import ir.nv.navigation.online.OnlinePlacesService
@@ -133,6 +136,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private var insightsRefreshJob: Job? = null
     private var offRouteSamples = 0
     private var lastRerouteAt = 0L
+    private var lastContinuousRerouteCheckAt = 0L
+    private var previousTrafficDelaySeconds = 0.0
     private var lastInsightsRemainingMeters = Double.NaN
 
     init {
@@ -343,6 +348,9 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         }
         navigationJob?.cancel()
         offRouteSamples = 0
+        lastRerouteAt = 0L
+        lastContinuousRerouteCheckAt = 0L
+        previousTrafficDelaySeconds = mutableState.value.traffic?.delaySeconds ?: 0.0
         lastInsightsRemainingMeters = route.distanceMeters
         mutableState.update {
             it.copy(
@@ -679,7 +687,18 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun updateNavigationProgress(fix: NavigationFix) {
-        val coordinate = fix.coordinate
+        val matched = runCatching {
+            navigationPlatform.mapMatchingEngine.match(
+                RawLocationSample(
+                    coordinate = fix.coordinate,
+                    speedKmh = fix.speedKmh.toDouble(),
+                    bearingDegrees = fix.bearingDegrees,
+                    accuracyMeters = fix.accuracyMeters,
+                    timestampMillis = fix.timestampMillis
+                )
+            )
+        }.getOrNull()
+        val coordinate = matched?.takeIf { it.confidence >= MIN_MAP_MATCH_CONFIDENCE }?.coordinate ?: fix.coordinate
         val snapshot = mutableState.value
         val route = snapshot.route ?: return
         val progress = RouteProgressEngine.calculate(route, coordinate) ?: return
@@ -702,11 +721,43 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
         offRouteSamples = if (progress.offRoute) offRouteSamples + 1 else 0
         val now = System.currentTimeMillis()
-        if (offRouteSamples >= 3 && now - lastRerouteAt >= 30_000L) {
-            lastRerouteAt = now
-            rerouteFrom(coordinate)
-            offRouteSamples = 0
+        val needsImmediateCheck = offRouteSamples >= 3
+        val needsPeriodicCheck = now - lastContinuousRerouteCheckAt >= CONTINUOUS_REROUTE_INTERVAL_MS
+        if (needsImmediateCheck || needsPeriodicCheck) {
+            lastContinuousRerouteCheckAt = now
+            val rerouteState = mutableState.value
+            val destination = rerouteState.destination
+            if (destination != null && (rerouteState.onlineAvailable || rerouteState.offlineReady)) {
+                val check = runCatching {
+                    navigationPlatform.continuousRerouteEngine.check(
+                        ContinuousRerouteEngine.CheckRequest(
+                            currentPosition = coordinate,
+                            destination = destination.coordinate,
+                            currentRoute = route,
+                            currentRemainingSeconds = progress.remainingSeconds,
+                            previousTrafficDelaySeconds = previousTrafficDelaySeconds,
+                            onlineAvailable = rerouteState.onlineAvailable,
+                            offlineAvailable = rerouteState.offlineReady && router != null,
+                            preferOffline = rerouteState.preferOffline,
+                            lastRerouteMillis = lastRerouteAt,
+                            offRoute = needsImmediateCheck,
+                            currentRouteBlocked = false,
+                            profile = RouteProfile.SMART
+                        )
+                    )
+                }.getOrNull()
+                if (check != null) {
+                    previousTrafficDelaySeconds = check.currentTrafficDelaySeconds
+                    if (check.decision.shouldReroute && check.replacement != null) {
+                        applyContinuousReroute(coordinate, check)
+                        lastRerouteAt = now
+                        offRouteSamples = 0
+                        return
+                    }
+                }
+            }
         }
+
         val shouldRefreshInsights = lastInsightsRemainingMeters.isNaN() ||
             lastInsightsRemainingMeters - progress.remainingDistanceMeters >= INSIGHTS_REFRESH_DISTANCE_METERS
         if (shouldRefreshInsights) {
@@ -718,6 +769,42 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    private suspend fun applyContinuousReroute(
+        coordinate: Coordinate,
+        check: ContinuousRerouteEngine.Result
+    ) {
+        val candidate = check.replacement ?: return
+        val replacement = RouteOriginConnector.attach(coordinate, candidate.route)
+        val reason = when (check.decision.reason) {
+            ContinuousReroutePolicy.Reason.OFF_ROUTE -> "خروج از مسیر"
+            ContinuousReroutePolicy.Reason.BLOCKED -> "مسدودی مسیر"
+            ContinuousReroutePolicy.Reason.TRAFFIC_INCREASE -> "افزایش ترافیک"
+            ContinuousReroutePolicy.Reason.BETTER_ROUTE -> "مسیر سریع‌تر"
+            null -> "شرایط مسیر"
+        }
+        mutableState.update {
+            it.copy(
+                route = replacement,
+                routeAlternatives = listOf(replacement),
+                selectedRouteIndex = 0,
+                routeSource = candidate.source,
+                maneuverIndex = 0,
+                distanceToNextManeuverMeters = replacement.maneuvers.firstOrNull()?.distanceMeters
+                    ?: replacement.distanceMeters,
+                remainingDistanceMeters = replacement.distanceMeters,
+                remainingSeconds = replacement.travelSeconds,
+                offRoute = false,
+                cameraAutomatic = true,
+                followNavigation = true,
+                traffic = candidate.traffic,
+                trafficSegments = emptyList(),
+                message = "مسیر به‌دلیل $reason بهینه شد"
+            )
+        }
+        lastInsightsRemainingMeters = replacement.distanceMeters
+        loadRouteNotices(replacement, replacement)
     }
 
     private suspend fun rerouteFrom(coordinate: Coordinate) {
@@ -780,5 +867,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         const val DEFAULT_NAVIGATION_ZOOM = 18
         const val MAX_NAVIGATION_ZOOM = 19
         const val INSIGHTS_REFRESH_DISTANCE_METERS = 2_500.0
+        const val CONTINUOUS_REROUTE_INTERVAL_MS = 30_000L
+        const val MIN_MAP_MATCH_CONFIDENCE = 0.35
     }
 }
