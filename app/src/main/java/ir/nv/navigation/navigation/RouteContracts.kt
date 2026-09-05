@@ -25,10 +25,25 @@ data class RouteRequest(
     val offlineAvailable: Boolean = false
 )
 
+data class RouteSignals(
+    val roadQualityPenalty: Double? = null,
+    val accidentRiskPenalty: Double? = null,
+    val weatherPenalty: Double? = null,
+    val restrictionPenalty: Double? = null
+) {
+    fun normalized(): RouteSignals = copy(
+        roadQualityPenalty = roadQualityPenalty?.coerceIn(0.0, 1.0),
+        accidentRiskPenalty = accidentRiskPenalty?.coerceIn(0.0, 1.0),
+        weatherPenalty = weatherPenalty?.coerceIn(0.0, 1.0),
+        restrictionPenalty = restrictionPenalty?.coerceIn(0.0, 1.0)
+    )
+}
+
 data class RouteCandidate(
     val route: Route,
     val source: RouteSource,
     val traffic: TrafficSummary? = null,
+    val signals: RouteSignals = RouteSignals(),
     val score: Double? = null
 )
 
@@ -49,6 +64,10 @@ fun interface TrafficProvider {
     suspend fun traffic(route: Route): TrafficSummary?
 }
 
+fun interface RouteSignalProvider {
+    suspend fun signals(route: Route, context: RouteIntelligenceContext): RouteSignals
+}
+
 fun interface RouteRanker {
     fun rank(candidates: List<RouteCandidate>, context: RouteIntelligenceContext): List<RouteCandidate>
 }
@@ -58,5 +77,7 @@ data class RouteIntelligenceContext(
     val rainOrSnow: Boolean = false,
     val electricVehicle: Boolean = false,
     val preferHighways: Boolean = false,
-    val avoidRisk: Boolean = true
+    val avoidRisk: Boolean = true,
+    val userTimePriority: Double = 0.5,
+    val userEcoPriority: Double = 0.5
 )
