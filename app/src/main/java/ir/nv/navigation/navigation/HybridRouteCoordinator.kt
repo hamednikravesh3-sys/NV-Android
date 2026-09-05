@@ -8,7 +8,8 @@ class HybridRouteCoordinator(
     private val onlineProvider: RouteProvider,
     private val offlineProvider: RouteProvider,
     private val trafficProvider: TrafficProvider,
-    private val ranker: RouteRanker
+    private val ranker: RouteRanker,
+    private val signalProvider: RouteSignalProvider = RouteSignalProvider { _, _ -> RouteSignals() }
 ) {
     suspend fun plan(
         request: RouteRequest,
@@ -49,15 +50,28 @@ class HybridRouteCoordinator(
             else -> RouteSource.OFFLINE
         }
 
-        val traffic = if (source == RouteSource.ONLINE && request.onlineAvailable) {
-            coroutineScope {
-                routes.map { route -> async { runCatching { trafficProvider.traffic(route) }.getOrNull() } }
-                    .map { it.await() }
-            }
-        } else List(routes.size) { null }
+        val enrichments = coroutineScope {
+            routes.map { route ->
+                async {
+                    val traffic = if (source == RouteSource.ONLINE && request.onlineAvailable) {
+                        runCatching { trafficProvider.traffic(route) }.getOrNull()
+                    } else null
+                    val signals = runCatching { signalProvider.signals(route, context) }
+                        .getOrDefault(RouteSignals())
+                        .normalized()
+                    traffic to signals
+                }
+            }.map { it.await() }
+        }
 
         val candidates = routes.mapIndexed { index, route ->
-            RouteCandidate(route = route, source = source, traffic = traffic.getOrNull(index))
+            val enrichment = enrichments.getOrNull(index)
+            RouteCandidate(
+                route = route,
+                source = source,
+                traffic = enrichment?.first,
+                signals = enrichment?.second ?: RouteSignals()
+            )
         }
         val ranked = ranker.rank(candidates, context)
         return RoutePlan(
