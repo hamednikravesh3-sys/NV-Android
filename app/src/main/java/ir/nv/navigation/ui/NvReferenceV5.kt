@@ -90,12 +90,14 @@ fun NvReferenceV5(
             modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start = 12.dp, top = 10.dp)
         )
 
-        V5RightInfoRail(
-            state = state,
-            onWeather = { sheet = V5Sheet.WEATHER },
-            onAttraction = { sheet = V5Sheet.WEATHER },
-            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end = 10.dp, top = 12.dp)
-        )
+        if (!quickSearchVisible) {
+            V5RightInfoRail(
+                state = state,
+                onWeather = { sheet = V5Sheet.WEATHER },
+                onAttraction = { sheet = V5Sheet.WEATHER },
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(end = 10.dp, top = 12.dp)
+            )
+        }
 
         if (state.navigationActive && state.route != null) {
             val maneuver = state.route?.maneuvers?.getOrNull(state.maneuverIndex)
