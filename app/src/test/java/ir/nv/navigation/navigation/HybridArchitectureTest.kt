@@ -2,15 +2,16 @@ package ir.nv.navigation.navigation
 
 import ir.nv.navigation.ai.route.NvAdaptiveRouteRanker
 import ir.nv.navigation.core.Coordinate
+import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.TrafficSummary
 import ir.nv.navigation.search.HybridSearchEngine
 import ir.nv.navigation.search.PlaceSearchProvider
-import ir.nv.navigation.core.Place
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -54,6 +55,52 @@ class HybridArchitectureTest {
             RouteIntelligenceContext(RouteProfile.SMART)
         )
         assertEquals(cleaner.route, ranked.first().route)
+    }
+
+    @Test
+    fun realRiskSignalsCanMoveRiskyRouteBehindSaferAlternative() {
+        val risky = RouteCandidate(
+            route = route(4_900.0, 540.0),
+            source = RouteSource.ONLINE,
+            signals = RouteSignals(
+                accidentRiskPenalty = 1.0,
+                weatherPenalty = 0.9,
+                restrictionPenalty = 0.8
+            )
+        )
+        val safer = RouteCandidate(
+            route = route(5_100.0, 555.0),
+            source = RouteSource.ONLINE,
+            signals = RouteSignals(
+                accidentRiskPenalty = 0.05,
+                weatherPenalty = 0.0,
+                restrictionPenalty = 0.0
+            )
+        )
+        val ranked = NvAdaptiveRouteRanker().rank(
+            listOf(risky, safer),
+            RouteIntelligenceContext(RouteProfile.SMART, avoidRisk = true)
+        )
+        assertEquals(safer.route, ranked.first().route)
+    }
+
+    @Test
+    fun missingExternalSignalsRemainUnknownInsteadOfBeingFabricated() = runBlocking {
+        val candidateRoute = route(2_000.0, 200.0)
+        val coordinator = HybridRouteCoordinator(
+            onlineProvider = RouteProvider { listOf(candidateRoute) },
+            offlineProvider = RouteProvider { emptyList() },
+            trafficProvider = TrafficProvider { null },
+            ranker = NvAdaptiveRouteRanker()
+        )
+        val candidate = coordinator.plan(
+            RouteRequest(origin, destination, onlineAvailable = true)
+        ).selected ?: error("route missing")
+
+        assertNull(candidate.signals.roadQualityPenalty)
+        assertNull(candidate.signals.accidentRiskPenalty)
+        assertNull(candidate.signals.weatherPenalty)
+        assertNull(candidate.signals.restrictionPenalty)
     }
 
     @Test
