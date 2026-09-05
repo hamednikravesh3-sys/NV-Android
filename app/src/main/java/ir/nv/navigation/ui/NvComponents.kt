@@ -1120,7 +1120,10 @@ fun RouteSummaryCard(
         colors = CardDefaults.cardColors(containerColor = NvNavy, contentColor = NvText),
         border = BorderStroke(1.dp, NvOutline)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = if (navigationActive) onStop else onClose,
@@ -1139,6 +1142,33 @@ fun RouteSummaryCard(
                         )
                         Spacer(Modifier.width(5.dp))
                         Text(if (source == RouteSource.OFFLINE) "مسیر آفلاین" else "مسیر آنلاین", color = NvText, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            destination?.let { place ->
+                val code = place.personalCode ?: place.code.takeIf { it > 0 }?.toString()
+                Surface(
+                    shape = RoundedCornerShape(17.dp),
+                    color = NvPanelHigh,
+                    border = BorderStroke(1.dp, NvCyan.copy(alpha = .58f))
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(shape = RoundedCornerShape(13.dp), color = NvCyan.copy(alpha = .14f)) {
+                            Icon(Icons.Rounded.Place, null, tint = NvCyan, modifier = Modifier.padding(9.dp).size(25.dp))
+                        }
+                        Spacer(Modifier.width(9.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(place.name, color = NvText, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("مقصد انتخاب‌شده", color = NvMuted, style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (code != null) {
+                            Surface(shape = RoundedCornerShape(11.dp), color = NvNavy, border = BorderStroke(1.dp, NvLime.copy(alpha = .7f))) {
+                                Text("NV:$code", modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), color = NvLime, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black)
+                            }
+                        }
                     }
                 }
             }
@@ -1205,6 +1235,23 @@ fun RouteSummaryCard(
                             Text(notice.title, fontWeight = FontWeight.Bold, maxLines = 1, color = NvText)
                             Text(notice.detail, style = MaterialTheme.typography.bodySmall, maxLines = 2, color = NvMuted)
                         }
+                    }
+                }
+            }
+            val attractions = notices.filter {
+                it.kind == RouteNotice.Kind.ATTRACTION && it.distanceAheadMeters <= 10_000.0
+            }.take(4)
+            if (attractions.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("جاذبه‌های نزدیک مسیر", color = NvText, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onOpenPlaces) { Text("مشاهده همه", color = NvCyan) }
+                }
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    attractions.forEach { notice ->
+                        RouteAttractionCard(notice = notice, onClick = onOpenPlaces)
                     }
                 }
             }
@@ -1277,6 +1324,36 @@ private fun RouteChoiceCard(route: Route, index: Int, selected: Boolean, onClick
             Text("${(route.travelSeconds / 60).roundToInt()} دقیقه", color = NvText, fontWeight = FontWeight.Black)
             Text("%.1f km".format(route.distanceMeters / 1000), color = NvMuted, style = MaterialTheme.typography.labelSmall)
             Box(Modifier.padding(top = 5.dp).fillMaxWidth(0.55f).height(3.dp).clip(CircleShape).background(if (selected) NvCyan else NvLime.copy(alpha = 0.55f)))
+        }
+    }
+}
+
+@Composable
+private fun RouteAttractionCard(notice: RouteNotice, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.width(158.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(15.dp),
+        color = NvPanel,
+        border = BorderStroke(1.dp, NvOutline)
+    ) {
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (!notice.imageUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = notice.imageUrl,
+                    contentDescription = notice.title,
+                    modifier = Modifier.size(50.dp).clip(RoundedCornerShape(11.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Surface(shape = RoundedCornerShape(11.dp), color = NvCyan.copy(alpha = .14f)) {
+                    Icon(Icons.Rounded.Explore, null, tint = NvCyan, modifier = Modifier.padding(12.dp).size(26.dp))
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(notice.title, color = NvText, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                Text("%.1f km".format(notice.distanceAheadMeters / 1_000.0), color = NvLime, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }

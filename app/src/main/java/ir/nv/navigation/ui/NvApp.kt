@@ -312,7 +312,9 @@ fun NvApp(
                         onOpenCode = { showPlaceCode = true },
                         onStop = viewModel::stopNavigation,
                         onClose = viewModel::clearRoute,
-                        modifier = Modifier.align(Alignment.BottomCenter)
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = if (premiumShell) 72.dp else 0.dp)
                     )
                 }
             }
@@ -350,7 +352,7 @@ fun NvApp(
                     onToggleTheme = { showThemeMode = true },
                     modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
                 )
-            } else if (state.route != null) {
+            } else if (!premiumShell && state.route != null) {
                 RightRouteInsightRail(
                     notices = state.routeNotices,
                     loading = state.routeInsightsLoading,

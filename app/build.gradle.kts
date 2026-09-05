@@ -14,8 +14,8 @@ android {
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.14.0"
+        versionCode = 16
+        versionName = "0.15.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

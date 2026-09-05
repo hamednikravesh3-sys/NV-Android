@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -42,6 +43,8 @@ fun NvPremiumApp(
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     var showPlanner by remember { mutableStateOf(false) }
+    var dashboardPanel by remember { mutableStateOf<DashboardPanelType?>(null) }
+    var selectedTab by remember { mutableStateOf(DashboardTab.NAVIGATION) }
     val locationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result.values.any { it }) viewModel.useCurrentLocationAsOrigin()
     }
@@ -51,32 +54,99 @@ fun NvPremiumApp(
         if (allowed) viewModel.useCurrentLocationAsOrigin() else locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
-    Box(Modifier.fillMaxSize()) {
+    fun openPlanner(query: String? = null) {
+        query?.let(viewModel::updateDestinationQuery)
+        dashboardPanel = null
+        showPlanner = true
+    }
+
+    LaunchedEffect(state.navigationActive) {
+        if (state.navigationActive) {
+            showPlanner = false
+            dashboardPanel = null
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact = maxWidth < 600.dp
         NvApp(darkMode = darkMode, themeMode = themeMode, onThemeModeChange = onThemeModeChange, viewModel = viewModel, premiumShell = true)
-        if (!state.navigationActive && state.route == null && (state.onlineAvailable || state.offlineReady)) {
-            MapFirstHeader(
-                origin = state.origin?.name,
-                destination = state.destination?.name,
-                onSearch = { showPlanner = !showPlanner },
-                onMyLocation = ::useMyLocation,
-                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 10.dp, vertical = 7.dp)
+        if (!state.navigationActive && (state.onlineAvailable || state.offlineReady)) {
+            Box(Modifier.matchParentSize().background(dashboardEdgeScrim()))
+            NvDashboardHeader(
+                destinationName = state.destination?.name,
+                weatherNotice = state.routeNotices.firstOrNull { it.kind == ir.nv.navigation.core.RouteNotice.Kind.WEATHER && it.distanceAheadMeters <= 10_000.0 },
+                compact = compact,
+                onSearch = { openPlanner() },
+                onWeather = {
+                    selectedTab = DashboardTab.WEATHER
+                    dashboardPanel = DashboardPanelType.WEATHER
+                    showPlanner = false
+                },
+                onProfile = {
+                    selectedTab = DashboardTab.FAVORITES
+                    dashboardPanel = DashboardPanelType.FAVORITES
+                    showPlanner = false
+                },
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp)
             )
-            if (!showPlanner) {
-                RightRouteInsightRail(
-                    notices = emptyList(),
-                    loading = false,
+            if (!showPlanner && dashboardPanel == null) {
+                NvDashboardServiceRail(
                     satelliteMode = state.satelliteMode,
-                    darkMode = darkMode,
-                    onlineAvailable = state.onlineAvailable,
-                    onWeather = { showPlanner = true },
-                    onAttractions = { showPlanner = true },
-                    onToggleSatellite = viewModel::toggleSatelliteMode,
-                    onToggleTheme = {
-                        onThemeModeChange(if (darkMode) AppThemeMode.DAY else AppThemeMode.NIGHT)
+                    onLayers = viewModel::toggleSatelliteMode,
+                    onCategory = ::openPlanner,
+                    onMore = {
+                        selectedTab = DashboardTab.SETTINGS
+                        dashboardPanel = DashboardPanelType.SETTINGS
                     },
-                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 7.dp)
+                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 7.dp)
+                )
+                NvDashboardBottomDock(
+                    selected = selectedTab,
+                    compact = compact,
+                    onSelect = { tab ->
+                        selectedTab = tab
+                        when (tab) {
+                            DashboardTab.NAVIGATION,
+                            DashboardTab.SEARCH,
+                            DashboardTab.ROUTES -> openPlanner()
+                            DashboardTab.FAVORITES -> {
+                                dashboardPanel = DashboardPanelType.FAVORITES
+                                showPlanner = false
+                            }
+                            DashboardTab.WEATHER -> {
+                                dashboardPanel = DashboardPanelType.WEATHER
+                                showPlanner = false
+                            }
+                            DashboardTab.SETTINGS -> {
+                                dashboardPanel = DashboardPanelType.SETTINGS
+                                showPlanner = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
                 )
             }
+        }
+        dashboardPanel?.takeIf { !state.navigationActive }?.let { panel ->
+            NvDashboardQuickPanel(
+                type = panel,
+                state = state,
+                themeMode = themeMode,
+                onDismiss = { dashboardPanel = null },
+                onSelectPlace = { place ->
+                    viewModel.selectDestination(place)
+                    openPlanner()
+                },
+                onThemeModeChange = onThemeModeChange,
+                onToggleSatellite = viewModel::toggleSatelliteMode,
+                onToggleOffline = viewModel::setPreferOffline,
+                onDownloadMap = viewModel::startMapDownload,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = 10.dp, bottom = 82.dp)
+            )
         }
         if (showPlanner && !state.navigationActive) {
             CompactRoutePlanner(
@@ -88,7 +158,7 @@ fun NvPremiumApp(
                 onDestinationSelect = viewModel::selectDestination,
                 onMyLocation = ::useMyLocation,
                 onSwap = viewModel::swapEndpoints,
-                onRoute = { viewModel.calculateRoute(); showPlanner = false },
+                onRoute = { viewModel.calculateRoute(); showPlanner = false; selectedTab = DashboardTab.ROUTES },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .imePadding()
