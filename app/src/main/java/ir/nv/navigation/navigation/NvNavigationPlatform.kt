@@ -1,9 +1,11 @@
 package ir.nv.navigation.navigation
 
 import ir.nv.navigation.ai.route.NvAdaptiveRouteRanker
+import ir.nv.navigation.navigation.guidance.GuidanceEngine
 import ir.nv.navigation.navigation.mapmatching.MapMatchingEngine
 import ir.nv.navigation.navigation.mapmatching.PassThroughMapMatchingEngine
 import ir.nv.navigation.online.OnlineNavigationService
+import ir.nv.navigation.places.AheadEngine
 import ir.nv.navigation.routing.AStarRouter
 import ir.nv.navigation.traffic.LiveTrafficService
 import ir.nv.navigation.weather.WeatherRouteSignalProvider
@@ -31,4 +33,7 @@ class NvNavigationPlatform(
         trafficProvider = trafficProvider,
         policy = reroutePolicy
     )
+
+    val guidanceEngine = GuidanceEngine()
+    val aheadEngine = AheadEngine(maxItems = 16)
 }
