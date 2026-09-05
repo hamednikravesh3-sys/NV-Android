@@ -88,7 +88,8 @@ class DeviceLocationProvider(private val context: Context) {
         coordinate = toCoordinate(),
         speedKmh = if (hasSpeed()) (speed * 3.6f).coerceAtLeast(0f) else 0f,
         bearingDegrees = if (hasBearing()) bearing else 0f,
-        accuracyMeters = if (hasAccuracy()) accuracy else Float.POSITIVE_INFINITY
+        accuracyMeters = if (hasAccuracy()) accuracy else Float.POSITIVE_INFINITY,
+        timestampMillis = time.takeIf { it > 0L } ?: System.currentTimeMillis()
     )
 
     private companion object {
@@ -101,5 +102,6 @@ data class NavigationFix(
     val coordinate: Coordinate,
     val speedKmh: Float,
     val bearingDegrees: Float,
-    val accuracyMeters: Float
+    val accuracyMeters: Float,
+    val timestampMillis: Long = System.currentTimeMillis()
 )
