@@ -136,16 +136,11 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
         ordered.forEach { index ->
             val result = routes[index]
             if (result.points.size < 2) return@forEach
-            val routeColor = when {
-                // Keep the active route cyan; the traffic rail carries delay severity.
-                index == selectedRouteIndex -> intArrayOf(24, 212, 255)
-                index % 2 == 0 -> intArrayOf(215, 255, 91)
-                else -> intArrayOf(150, 160, 174)
-            }
+            val routeColor = routeColor(index)
             if (index == selectedRouteIndex) {
                 val glowPaint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                    color = AndroidGraphicFactory.INSTANCE.createColor(82, routeColor[0], routeColor[1], routeColor[2])
-                    strokeWidth = 24f * mapView.model.displayModel.scaleFactor
+                    color = AndroidGraphicFactory.INSTANCE.createColor(86, routeColor[0], routeColor[1], routeColor[2])
+                    strokeWidth = 25f * mapView.model.displayModel.scaleFactor
                     setStyle(Style.STROKE)
                 }
                 Polyline(glowPaint, AndroidGraphicFactory.INSTANCE).also { glow ->
@@ -156,7 +151,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
             }
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
                 color = AndroidGraphicFactory.INSTANCE.createColor(255, routeColor[0], routeColor[1], routeColor[2])
-                strokeWidth = (if (index == selectedRouteIndex) 11f else 7f) * mapView.model.displayModel.scaleFactor
+                strokeWidth = (if (index == selectedRouteIndex) 12f else 8f) * mapView.model.displayModel.scaleFactor
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { line ->
@@ -174,9 +169,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
                 setStyle(Style.STROKE)
             }
             Polyline(paint, AndroidGraphicFactory.INSTANCE).also { connector ->
-                connector.setPoints(
-                    route.points.take(2).map { LatLong(it.latitude, it.longitude) }
-                )
+                connector.setPoints(route.points.take(2).map { LatLong(it.latitude, it.longitude) })
                 mapView.layerManager.layers.add(connector)
                 routeLayers += connector
             }
@@ -189,12 +182,7 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
                 else -> intArrayOf(100, 214, 109)
             }
             val paint = AndroidGraphicFactory.INSTANCE.createPaint().apply {
-                color = AndroidGraphicFactory.INSTANCE.createColor(
-                    255,
-                    routeColor[0],
-                    routeColor[1],
-                    routeColor[2]
-                )
+                color = AndroidGraphicFactory.INSTANCE.createColor(255, routeColor[0], routeColor[1], routeColor[2])
                 strokeWidth = 9f * mapView.model.displayModel.scaleFactor
                 setStyle(Style.STROKE)
             }
@@ -293,6 +281,13 @@ private class MapsforgeMapHolder(context: Context, mapFile: File) {
     fun destroy() {
         mapView.destroyAll()
         mapData.close()
+    }
+
+    private fun routeColor(index: Int): IntArray = when (index % 4) {
+        0 -> intArrayOf(22, 217, 255)
+        1 -> intArrayOf(66, 230, 106)
+        2 -> intArrayOf(255, 214, 90)
+        else -> intArrayOf(181, 140, 255)
     }
 
     private companion object {
