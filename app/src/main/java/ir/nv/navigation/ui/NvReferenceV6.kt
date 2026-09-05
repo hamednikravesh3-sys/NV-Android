@@ -5,27 +5,37 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AcUnit
+import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Route
+import androidx.compose.material.icons.rounded.Thunderstorm
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -42,13 +52,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import coil.compose.AsyncImage
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.ui.theme.AppThemeMode
 
@@ -58,6 +75,8 @@ private val V6Text = Color(0xFFF6FBFF)
 private val V6Muted = Color(0xFFA7BBC8)
 private val V6Green = Color(0xFF42E66A)
 private val V6Gold = Color(0xFFFFD65A)
+private val V6Rose = Color(0xFFFF6B9D)
+private val V6Purple = Color(0xFFB58CFF)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +88,8 @@ fun NvReferenceV6(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
     var lastRequestedPair by remember { mutableStateOf<String?>(null) }
     var lastPresentedRouteKey by remember { mutableStateOf<String?>(null) }
     var showRouteChooser by remember { mutableStateOf(false) }
@@ -123,6 +144,10 @@ fun NvReferenceV6(
         }
     }
 
+    val searchBusy = state.originSearching || state.destinationSearching ||
+        (state.origin == null && state.originQuery.isNotBlank()) ||
+        (state.destination == null && state.destinationQuery.isNotBlank())
+
     Box(Modifier.fillMaxSize()) {
         NvReferenceV5(
             darkMode = darkMode,
@@ -131,13 +156,15 @@ fun NvReferenceV6(
             viewModel = viewModel
         )
 
-        V6RightInfoPanel(
-            state = state,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(end = 8.dp, top = 8.dp)
-        )
+        if (!imeVisible && !searchBusy && !showRouteChooser) {
+            V6RightInfoPanel(
+                state = state,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(end = 8.dp, top = 8.dp)
+            )
+        }
 
         if (state.navigationActive && state.currentLocation != null) {
             V6CarMarker(
@@ -152,43 +179,69 @@ fun NvReferenceV6(
                 contentColor = V6Text
             ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Route, contentDescription = null, tint = V6Cyan)
-                        Spacer(Modifier.padding(horizontal = 5.dp))
-                        Column {
-                            Text("مسیرهای پیشنهادی", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text(
-                                "${state.origin?.name.orEmpty()} ← ${state.destination?.name.orEmpty()}",
-                                color = V6Muted,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text("مسیرهای پیشنهادی", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
+
+                    V6EndpointSummary(
+                        origin = state.origin?.name.orEmpty(),
+                        destination = state.destination?.name.orEmpty()
+                    )
 
                     state.routeAlternatives.forEachIndexed { index, route ->
                         val selected = index == state.selectedRouteIndex
+                        val routeColor = routeColor(index)
                         Surface(
                             modifier = Modifier.fillMaxWidth().clickable { viewModel.selectRoute(index) },
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (selected) Color(0xCC123148) else Color(0x99102131),
-                            border = BorderStroke(1.dp, if (selected) V6Cyan else V6Muted.copy(alpha = 0.25f))
+                            shape = RoundedCornerShape(17.dp),
+                            color = if (selected) routeColor.copy(alpha = 0.17f) else Color(0x99102131),
+                            border = BorderStroke(if (selected) 2.dp else 1.dp, routeColor.copy(alpha = if (selected) 0.95f else 0.42f))
                         ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                Modifier.fillMaxWidth().padding(13.dp),
+                                verticalArrangement = Arrangement.spacedBy(9.dp)
                             ) {
-                                Column {
-                                    Text("مسیر ${index + 1}", fontWeight = FontWeight.Bold)
-                                    if (selected) Text("انتخاب‌شده", color = V6Cyan, style = MaterialTheme.typography.labelSmall)
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(shape = CircleShape, color = routeColor.copy(alpha = 0.18f)) {
+                                            Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+                                                Text("${index + 1}", color = routeColor, fontWeight = FontWeight.Black)
+                                            }
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Column {
+                                            Text("مسیر ${index + 1}", fontWeight = FontWeight.Bold, color = V6Text)
+                                            if (selected) Text("مسیر انتخاب‌شده", color = routeColor, style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                    if (index == 0) {
+                                        Text("پیشنهاد NV", color = routeColor, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    }
                                 }
-                                Text(
-                                    "${(route.travelSeconds / 60.0).toInt()} دقیقه • ${String.format("%.1f", route.distanceMeters / 1000.0)} km",
-                                    color = V6Text
-                                )
+
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    V6RouteMetric(
+                                        label = "فاصله مبدأ تا مقصد",
+                                        value = "${String.format("%.1f", route.distanceMeters / 1000.0)} km",
+                                        color = routeColor,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    V6RouteMetric(
+                                        label = "زمان سفر",
+                                        value = "${(route.travelSeconds / 60.0).toInt()} دقیقه",
+                                        color = if (index % 2 == 0) V6Green else V6Gold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
                         }
                     }
@@ -199,17 +252,61 @@ fun NvReferenceV6(
                         enabled = state.route != null
                     ) {
                         Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
-                        Spacer(Modifier.padding(horizontal = 4.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text("شروع رانندگی", fontWeight = FontWeight.Bold)
                     }
-                    Text(
-                        "بعد از شروع، حالت راننده، دنبال‌کردن GPS و راهنمای مانور فعال می‌شود.",
-                        color = V6Muted,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(Modifier.height(18.dp))
+                    Spacer(Modifier.height(16.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun V6EndpointSummary(origin: String, destination: String) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xAA102435),
+        border = BorderStroke(1.dp, V6Muted.copy(alpha = 0.25f))
+    ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = CircleShape, color = V6Green.copy(alpha = 0.18f)) {
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                        Text("●", color = V6Green)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("مبدأ", color = V6Muted, style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.width(8.dp))
+                Text(origin.ifBlank { "—" }, color = V6Text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = CircleShape, color = V6Rose.copy(alpha = 0.18f)) {
+                    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                        Text("●", color = V6Rose)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Text("مقصد", color = V6Muted, style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.width(8.dp))
+                Text(destination.ifBlank { "—" }, color = V6Text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun V6RouteMetric(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(13.dp),
+        color = color.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.34f))
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Text(value, color = color, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleSmall)
+            Text(label, color = V6Muted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
     }
 }
@@ -219,106 +316,151 @@ private fun V6RightInfoPanel(state: NvUiState, modifier: Modifier = Modifier) {
     val weather = state.routeNotices.firstOrNull { it.kind == RouteNotice.Kind.WEATHER }
     val attraction = state.routeNotices.firstOrNull { it.kind == RouteNotice.Kind.ATTRACTION }
     val temperature = weather?.detail?.let { Regex("(-?\\d+)°").find(it)?.groupValues?.getOrNull(1) }
+    val weatherVisual = weatherVisual(weather?.detail)
 
-    Surface(
-        modifier = modifier.widthIn(min = 132.dp, max = 174.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = V6Panel,
-        border = BorderStroke(1.dp, V6Cyan.copy(alpha = 0.5f)),
-        shadowElevation = 8.dp
+    Column(
+        modifier.widthIn(min = 118.dp, max = 150.dp),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(7.dp)
     ) {
-        Column(
-            Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+        Surface(
+            shape = RoundedCornerShape(17.dp),
+            color = V6Panel,
+            border = BorderStroke(1.dp, weatherVisual.second.copy(alpha = 0.58f)),
+            shadowElevation = 7.dp
         ) {
-            V6InfoRow(
-                icon = Icons.Rounded.Cloud,
-                iconTint = V6Cyan,
-                title = temperature?.let { "$it°" } ?: "آب‌وهوا",
-                subtitle = weather?.title?.takeIf { it.isNotBlank() } ?: "وضعیت مسیر"
-            )
-
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = Color(0xB7132939),
-                border = BorderStroke(1.dp, V6Gold.copy(alpha = 0.42f))
+            Row(
+                Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                V6InfoRow(
-                    icon = Icons.Rounded.PhotoCamera,
-                    iconTint = V6Gold,
-                    title = "دیدنی‌ها",
-                    subtitle = attraction?.title?.take(18) ?: "در ادامه مسیر"
-                )
+                Surface(shape = CircleShape, color = weatherVisual.second.copy(alpha = 0.15f)) {
+                    Box(Modifier.size(35.dp), contentAlignment = Alignment.Center) {
+                        Icon(weatherVisual.first, contentDescription = "وضعیت آب‌وهوا", tint = weatherVisual.second, modifier = Modifier.size(23.dp))
+                    }
+                }
+                Spacer(Modifier.width(7.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(temperature?.let { "$it°" } ?: "هوا", color = V6Text, fontWeight = FontWeight.Black, maxLines = 1)
+                    Text(weatherLabel(weather?.detail), color = V6Muted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+
+        if (attraction != null) {
+            Surface(
+                shape = RoundedCornerShape(17.dp),
+                color = V6Panel,
+                border = BorderStroke(1.dp, V6Gold.copy(alpha = 0.58f)),
+                shadowElevation = 7.dp
+            ) {
+                Column(Modifier.padding(7.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (!attraction.imageUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = attraction.imageUrl,
+                            contentDescription = attraction.title,
+                            modifier = Modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = V6Gold.copy(alpha = 0.12f)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.PhotoCamera, contentDescription = null, tint = V6Gold, modifier = Modifier.size(25.dp))
+                            }
+                        }
+                    }
+                    Text("دیدنی جلو مسیر", color = V6Gold, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text(attraction.title, color = V6Text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${(attraction.distanceAheadMeters / 1000.0).coerceAtLeast(0.1).let { String.format("%.1f", it) }} km جلوتر",
+                        color = V6Muted,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
         }
     }
 }
 
-@Composable
-private fun V6InfoRow(
-    icon: ImageVector,
-    iconTint: Color,
-    title: String,
-    subtitle: String
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = iconTint.copy(alpha = 0.14f),
-            border = BorderStroke(1.dp, iconTint.copy(alpha = 0.55f))
-        ) {
-            Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(21.dp))
-            }
-        }
-        Spacer(Modifier.padding(horizontal = 4.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                color = V6Text,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                subtitle,
-                color = V6Muted,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+private fun weatherVisual(detail: String?): Pair<ImageVector, Color> {
+    val value = detail.orEmpty()
+    return when {
+        value.contains("رعد") -> Icons.Rounded.Thunderstorm to V6Purple
+        value.contains("برف") -> Icons.Rounded.AcUnit to Color(0xFFBCEBFF)
+        value.contains("باران") || value.contains("بارش") -> Icons.Rounded.WaterDrop to V6Cyan
+        value.contains("تندباد") || value.contains("باد") -> Icons.Rounded.Air to Color(0xFF9BE7E7)
+        value.contains("مه") || value.contains("دید کمتر") -> Icons.Rounded.Visibility to Color(0xFFCFD8DC)
+        value.contains("صاف") -> Icons.Rounded.WbSunny to V6Gold
+        else -> Icons.Rounded.Cloud to V6Cyan
+    }
+}
+
+private fun weatherLabel(detail: String?): String {
+    val value = detail.orEmpty()
+    return when {
+        value.contains("رعد") -> "رعدوبرق"
+        value.contains("برف") -> "برفی"
+        value.contains("باران") || value.contains("بارش") -> "بارانی"
+        value.contains("تندباد") -> "باد شدید"
+        value.contains("مه") || value.contains("دید کمتر") -> "دید محدود"
+        value.contains("صاف") -> "صاف"
+        value.contains("ابری") -> "ابری"
+        value.isBlank() -> "وضعیت مسیر"
+        else -> value.substringBefore("•").trim().take(16)
     }
 }
 
 @Composable
 private fun V6CarMarker(modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier.size(58.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = Color(0xF20B2435),
+        modifier = modifier.size(62.dp),
+        shape = CircleShape,
+        color = Color(0xE70A1D2D),
         border = BorderStroke(2.dp, V6Cyan),
         shadowElevation = 12.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Surface(
-                modifier = Modifier.size(42.dp),
-                shape = CircleShape,
-                color = V6Cyan.copy(alpha = 0.14f)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.DirectionsCar,
-                        contentDescription = "خودرو",
-                        tint = Color.White,
-                        modifier = Modifier.size(31.dp)
-                    )
-                }
+            Canvas(Modifier.width(34.dp).height(48.dp)) {
+                val bodyLeft = size.width * 0.18f
+                val bodyWidth = size.width * 0.64f
+                drawRoundRect(
+                    color = Color(0xFFF2F7FA),
+                    topLeft = Offset(bodyLeft, size.height * 0.05f),
+                    size = Size(bodyWidth, size.height * 0.90f),
+                    cornerRadius = CornerRadius(size.width * 0.18f, size.width * 0.18f)
+                )
+                drawRoundRect(
+                    color = Color(0xFF17394A),
+                    topLeft = Offset(size.width * 0.26f, size.height * 0.23f),
+                    size = Size(size.width * 0.48f, size.height * 0.22f),
+                    cornerRadius = CornerRadius(5f, 5f)
+                )
+                drawRoundRect(
+                    color = Color(0xFF17394A),
+                    topLeft = Offset(size.width * 0.28f, size.height * 0.57f),
+                    size = Size(size.width * 0.44f, size.height * 0.17f),
+                    cornerRadius = CornerRadius(5f, 5f)
+                )
+                val wheelColor = Color(0xFF07121C)
+                drawRoundRect(wheelColor, Offset(size.width * 0.08f, size.height * 0.24f), Size(size.width * 0.13f, size.height * 0.20f), CornerRadius(4f, 4f))
+                drawRoundRect(wheelColor, Offset(size.width * 0.79f, size.height * 0.24f), Size(size.width * 0.13f, size.height * 0.20f), CornerRadius(4f, 4f))
+                drawRoundRect(wheelColor, Offset(size.width * 0.08f, size.height * 0.61f), Size(size.width * 0.13f, size.height * 0.20f), CornerRadius(4f, 4f))
+                drawRoundRect(wheelColor, Offset(size.width * 0.79f, size.height * 0.61f), Size(size.width * 0.13f, size.height * 0.20f), CornerRadius(4f, 4f))
+                drawCircle(V6Gold, radius = size.width * 0.07f, center = Offset(size.width * 0.34f, size.height * 0.10f))
+                drawCircle(V6Gold, radius = size.width * 0.07f, center = Offset(size.width * 0.66f, size.height * 0.10f))
+                drawCircle(V6Rose, radius = size.width * 0.055f, center = Offset(size.width * 0.34f, size.height * 0.89f))
+                drawCircle(V6Rose, radius = size.width * 0.055f, center = Offset(size.width * 0.66f, size.height * 0.89f))
             }
         }
     }
+}
+
+private fun routeColor(index: Int): Color = when (index % 4) {
+    0 -> V6Cyan
+    1 -> V6Green
+    2 -> V6Gold
+    else -> V6Purple
 }
