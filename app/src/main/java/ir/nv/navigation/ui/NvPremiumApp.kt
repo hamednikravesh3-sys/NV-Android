@@ -61,7 +61,22 @@ fun NvPremiumApp(
                 onMyLocation = ::useMyLocation,
                 modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 10.dp, vertical = 7.dp)
             )
-            CompactPoiRail(Modifier.align(Alignment.CenterEnd).padding(end = 7.dp))
+            if (!showPlanner) {
+                RightRouteInsightRail(
+                    notices = emptyList(),
+                    loading = false,
+                    satelliteMode = state.satelliteMode,
+                    darkMode = darkMode,
+                    onlineAvailable = state.onlineAvailable,
+                    onWeather = { showPlanner = true },
+                    onAttractions = { showPlanner = true },
+                    onToggleSatellite = viewModel::toggleSatelliteMode,
+                    onToggleTheme = {
+                        onThemeModeChange(if (darkMode) AppThemeMode.DAY else AppThemeMode.NIGHT)
+                    },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 7.dp)
+                )
+            }
         }
         if (showPlanner && !state.navigationActive) {
             CompactRoutePlanner(
@@ -74,7 +89,11 @@ fun NvPremiumApp(
                 onMyLocation = ::useMyLocation,
                 onSwap = viewModel::swapEndpoints,
                 onRoute = { viewModel.calculateRoute(); showPlanner = false },
-                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 62.dp, start = 10.dp, end = 58.dp)
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(start = 10.dp, end = 10.dp, bottom = 10.dp)
             )
         }
     }

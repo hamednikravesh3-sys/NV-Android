@@ -1523,6 +1523,7 @@ private fun ModeButton(text: String, selected: Boolean, modifier: Modifier, onCl
 fun RoutePlacesSheet(
     destination: Place?,
     notices: List<RouteNotice>,
+    initialKind: RouteNotice.Kind? = null,
     loading: Boolean,
     onlineAvailable: Boolean,
     offlineReady: Boolean,
@@ -1531,7 +1532,13 @@ fun RoutePlacesSheet(
     onShare: (Place) -> Unit,
     onOpenOfflineMaps: () -> Unit
 ) {
-    var filter by remember { mutableStateOf(RoutePlaceFilter.ALL) }
+    val requestedFilter = when (initialKind) {
+        RouteNotice.Kind.ATTRACTION -> RoutePlaceFilter.ATTRACTIONS
+        RouteNotice.Kind.SERVICE -> RoutePlaceFilter.SERVICES
+        RouteNotice.Kind.WEATHER -> RoutePlaceFilter.WEATHER
+        else -> RoutePlaceFilter.ALL
+    }
+    var filter by remember(initialKind) { mutableStateOf(requestedFilter) }
     val visibleNotices = notices.filter { notice ->
         when (filter) {
             RoutePlaceFilter.ALL -> true

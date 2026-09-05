@@ -87,6 +87,7 @@ data class NvUiState(
     val onlineAvailable: Boolean = false,
     val offlineReady: Boolean = false,
     val preferOffline: Boolean = false,
+    val satelliteMode: Boolean = false,
     val routeSource: RouteSource = RouteSource.NONE,
     val trialState: TrialManager.State = TrialManager.State.Trial(30)
 )
@@ -190,6 +191,24 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.update { it.copy(message = "ابتدا نقشه آفلاین را دانلود کنید") }
         } else {
             mutableState.update { it.copy(preferOffline = value, message = null) }
+        }
+    }
+
+    fun toggleSatelliteMode() {
+        mutableState.update { state ->
+            if (!state.onlineAvailable) {
+                state.copy(
+                    satelliteMode = false,
+                    message = "نمای ماهواره‌ای فقط هنگام اتصال اینترنت در دسترس است"
+                )
+            } else {
+                val enabled = !state.satelliteMode
+                state.copy(
+                    satelliteMode = enabled,
+                    preferOffline = if (enabled) false else state.preferOffline,
+                    message = if (enabled) "نمای ماهواره‌ای فعال شد؛ مسیریابی همچنان از داده معابر انجام می‌شود" else null
+                )
+            }
         }
     }
 

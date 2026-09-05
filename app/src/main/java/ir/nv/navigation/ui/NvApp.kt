@@ -34,6 +34,7 @@ import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.OfflineIranMap
 import ir.nv.navigation.map.OnlineIranMap
 import ir.nv.navigation.routing.NavigationModeResolver
+import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.data.PlaceCodes
@@ -56,6 +57,7 @@ fun NvApp(
     var showPlaceCode by remember { mutableStateOf(false) }
     var showPersonalCodes by remember { mutableStateOf(false) }
     var showRoutePlaces by remember { mutableStateOf(false) }
+    var routePlacesInitialKind by remember { mutableStateOf<RouteNotice.Kind?>(null) }
     var showSearch by remember { mutableStateOf(false) }
     var showThemeMode by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf(LocationAction.ORIGIN) }
@@ -170,6 +172,7 @@ fun NvApp(
             RoutePlacesSheet(
                 destination = state.destination,
                 notices = state.routeNotices,
+                initialKind = routePlacesInitialKind,
                 loading = state.routeInsightsLoading,
                 onlineAvailable = state.onlineAvailable,
                 offlineReady = state.offlineReady,
@@ -236,6 +239,7 @@ fun NvApp(
                     bearingDegrees = state.bearingDegrees,
                     onManualGesture = viewModel::pauseNavigationFollow,
                     darkMode = mapDarkMode,
+                    satelliteMode = state.satelliteMode,
                     modifier = Modifier.fillMaxSize()
                 )
                 else -> NoMapConnection(modifier = Modifier.fillMaxSize())
@@ -304,7 +308,7 @@ fun NvApp(
                         remainingSeconds = state.remainingSeconds,
                         onStart = { requestLocation(LocationAction.NAVIGATE) },
                         onRouteSelect = viewModel::selectRoute,
-                        onOpenPlaces = { showRoutePlaces = true },
+                        onOpenPlaces = { routePlacesInitialKind = null; showRoutePlaces = true },
                         onOpenCode = { showPlaceCode = true },
                         onStop = viewModel::stopNavigation,
                         onClose = viewModel::clearRoute,
@@ -334,12 +338,29 @@ fun NvApp(
                     onRecenter = viewModel::recenterNavigation,
                     modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
                 )
-                FloatingNavigationControls(
-                    voiceEnabled = state.voiceEnabled,
+                RightRouteInsightRail(
+                    notices = state.routeNotices,
+                    loading = state.routeInsightsLoading,
+                    satelliteMode = state.satelliteMode,
                     darkMode = darkMode,
-                    onToggleVoice = viewModel::toggleVoice,
+                    onlineAvailable = state.onlineAvailable,
+                    onWeather = { routePlacesInitialKind = RouteNotice.Kind.WEATHER; showRoutePlaces = true },
+                    onAttractions = { routePlacesInitialKind = RouteNotice.Kind.ATTRACTION; showRoutePlaces = true },
+                    onToggleSatellite = viewModel::toggleSatelliteMode,
                     onToggleTheme = { showThemeMode = true },
-                    onOpenOfflineMaps = { showOfflineMaps = true },
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
+                )
+            } else if (state.route != null) {
+                RightRouteInsightRail(
+                    notices = state.routeNotices,
+                    loading = state.routeInsightsLoading,
+                    satelliteMode = state.satelliteMode,
+                    darkMode = darkMode,
+                    onlineAvailable = state.onlineAvailable,
+                    onWeather = { routePlacesInitialKind = RouteNotice.Kind.WEATHER; showRoutePlaces = true },
+                    onAttractions = { routePlacesInitialKind = RouteNotice.Kind.ATTRACTION; showRoutePlaces = true },
+                    onToggleSatellite = viewModel::toggleSatelliteMode,
+                    onToggleTheme = { showThemeMode = true },
                     modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
                 )
             } else if (!premiumShell && state.route == null && (state.onlineAvailable || state.offlineReady)) {

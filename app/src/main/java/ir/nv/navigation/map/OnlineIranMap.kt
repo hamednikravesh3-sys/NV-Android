@@ -49,6 +49,7 @@ fun OnlineIranMap(
     bearingDegrees: Float,
     onManualGesture: () -> Unit,
     darkMode: Boolean,
+    satelliteMode: Boolean,
     modifier: Modifier = Modifier
 ) {
     val holder = remember { VectorMapHolder(context.applicationContext) }
@@ -82,7 +83,8 @@ fun OnlineIranMap(
                 navigationZoomLevel = navigationZoomLevel,
                 navigationRecenterToken = navigationRecenterToken,
                 bearingDegrees = bearingDegrees,
-                darkMode = darkMode
+                darkMode = darkMode,
+                satelliteMode = satelliteMode
             )
         }
     )
@@ -101,6 +103,8 @@ private class VectorMapHolder(context: Context) {
     private var placeSource: GeoJsonSource? = null
     private var darkMode = false
     private var appliedDarkMode: Boolean? = null
+    private var satelliteMode = false
+    private var appliedSatelliteMode: Boolean? = null
     private var lastRecenterToken = -1
     private var renderedRoutes: List<Route> = emptyList()
     private var renderedSelectedRoute = -1
@@ -130,6 +134,15 @@ private class VectorMapHolder(context: Context) {
                 isAttributionEnabled = true
                 isLogoEnabled = false
             }
+            readyMap.moveCamera(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.Builder()
+                        .target(IRAN_CENTER)
+                        .zoom(IRAN_OVERVIEW_ZOOM)
+                        .tilt(0.0)
+                        .build()
+                )
+            )
             loadStyle()
         }
     }
@@ -145,7 +158,8 @@ private class VectorMapHolder(context: Context) {
         navigationZoomLevel: Int,
         navigationRecenterToken: Int,
         bearingDegrees: Float,
-        darkMode: Boolean
+        darkMode: Boolean,
+        satelliteMode: Boolean
     ) {
         val routesChanged = routes != renderedRoutes || selectedRouteIndex != renderedSelectedRoute
         renderedRoutes = routes
@@ -159,7 +173,8 @@ private class VectorMapHolder(context: Context) {
         this.navigationRecenterToken = navigationRecenterToken
         this.bearingDegrees = bearingDegrees
         this.darkMode = darkMode
-        if (appliedDarkMode != darkMode) {
+        this.satelliteMode = satelliteMode
+        if (appliedDarkMode != darkMode || appliedSatelliteMode != satelliteMode) {
             loadStyle()
             return
         }
@@ -173,8 +188,9 @@ private class VectorMapHolder(context: Context) {
     private fun loadStyle() {
         val readyMap = map ?: return
         appliedDarkMode = darkMode
+        appliedSatelliteMode = satelliteMode
         style = null
-        readyMap.setStyle(if (darkMode) DARK_STYLE_URL else DAY_STYLE_URL) { loadedStyle ->
+        val onStyleLoaded: (Style) -> Unit = { loadedStyle ->
             style = loadedStyle
             setupThreeDimensionalBuildings(loadedStyle)
             setupDynamicLayers(loadedStyle)
@@ -183,6 +199,11 @@ private class VectorMapHolder(context: Context) {
             renderPlaces()
             renderLocation()
             updateCamera(frameRoute = renderedRoutes.isNotEmpty())
+        }
+        if (satelliteMode) {
+            readyMap.setStyle(Style.Builder().fromJson(satelliteStyleJson(darkMode)), onStyleLoaded)
+        } else {
+            readyMap.setStyle(if (darkMode) DARK_STYLE_URL else DAY_STYLE_URL, onStyleLoaded)
         }
     }
 
@@ -400,11 +421,88 @@ private class VectorMapHolder(context: Context) {
 
     private fun emptyFeatures(): FeatureCollection = FeatureCollection.fromFeatures(emptyList())
 
+    private fun satelliteStyleJson(night: Boolean): String {
+        val rasterPaint = if (night) {
+            "\"raster-brightness-max\":0.58,\"raster-saturation\":-0.22,\"raster-contrast\":0.16,"
+        } else ""
+        val roadColor = if (night) "#A9C5D8" else "#FFFFFF"
+        val labelColor = if (night) "#F4FAFF" else "#102A3C"
+        val labelHalo = if (night) "#061627" else "#FFFFFF"
+        return """{
+          "version": 8,
+          "name": "NV Satellite",
+          "glyphs": "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+          "sources": {
+            "nv-satellite": {
+              "type": "raster",
+              "tiles": ["$SATELLITE_TILE_URL"],
+              "tileSize": 256,
+              "maxzoom": 19,
+              "attribution": "$SATELLITE_ATTRIBUTION"
+            },
+            "openmaptiles": {
+              "type": "vector",
+              "url": "https://tiles.openfreemap.org/planet"
+            }
+          },
+          "layers": [
+            {
+              "id": "nv-satellite-layer",
+              "type": "raster",
+              "source": "nv-satellite",
+              "paint": { $rasterPaint "raster-fade-duration": 180 }
+            },
+            {
+              "id": "nv-road-shadow",
+              "type": "line",
+              "source": "openmaptiles",
+              "source-layer": "transportation",
+              "minzoom": 7,
+              "paint": {
+                "line-color": "#061627",
+                "line-opacity": 0.72,
+                "line-width": ["interpolate", ["linear"], ["zoom"], 7, 1.4, 14, 7.0, 19, 17.0]
+              }
+            },
+            {
+              "id": "nv-road-overlay",
+              "type": "line",
+              "source": "openmaptiles",
+              "source-layer": "transportation",
+              "minzoom": 7,
+              "paint": {
+                "line-color": "$roadColor",
+                "line-opacity": 0.68,
+                "line-width": ["interpolate", ["linear"], ["zoom"], 7, 0.6, 14, 3.5, 19, 9.0]
+              }
+            },
+            {
+              "id": "nv-place-labels",
+              "type": "symbol",
+              "source": "openmaptiles",
+              "source-layer": "place",
+              "layout": {
+                "text-field": ["coalesce", ["get", "name:fa"], ["get", "name"]],
+                "text-size": ["interpolate", ["linear"], ["zoom"], 5, 11, 12, 15],
+                "text-max-width": 8
+              },
+              "paint": {
+                "text-color": "$labelColor",
+                "text-halo-color": "$labelHalo",
+                "text-halo-width": 1.8
+              }
+            }
+          ]
+        }""".trimIndent()
+    }
+
     private companion object {
         // OpenFreeMap's documented mobile style URL. NV adds its own building
         // extrusion layer below instead of relying on the removed /styles/3d URL.
         const val DAY_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
         const val DARK_STYLE_URL = "https://tiles.openfreemap.org/styles/dark"
+        const val SATELLITE_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        const val SATELLITE_ATTRIBUTION = "Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics"
         const val OPEN_MAP_TILES_SOURCE = "openmaptiles"
         const val BUILDING_LAYER_ID = "nv-building-3d"
         const val LOCATION_SOURCE_ID = "nv-location-source"
@@ -416,6 +514,8 @@ private class VectorMapHolder(context: Context) {
         const val MAX_TRAFFIC_LAYERS = 12
         const val MAX_CODE_LABELS = 12
         const val CAMERA_ANIMATION_MS = 650
+        val IRAN_CENTER = LatLng(32.4279, 53.6880)
+        const val IRAN_OVERVIEW_ZOOM = 5.2
         const val HOME_ZOOM = 16.5
         const val BROWSE_TILT = 42.0
         const val NAVIGATION_TILT = 58.0

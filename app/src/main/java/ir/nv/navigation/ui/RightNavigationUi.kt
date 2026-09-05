@@ -1,6 +1,7 @@
 package ir.nv.navigation.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,9 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.LocalGasStation
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material.icons.rounded.TurnLeft
 import androidx.compose.material.icons.rounded.TurnRight
@@ -134,6 +138,94 @@ fun RightNavigationBottomBar(
             Metric(formatDriveDistance(remainingDistanceMeters), "تا مقصد")
         }
     }
+}
+
+@Composable
+fun RightRouteInsightRail(
+    notices: List<RouteNotice>,
+    loading: Boolean,
+    satelliteMode: Boolean,
+    darkMode: Boolean,
+    onlineAvailable: Boolean,
+    onWeather: () -> Unit,
+    onAttractions: () -> Unit,
+    onToggleSatellite: () -> Unit,
+    onToggleTheme: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val weather = notices.firstOrNull { it.kind == RouteNotice.Kind.WEATHER && it.distanceAheadMeters <= 10_000.0 }
+    val attraction = notices.firstOrNull { it.kind == RouteNotice.Kind.ATTRACTION && it.distanceAheadMeters <= 10_000.0 }
+    Column(
+        modifier = modifier.width(72.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        InsightRailButton(
+            icon = Icons.Rounded.Cloud,
+            label = "هوا",
+            value = railValue(weather, loading),
+            accent = if (weather?.title?.startsWith("هشدار") == true) Color(0xFFFFB52E) else DriveCyan,
+            onClick = onWeather
+        )
+        InsightRailButton(
+            icon = Icons.Rounded.Explore,
+            label = "دیدنی",
+            value = railValue(attraction, loading),
+            accent = DriveLime,
+            onClick = onAttractions
+        )
+        InsightRailButton(
+            icon = Icons.Rounded.Layers,
+            label = "ماهواره",
+            value = when {
+                !onlineAvailable -> "آفلاین"
+                satelliteMode -> "فعال"
+                else -> "خاموش"
+            },
+            accent = if (satelliteMode) DriveLime else DriveCyan,
+            onClick = onToggleSatellite
+        )
+        InsightRailButton(
+            icon = if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+            label = if (darkMode) "روز" else "شب",
+            value = "نما",
+            accent = DriveCyan,
+            onClick = onToggleTheme
+        )
+    }
+}
+
+@Composable
+private fun InsightRailButton(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(13.dp),
+        color = DriveNavy,
+        border = BorderStroke(1.dp, accent.copy(alpha = .46f)),
+        shadowElevation = 7.dp
+    ) {
+        Column(
+            Modifier.padding(horizontal = 4.dp, vertical = 7.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Icon(icon, label, tint = accent, modifier = Modifier.size(20.dp))
+            Text(label, color = DriveText, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(value, color = DriveMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+private fun railValue(notice: RouteNotice?, loading: Boolean): String = when {
+    notice != null -> if (notice.distanceAheadMeters >= 9_500.0) "۱۰ km" else "${(notice.distanceAheadMeters / 1_000.0).coerceAtLeast(.1).let { String.format("%.1f", it) }} km"
+    loading -> "…"
+    else -> "—"
 }
 
 @Composable
