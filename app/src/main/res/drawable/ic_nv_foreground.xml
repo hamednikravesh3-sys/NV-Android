@@ -5,15 +5,28 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
+    <!-- Black N -->
     <path
-        android:fillColor="#19D8FF"
-        android:pathData="M24,78 L24,31 C24,25.5 28.5,21 34,21 L39,21 L67,58 L67,29 L77,29 L77,78 L68,78 L34,35 L34,78 Z" />
+        android:fillColor="#101A24"
+        android:pathData="M16,78 L16,34 C16,29.6 19.6,26 24,26 L31,26 L55,58 L55,30 L66,30 L66,78 L56,78 L27,40 L27,78 Z" />
 
+    <!-- Emerald V body -->
     <path
-        android:fillColor="#D7FF5B"
-        android:pathData="M61,29 L73,29 L82,49 L92,27 L103,27 L87,61 L80,78 L69,78 L77,59 Z" />
+        android:fillColor="#00C83A"
+        android:pathData="M50,31 L61,31 L72,53 L88,36 L96,43 L70,76 C67.3,79.4 61.9,79 59.8,75.2 Z" />
 
+    <!-- Bright arrow head -->
     <path
-        android:fillColor="#F7FCFF"
-        android:pathData="M45,24 L53,24 L67,42 L67,52 Z" />
+        android:fillColor="#52F43E"
+        android:pathData="M75,34 L99,18 L92,45 L83,39 L72,53 L65,48 Z" />
+
+    <!-- Dark facet for 3D effect -->
+    <path
+        android:fillColor="#008C2C"
+        android:pathData="M72,53 L92,45 L70,76 L62,64 Z" />
+
+    <!-- Highlight facet -->
+    <path
+        android:fillColor="#A4FF67"
+        android:pathData="M75,34 L99,18 L83,39 Z" />
 </vector>
