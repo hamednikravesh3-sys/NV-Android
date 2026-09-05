@@ -156,8 +156,8 @@ fun RightRouteInsightRail(
     val weather = notices.firstOrNull { it.kind == RouteNotice.Kind.WEATHER && it.distanceAheadMeters <= 10_000.0 }
     val attraction = notices.firstOrNull { it.kind == RouteNotice.Kind.ATTRACTION && it.distanceAheadMeters <= 10_000.0 }
     Column(
-        modifier = modifier.width(72.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier.width(68.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         InsightRailButton(
@@ -174,24 +174,50 @@ fun RightRouteInsightRail(
             accent = DriveLime,
             onClick = onAttractions
         )
-        InsightRailButton(
-            icon = Icons.Rounded.Layers,
-            label = "ماهواره",
-            value = when {
-                !onlineAvailable -> "آفلاین"
-                satelliteMode -> "فعال"
-                else -> "خاموش"
-            },
-            accent = if (satelliteMode) DriveLime else DriveCyan,
-            onClick = onToggleSatellite
-        )
-        InsightRailButton(
-            icon = if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
-            label = if (darkMode) "روز" else "شب",
-            value = "نما",
-            accent = DriveCyan,
-            onClick = onToggleTheme
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            InsightRailIconButton(
+                icon = Icons.Rounded.Layers,
+                label = when {
+                    !onlineAvailable -> "نمای ماهواره‌ای آفلاین است"
+                    satelliteMode -> "خاموش کردن نمای ماهواره‌ای"
+                    else -> "روشن کردن نمای ماهواره‌ای"
+                },
+                accent = when {
+                    !onlineAvailable -> DriveMuted
+                    satelliteMode -> DriveLime
+                    else -> DriveCyan
+                },
+                onClick = onToggleSatellite
+            )
+            InsightRailIconButton(
+                icon = if (darkMode) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                label = if (darkMode) "نمای روز" else "نمای شب",
+                accent = DriveCyan,
+                onClick = onToggleTheme
+            )
+        }
+    }
+}
+
+@Composable
+private fun InsightRailIconButton(
+    icon: ImageVector,
+    label: String,
+    accent: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.size(32.dp).clickable(onClick = onClick),
+        shape = CircleShape,
+        color = DriveNavy,
+        border = BorderStroke(1.dp, accent.copy(alpha = .5f)),
+        shadowElevation = 5.dp
+    ) {
+        Icon(icon, label, tint = accent, modifier = Modifier.padding(7.dp))
     }
 }
 
@@ -211,7 +237,7 @@ private fun InsightRailButton(
         shadowElevation = 7.dp
     ) {
         Column(
-            Modifier.padding(horizontal = 4.dp, vertical = 7.dp),
+            Modifier.padding(horizontal = 3.dp, vertical = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
