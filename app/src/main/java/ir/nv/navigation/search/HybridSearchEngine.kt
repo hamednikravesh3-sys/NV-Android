@@ -6,6 +6,12 @@ fun interface PlaceSearchProvider {
     suspend fun search(query: String): List<Place>
 }
 
+data class HybridSearchResult(
+    val items: List<Place>,
+    val onlineAttempted: Boolean,
+    val onlineFailed: Boolean
+)
+
 class HybridSearchEngine(
     private val offline: PlaceSearchProvider,
     private val online: PlaceSearchProvider
@@ -15,15 +21,29 @@ class HybridSearchEngine(
         onlineAvailable: Boolean,
         preferOffline: Boolean,
         limit: Int = 30
-    ): List<Place> {
+    ): List<Place> = searchDetailed(query, onlineAvailable, preferOffline, limit).items
+
+    suspend fun searchDetailed(
+        query: String,
+        onlineAvailable: Boolean,
+        preferOffline: Boolean,
+        limit: Int = 30
+    ): HybridSearchResult {
         val clean = query.trim()
-        if (clean.isEmpty()) return emptyList()
+        if (clean.isEmpty()) return HybridSearchResult(emptyList(), false, false)
 
         val local = runCatching { offline.search(clean) }.getOrDefault(emptyList())
-        if (!onlineAvailable || preferOffline) return deduplicate(local, limit)
+        if (!onlineAvailable || preferOffline) {
+            return HybridSearchResult(deduplicate(local, limit), false, false)
+        }
 
-        val remote = runCatching { online.search(clean) }.getOrDefault(emptyList())
-        return deduplicate(local + remote, limit)
+        val remoteResult = runCatching { online.search(clean) }
+        val remote = remoteResult.getOrDefault(emptyList())
+        return HybridSearchResult(
+            items = deduplicate(local + remote, limit),
+            onlineAttempted = true,
+            onlineFailed = remoteResult.isFailure
+        )
     }
 
     private fun deduplicate(values: List<Place>, limit: Int): List<Place> = values
