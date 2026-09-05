@@ -11,13 +11,21 @@ class NvNavigationPlatform(
     routerProvider: () -> AStarRouter?,
     liveTrafficService: LiveTrafficService
 ) {
+    private val trafficProvider = LiveTrafficProviderAdapter(liveTrafficService)
+
     val routeCoordinator = HybridRouteCoordinator(
         onlineProvider = OnlineRouteProviderAdapter(onlineService),
         offlineProvider = OfflineRouteProviderAdapter(routerProvider),
-        trafficProvider = LiveTrafficProviderAdapter(liveTrafficService),
+        trafficProvider = trafficProvider,
         ranker = NvAdaptiveRouteRanker(),
         signalProvider = WeatherRouteSignalProvider()
     )
 
     val reroutePolicy = ContinuousReroutePolicy()
+
+    val continuousRerouteEngine = ContinuousRerouteEngine(
+        coordinator = routeCoordinator,
+        trafficProvider = trafficProvider,
+        policy = reroutePolicy
+    )
 }
