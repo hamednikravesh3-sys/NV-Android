@@ -31,13 +31,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes osmium-tool sqlite3
           python -m pip install --disable-pip-version-check "osmium>=4,<5"
-      - name: Download Iran-only source data
+      - name: Download latest Iran source data
         run: |
           mkdir -p work dist
           curl --fail --location --retry 5 --output work/iran.osm.pbf \
             https://download.geofabrik.de/asia/iran-latest.osm.pbf
           curl --fail --location --retry 5 --output work/iran.map \
             https://download.mapsforge.org/maps/v5/asia/iran.map
+          osmium fileinfo work/iran.osm.pbf | tee dist/osm-source-info.txt
       - name: Build deterministic named-place index
         run: |
           osmium tags-filter --overwrite --output work/named.osm.pbf \
@@ -80,4 +81,4 @@ jobs:
           gh release view map-v1 >/dev/null 2>&1 || \
             gh release create map-v1 --title "NV Iran offline data" \
               --notes "Iran-only OpenStreetMap vector map, named-place index and directed offline-routing graph."
-          gh release upload map-v1 dist/iran.nvpack dist/iran.nvpack.sha256 --clobber
+          gh release upload map-v1 dist/iran.nvpack dist/iran.nvpack.sha256 dist/osm-source-info.txt --clobber
