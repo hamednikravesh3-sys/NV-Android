@@ -102,7 +102,7 @@ object RouteProgressEngine {
     }
 
     private const val EARTH_RADIUS_METERS = 6_371_000.0
-    private const val OFF_ROUTE_METERS = 80.0
+    private const val OFF_ROUTE_METERS = 75.0
     private const val MANEUVER_PASSED_TOLERANCE_METERS = 15.0
 
     private data class SegmentMatch(
