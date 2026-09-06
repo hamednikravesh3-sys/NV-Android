@@ -1,0 +1,105 @@
+name: Apply V13 map interaction fix
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/v14-map-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch V13 map behavior
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              s = p.read_text()
+              if old not in s:
+                  raise SystemExit(f'pattern not found in {path}: {old[:120]!r}')
+              p.write_text(s.replace(old, new, count))
+
+          # V13: receive map double-tap and make it the active bookmark/pin.
+          p = Path('app/src/main/java/ir/nv/navigation/ui/NvReferenceV13.kt')
+          s = p.read_text()
+          s = s.replace('import ir.nv.navigation.map.NvCodePickerMap\n', 'import ir.nv.navigation.map.NvCodePickerMap\nimport ir.nv.navigation.map.NvMapInteractionBus\n')
+          marker = ' fun savePin(){val c=pin?:return;val p=Place(-8300000000L,"سنجاق NV",c,"bookmark:pin");store.save(p);bookmark=p;qr=null;error=null;picker=false}\n'
+          inject = marker + ' val doubleTapListener=remember{ { c:Coordinate -> pin=c; val p=Place(-8300000000L,"پرچم NV",c,"bookmark:flag"); store.save(p); bookmark=p; qr=null; error=null; NvMapInteractionBus.recenterOn(c) } }\n DisposableEffect(Unit){ NvMapInteractionBus.onDoubleTap=doubleTapListener; onDispose{NvMapInteractionBus.clearListener(doubleTapListener)} }\n'
+          if marker not in s: raise SystemExit('V13 marker not found')
+          s = s.replace(marker, inject, 1)
+          p.write_text(s)
+
+          # Remove the old fixed-center car overlay; the car will be rendered at the GPS coordinate by the map.
+          p = Path('app/src/main/java/ir/nv/navigation/ui/NvReferenceV8.kt')
+          s = p.read_text()
+          old = '        if (state.navigationActive && state.currentLocation != null && state.followNavigation) V8CarMarker(state.route?.maneuvers?.getOrNull(state.maneuverIndex)?.direction, state.distanceToNextManeuverMeters, Modifier.align(Alignment.Center))\n'
+          if old not in s: raise SystemExit('V8 fixed car line not found')
+          p.write_text(s.replace(old, '', 1))
+
+          # Online MapLibre: double-tap flag + car symbol at real GPS coordinate.
+          p = Path('app/src/main/java/ir/nv/navigation/map/OnlineIranMap.kt')
+          s = p.read_text()
+          s = s.replace('import android.graphics.Color\nimport android.view.MotionEvent\n', 'import android.graphics.Bitmap\nimport android.graphics.Canvas\nimport android.graphics.Color\nimport android.graphics.PointF\nimport android.view.GestureDetector\nimport android.view.MotionEvent\n')
+          s = s.replace('import androidx.compose.ui.viewinterop.AndroidView\n', 'import androidx.compose.ui.viewinterop.AndroidView\nimport androidx.core.content.ContextCompat\nimport ir.nv.navigation.R\n')
+          old = '    val holder = remember { VectorMapHolder(context.applicationContext) }\n\n    DisposableEffect(holder) {'
+          new = '''    val holder = remember { VectorMapHolder(context.applicationContext) }\n    val doubleTapDetector = remember(holder) {\n        GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {\n            override fun onDown(e: MotionEvent): Boolean = true\n            override fun onDoubleTap(e: MotionEvent): Boolean {\n                holder.placeFlagAtScreen(e.x, e.y)?.let(NvMapInteractionBus::emitDoubleTap)\n                return true\n            }\n        })\n    }\n\n    DisposableEffect(holder) {'''
+          if old not in s: raise SystemExit('Online holder marker not found')
+          s = s.replace(old, new, 1)
+          old = '            view.setOnTouchListener { _, event ->\n                if (navigationActive && ('
+          new = '            view.setOnTouchListener { _, event ->\n                doubleTapDetector.onTouchEvent(event)\n                if (navigationActive && ('
+          if old not in s: raise SystemExit('Online touch marker not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('private class VectorMapHolder(context: Context) {\n    val mapView: MapView\n', 'private class VectorMapHolder(context: Context) {\n    private val appContext = context\n    val mapView: MapView\n')
+          s = s.replace('    private var locationSource: GeoJsonSource? = null\n    private var placeSource: GeoJsonSource? = null\n', '    private var locationSource: GeoJsonSource? = null\n    private var locationCircleLayer: CircleLayer? = null\n    private var carLayer: SymbolLayer? = null\n    private var flagSource: GeoJsonSource? = null\n    private var flagLayer: SymbolLayer? = null\n    private var flagCoordinate: Coordinate? = null\n    private var placeSource: GeoJsonSource? = null\n')
+          old = '''        locationSource = GeoJsonSource(LOCATION_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)\n        loadedStyle.addLayer(\n            CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(\n                PropertyFactory.circleColor(Color.rgb(24, 212, 255)),\n                PropertyFactory.circleRadius(9f),\n                PropertyFactory.circleStrokeColor(Color.WHITE),\n                PropertyFactory.circleStrokeWidth(3f)\n            )\n        )\n\n        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)'''
+          new = '''        locationSource = GeoJsonSource(LOCATION_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)\n        locationCircleLayer = CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(\n            PropertyFactory.circleColor(Color.rgb(24, 212, 255)),\n            PropertyFactory.circleRadius(9f),\n            PropertyFactory.circleStrokeColor(Color.WHITE),\n            PropertyFactory.circleStrokeWidth(3f)\n        ).also(loadedStyle::addLayer)\n        loadedStyle.addImage(CAR_IMAGE_ID, carBitmap(appContext))\n        carLayer = SymbolLayer(CAR_LAYER_ID, LOCATION_SOURCE_ID).withProperties(\n            PropertyFactory.iconImage(CAR_IMAGE_ID),\n            PropertyFactory.iconSize(0.62f),\n            PropertyFactory.iconAllowOverlap(true),\n            PropertyFactory.iconIgnorePlacement(true),\n            PropertyFactory.iconOpacity(0f)\n        ).also(loadedStyle::addLayer)\n\n        flagSource = GeoJsonSource(FLAG_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)\n        flagLayer = SymbolLayer(FLAG_LAYER_ID, FLAG_SOURCE_ID).withProperties(\n            PropertyFactory.textField("🚩"),\n            PropertyFactory.textSize(34f),\n            PropertyFactory.textAllowOverlap(true),\n            PropertyFactory.textIgnorePlacement(true)\n        ).also(loadedStyle::addLayer)\n\n        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)'''
+          if old not in s: raise SystemExit('Online location layer block not found')
+          s = s.replace(old, new, 1)
+          old = '''    private fun renderLocation() {\n        val point = currentLocation?.let {\n            Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))\n        }\n        locationSource?.setGeoJson(\n            if (point == null) emptyFeatures() else FeatureCollection.fromFeature(point)\n        )\n    }\n\n    private fun updateCamera(frameRoute: Boolean) {'''
+          new = '''    private fun renderLocation() {\n        val point = currentLocation?.let {\n            Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))\n        }\n        locationSource?.setGeoJson(\n            if (point == null) emptyFeatures() else FeatureCollection.fromFeature(point)\n        )\n        locationCircleLayer?.setProperties(PropertyFactory.circleOpacity(if (navigationActive) 0f else 1f))\n        carLayer?.setProperties(\n            PropertyFactory.iconOpacity(if (navigationActive && point != null) 1f else 0f),\n            PropertyFactory.iconRotate(if (bearingDegrees.isFinite()) bearingDegrees else 0f)\n        )\n        renderFlag()\n    }\n\n    fun placeFlagAtScreen(x: Float, y: Float): Coordinate? {\n        val readyMap = map ?: return null\n        val latLng = readyMap.projection.fromScreenLocation(PointF(x, y))\n        val coordinate = Coordinate(latLng.latitude, latLng.longitude)\n        flagCoordinate = coordinate\n        renderFlag()\n        return coordinate\n    }\n\n    private fun renderFlag() {\n        val feature = flagCoordinate?.let { Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude)) }\n        flagSource?.setGeoJson(if (feature == null) emptyFeatures() else FeatureCollection.fromFeature(feature))\n    }\n\n    private fun carBitmap(context: Context): Bitmap {\n        val drawable = requireNotNull(ContextCompat.getDrawable(context, R.drawable.nv_car_top))\n        val bitmap = Bitmap.createBitmap(96, 128, Bitmap.Config.ARGB_8888)\n        val canvas = Canvas(bitmap)\n        drawable.setBounds(0, 0, canvas.width, canvas.height)\n        drawable.draw(canvas)\n        return bitmap\n    }\n\n    private fun updateCamera(frameRoute: Boolean) {'''
+          if old not in s: raise SystemExit('Online renderLocation block not found')
+          s = s.replace(old, new, 1)
+          # Add constants next to existing location constants.
+          s = s.replace('        const val LOCATION_SOURCE_ID = "nv-location-source"\n        const val LOCATION_LAYER_ID = "nv-location-layer"\n', '        const val LOCATION_SOURCE_ID = "nv-location-source"\n        const val LOCATION_LAYER_ID = "nv-location-layer"\n        const val CAR_IMAGE_ID = "nv-car-image"\n        const val CAR_LAYER_ID = "nv-car-layer"\n        const val FLAG_SOURCE_ID = "nv-flag-source"\n        const val FLAG_LAYER_ID = "nv-flag-layer"\n')
+          p.write_text(s)
+
+          # Satellite: double tap emits a flag and keep flag visible as emoji label.
+          p = Path('app/src/main/java/ir/nv/navigation/map/SatelliteIranMap.kt')
+          s = p.read_text()
+          s = s.replace('import android.graphics.Color\nimport android.view.MotionEvent\n', 'import android.graphics.Color\nimport android.graphics.PointF\nimport android.view.GestureDetector\nimport android.view.MotionEvent\n')
+          old = '    val holder = remember { SatelliteMapHolder(context.applicationContext) }\n    DisposableEffect(holder) { onDispose(holder::destroy) }'
+          new = '''    val holder = remember { SatelliteMapHolder(context.applicationContext) }\n    val doubleTapDetector = remember(holder) {\n        GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {\n            override fun onDown(e: MotionEvent): Boolean = true\n            override fun onDoubleTap(e: MotionEvent): Boolean {\n                holder.placeFlagAtScreen(e.x, e.y)?.let(NvMapInteractionBus::emitDoubleTap)\n                return true\n            }\n        })\n    }\n    DisposableEffect(holder) { onDispose(holder::destroy) }'''
+          if old not in s: raise SystemExit('Satellite holder marker not found')
+          s = s.replace(old, new, 1)
+          old = '            view.setOnTouchListener { _, event ->\n                if (navigationActive && ('
+          new = '            view.setOnTouchListener { _, event ->\n                doubleTapDetector.onTouchEvent(event)\n                if (navigationActive && ('
+          if old not in s: raise SystemExit('Satellite touch marker not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('    private var placeSource: GeoJsonSource? = null\n', '    private var placeSource: GeoJsonSource? = null\n    private var flagSource: GeoJsonSource? = null\n    private var flagCoordinate: Coordinate? = null\n')
+          old = '''        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loaded::addSource)\n        loaded.addLayer(\n            CircleLayer(PLACE_CIRCLE_LAYER_ID, PLACE_SOURCE_ID).withProperties('''
+          new = '''        flagSource = GeoJsonSource(FLAG_SOURCE_ID, emptyFeatures()).also(loaded::addSource)\n        loaded.addLayer(\n            SymbolLayer(FLAG_LAYER_ID, FLAG_SOURCE_ID).withProperties(\n                PropertyFactory.textField("🚩"),\n                PropertyFactory.textSize(34f),\n                PropertyFactory.textAllowOverlap(true),\n                PropertyFactory.textIgnorePlacement(true)\n            )\n        )\n\n        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loaded::addSource)\n        loaded.addLayer(\n            CircleLayer(PLACE_CIRCLE_LAYER_ID, PLACE_SOURCE_ID).withProperties('''
+          if old not in s: raise SystemExit('Satellite place block not found')
+          s = s.replace(old, new, 1)
+          old = '    private fun updateCamera(frameRoute: Boolean) {'
+          new = '''    fun placeFlagAtScreen(x: Float, y: Float): Coordinate? {\n        val readyMap = map ?: return null\n        val latLng = readyMap.projection.fromScreenLocation(PointF(x, y))\n        val coordinate = Coordinate(latLng.latitude, latLng.longitude)\n        flagCoordinate = coordinate\n        val feature = Feature.fromGeometry(Point.fromLngLat(coordinate.longitude, coordinate.latitude))\n        flagSource?.setGeoJson(FeatureCollection.fromFeature(feature))\n        return coordinate\n    }\n\n    private fun updateCamera(frameRoute: Boolean) {'''
+          if old not in s: raise SystemExit('Satellite updateCamera marker not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('        const val PLACE_LABEL_LAYER_ID = "nv9-sat-place-label"\n', '        const val PLACE_LABEL_LAYER_ID = "nv9-sat-place-label"\n        const val FLAG_SOURCE_ID = "nv9-sat-flag-source"\n        const val FLAG_LAYER_ID = "nv9-sat-flag-layer"\n')
+          p.write_text(s)
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "NV Build Bot"
+          git config user.email "actions@github.com"
+          git add app/src/main/java/ir/nv/navigation
+          git commit -m "Fix V13 double-tap flag and GPS car tracking"
+          git push
