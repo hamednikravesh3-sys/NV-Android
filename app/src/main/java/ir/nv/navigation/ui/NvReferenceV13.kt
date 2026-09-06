@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkAdded
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Share
@@ -23,11 +24,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.data.NvBookmarkStore
 import ir.nv.navigation.data.NvCodeAllocationService
 import ir.nv.navigation.data.NvLocalSequentialCodeAllocator
 import ir.nv.navigation.data.NvQrShareManager
+import ir.nv.navigation.map.NvCodePickerMap
 import ir.nv.navigation.ui.theme.AppThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,12 +42,7 @@ private val V13Gold = Color(0xFFFFB52E)
 private val V13Green = Color(0xFF43E66B)
 
 @Composable
-fun NvReferenceV13(
-    darkMode: Boolean,
-    themeMode: AppThemeMode,
-    onThemeModeChange: (AppThemeMode) -> Unit,
-    viewModel: NvViewModel
-) {
+fun NvReferenceV13(darkMode: Boolean, themeMode: AppThemeMode, onThemeModeChange: (AppThemeMode) -> Unit, viewModel: NvViewModel) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -52,222 +50,80 @@ fun NvReferenceV13(
     val allocator = remember { NvCodeAllocationService() }
     val localAllocator = remember { NvLocalSequentialCodeAllocator(context.applicationContext) }
     val qrManager = remember { NvQrShareManager(context) }
-
     var bookmark by remember { mutableStateOf(bookmarkStore.load()) }
+    var pickerVisible by remember { mutableStateOf(false) }
+    var pin by remember { mutableStateOf<Coordinate?>(bookmark?.coordinate ?: state.currentLocation ?: state.destination?.coordinate ?: state.origin?.coordinate) }
     var qrDialog by remember { mutableStateOf(false) }
     var qr by remember { mutableStateOf<NvQrShareManager.SavedQr?>(null) }
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var locatePending by remember { mutableStateOf(false) }
-    var previousOrigin by remember { mutableStateOf<Place?>(null) }
 
-    val candidate = state.destination ?: state.currentLocation?.let {
-        Place(-8_300_000_001L, "موقعیت فعلی من", it, "bookmark:current")
-    } ?: state.origin
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        if (permissions.values.any { it }) {
-            previousOrigin = state.origin
-            locatePending = true
-            viewModel.useCurrentLocationAsOrigin()
-        }
+    fun savePin() {
+        val c = pin ?: return
+        val p = Place(-8_300_000_000L, "سنجاق NV", c, "bookmark:pin")
+        bookmarkStore.save(p); bookmark = p; qr = null; error = null; pickerVisible = false
+    }
+    fun useCurrentLocation() {
+        state.currentLocation?.let { c -> pin = c; val p = Place(-8_300_000_000L, "موقعیت فعلی من", c, "bookmark:current"); bookmarkStore.save(p); bookmark = p; qr = null; error = null; pickerVisible = false }
     }
 
-    fun locateMe() {
-        if (state.currentLocation != null) {
-            viewModel.recenterNavigation()
-            return
-        }
-        val granted =
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            previousOrigin = state.origin
-            locatePending = true
-            viewModel.useCurrentLocationAsOrigin()
-        } else {
-            permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-        }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+        if (permissions.values.any { it }) viewModel.useCurrentLocationAsOrigin()
     }
-
-    LaunchedEffect(state.currentLocation, locatePending) {
-        if (locatePending && state.currentLocation != null) {
-            viewModel.recenterNavigation()
-            previousOrigin?.let { old ->
-                if (state.origin?.coordinate != old.coordinate) viewModel.selectOrigin(old)
-            }
-            locatePending = false
-        }
+    fun requestLocation() {
+        if (state.currentLocation != null) { useCurrentLocation(); viewModel.recenterNavigation(); return }
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (granted) viewModel.useCurrentLocationAsOrigin() else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
+    LaunchedEffect(state.currentLocation) { if (state.currentLocation != null && state.locating.not()) pin = state.currentLocation }
 
     Box(Modifier.fillMaxSize()) {
-        NvReferenceV8(
-            darkMode = darkMode,
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            viewModel = viewModel
-        )
-
-        Surface(
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp).size(58.dp),
-            color = V13Panel,
-            shape = CircleShape,
-            border = BorderStroke(2.dp, V13Cyan),
-            shadowElevation = 8.dp
-        ) {
-            IconButton(onClick = ::locateMe) {
-                if (state.locating) CircularProgressIndicator(Modifier.size(25.dp), strokeWidth = 3.dp, color = V13Cyan)
-                else Icon(Icons.Rounded.MyLocation, "موقعیت من", tint = V13Cyan, modifier = Modifier.size(30.dp))
-            }
-        }
-
-        // Bottom toolbar extension: Bookmark first, QR only after a bookmark exists.
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 72.dp),
-            color = V13Panel,
-            shape = RoundedCornerShape(22.dp),
-            border = BorderStroke(1.dp, V13Cyan.copy(alpha = .45f)),
-            shadowElevation = 10.dp
-        ) {
-            Row(
-                Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                IconButton(
-                    onClick = {
-                        candidate?.let {
-                            bookmarkStore.save(it)
-                            bookmark = it
-                            qr = null
-                            error = null
-                        }
-                    },
-                    enabled = candidate != null
-                ) {
-                    Icon(
-                        if (bookmark != null) Icons.Rounded.BookmarkAdded else Icons.Rounded.Bookmark,
-                        "بوک‌مارک مکان",
-                        tint = if (bookmark != null) V13Gold else if (candidate != null) Color.White else Color.Gray
-                    )
+        NvReferenceV8(darkMode, themeMode, onThemeModeChange, viewModel)
+        if (!state.navigationActive) {
+            Surface(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 72.dp), color = V13Panel, shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, V13Cyan.copy(alpha=.45f)), shadowElevation = 10.dp) {
+                Row(Modifier.padding(horizontal=6.dp, vertical=3.dp), verticalAlignment=Alignment.CenterVertically) {
+                    IconButton(onClick={ pickerVisible=true }) { Icon(Icons.Rounded.LocationOn,"سنجاق",tint=V13Cyan) }
+                    IconButton(onClick={ requestLocation() }) { Icon(Icons.Rounded.MyLocation,"موقعیت من",tint=V13Cyan) }
+                    IconButton(onClick={ if(pin!=null) savePin() }, enabled=pin!=null) { Icon(if(bookmark!=null) Icons.Rounded.BookmarkAdded else Icons.Rounded.Bookmark,"بوک مارک",tint=if(bookmark!=null)V13Gold else Color.White) }
+                    IconButton(onClick={ qrDialog=true; qr=null; error=null }, enabled=bookmark!=null) { Icon(Icons.Rounded.QrCode2,"QR",tint=if(bookmark!=null)V13Green else Color.Gray) }
                 }
-                VerticalDivider(Modifier.height(28.dp), color = Color.White.copy(alpha = .2f))
-                IconButton(
-                    onClick = {
-                        if (bookmark != null) {
-                            qrDialog = true
-                            error = null
-                            qr = null
-                        }
-                    },
-                    enabled = bookmark != null
-                ) {
-                    Icon(
-                        Icons.Rounded.QrCode2,
-                        "QR بوک‌مارک",
-                        tint = if (bookmark != null) V13Green else Color.Gray
-                    )
-                }
-            }
-        }
-
-        if (bookmark != null && !state.navigationActive) {
-            Surface(
-                modifier = Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 10.dp, bottom = 132.dp),
-                color = V13Panel,
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, V13Gold.copy(alpha = .65f))
-            ) {
-                Text(
-                    "بوک‌مارک: ${bookmark!!.name.take(24)}",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
     }
 
-    if (qrDialog) {
-        AlertDialog(
-            onDismissRequest = { if (!working) qrDialog = false },
-            containerColor = V13Panel,
-            title = { Text("QR بوک‌مارک NV", color = Color.White, fontWeight = FontWeight.Black) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    val savedBookmark = bookmark
-                    Text(savedBookmark?.name.orEmpty(), color = Color.White)
-                    savedBookmark?.let {
-                        Text("%.6f, %.6f".format(it.coordinate.latitude, it.coordinate.longitude), color = Color(0xFFB7C9D4))
+    if (pickerVisible) {
+        Dialog(onDismissRequest={pickerVisible=false}) {
+            Surface(Modifier.fillMaxWidth().fillMaxHeight(.82f), color=V13Panel, shape=RoundedCornerShape(24.dp)) {
+                Column {
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        NvCodePickerMap(context, pin, state.satelliteMode, { pin=it }, Modifier.fillMaxSize())
                     }
-                    qr?.let { saved ->
-                        NvQrCode(saved.payload, Modifier.size(220.dp))
-                        Text("NV:${saved.code}", color = V13Green, fontWeight = FontWeight.Black)
-                    }
-                    error?.let { Text(it, color = Color(0xFFFF6B78), fontWeight = FontWeight.Bold) }
-                    if (qr == null) {
-                        Button(
-                            onClick = {
-                                val savedBookmark = bookmark ?: return@Button
-                                working = true
-                                error = null
-                                scope.launch {
-                                    val result = withContext(Dispatchers.IO) {
-                                        val existingCode = savedBookmark.personalCode
-                                        if (!existingCode.isNullOrBlank()) {
-                                            qrManager.createAndSave(existingCode, savedBookmark.name, savedBookmark.coordinate)
-                                        } else {
-                                            val allocation = if (allocator.isConfigured()) {
-                                                allocator.allocateOnline(savedBookmark.name, savedBookmark.coordinate)
-                                            } else {
-                                                val code = localAllocator.nextCode(state.personalPlaces.mapNotNull { it.personalCode })
-                                                Result.success(NvCodeAllocationService.Allocation(code, savedBookmark.name, savedBookmark.coordinate, false))
-                                            }
-                                            allocation.fold(
-                                                onSuccess = { allocated ->
-                                                    viewModel.savePersonalCode(savedBookmark, allocated.code)
-                                                    bookmarkStore.attachCode(allocated.code)
-                                                    val coded = savedBookmark.copy(personalCode = allocated.code)
-                                                    bookmark = coded
-                                                    qrManager.createAndSave(allocated.code, coded.name, coded.coordinate)
-                                                },
-                                                onFailure = { Result.failure(it) }
-                                            )
-                                        }
-                                    }
-                                    result.onSuccess { qr = it }.onFailure { error = it.message ?: "ساخت QR ناموفق بود" }
-                                    working = false
-                                }
-                            },
-                            enabled = !working,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            if (working) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            else Text("ساخت QR برای بوک‌مارک", fontWeight = FontWeight.Black)
-                        }
-                    } else {
-                        Button(
-                            onClick = { qr?.let(qrManager::share) },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = V13Green, contentColor = Color.Black)
-                        ) {
-                            Icon(Icons.Rounded.Share, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("اشتراک‌گذاری", fontWeight = FontWeight.Black)
-                        }
+                    pin?.let { Text("سنجاق: %.6f, %.6f".format(it.latitude,it.longitude), color=Color.White, modifier=Modifier.padding(12.dp)) }
+                    Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick={requestLocation()}, modifier=Modifier.weight(1f)) { Icon(Icons.Rounded.MyLocation,null); Text("موقعیت من") }
+                        Button(onClick={savePin}, enabled=pin!=null, modifier=Modifier.weight(1f)) { Icon(Icons.Rounded.Bookmark,null); Text("ثبت سنجاق") }
                     }
                 }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { if (!working) qrDialog = false }) { Text("بستن") }
             }
-        )
+        }
     }
+
+    if (qrDialog) AlertDialog(
+        onDismissRequest={if(!working)qrDialog=false}, containerColor=V13Panel,
+        title={Text("QR مکان NV",color=Color.White,fontWeight=FontWeight.Black)},
+        text={Column(verticalArrangement=Arrangement.spacedBy(10.dp),horizontalAlignment=Alignment.CenterHorizontally){
+            bookmark?.let { Text(it.name,color=Color.White); Text("%.6f, %.6f".format(it.coordinate.latitude,it.coordinate.longitude),color=Color.LightGray) }
+            qr?.let { NvQrCode(it.payload,Modifier.size(220.dp)); Text("NV:${it.code}",color=V13Green,fontWeight=FontWeight.Black) }
+            error?.let { Text(it,color=Color.Red) }
+            if(qr==null) Button(onClick={
+                val b=bookmark?:return@Button; working=true; scope.launch { val result=withContext(Dispatchers.IO){
+                    val existing=b.personalCode
+                    if(!existing.isNullOrBlank()) qrManager.createAndSave(existing,b.name,b.coordinate) else {
+                        val allocation=if(allocator.isConfigured()) allocator.allocateOnline(b.name,b.coordinate) else Result.success(NvCodeAllocationService.Allocation(localAllocator.nextCode(state.personalPlaces.mapNotNull{it.personalCode}),b.name,b.coordinate,false))
+                        allocation.fold(onSuccess={a->viewModel.savePersonalCode(b,a.code);bookmarkStore.attachCode(a.code);bookmark=b.copy(personalCode=a.code);qrManager.createAndSave(a.code,b.name,b.coordinate)},onFailure={Result.failure(it)})
+                    }}; result.onSuccess{qr=it}.onFailure{error=it.message?:"ساخت QR ناموفق بود"};working=false }
+            },enabled=!working,modifier=Modifier.fillMaxWidth()){Text("ساخت کد NV و QR",fontWeight=FontWeight.Black)}
+            else Button(onClick={qr?.let(qrManager::share)},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=V13Green,contentColor=Color.Black)){Icon(Icons.Rounded.Share,null);Text(" اشتراک‌گذاری",fontWeight=FontWeight.Black)}
+        }}, confirmButton={}, dismissButton={TextButton(onClick={if(!working)qrDialog=false}){Text("بستن")}}
+    )
 }
