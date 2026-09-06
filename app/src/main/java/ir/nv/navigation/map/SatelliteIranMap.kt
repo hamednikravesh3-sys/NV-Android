@@ -2,6 +2,8 @@ package ir.nv.navigation.map
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.PointF
+import android.view.GestureDetector
 import android.view.MotionEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -46,6 +48,15 @@ fun SatelliteIranMap(
     modifier: Modifier = Modifier
 ) {
     val holder = remember { SatelliteMapHolder(context.applicationContext) }
+    val doubleTapDetector = remember(holder) {
+        GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                holder.placeFlagAtScreen(e.x, e.y)?.let(NvMapInteractionBus::emitDoubleTap)
+                return true
+            }
+        })
+    }
     DisposableEffect(holder) { onDispose(holder::destroy) }
 
     AndroidView(
@@ -53,6 +64,7 @@ fun SatelliteIranMap(
         modifier = modifier,
         update = { view ->
             view.setOnTouchListener { _, event ->
+                doubleTapDetector.onTouchEvent(event)
                 if (navigationActive && (event.actionMasked == MotionEvent.ACTION_MOVE || event.actionMasked == MotionEvent.ACTION_POINTER_DOWN)) {
                     onManualGesture()
                 }
@@ -81,6 +93,8 @@ private class SatelliteMapHolder(context: Context) {
     private val routeLayers = mutableListOf<LineLayer>()
     private val routeGlowLayers = mutableListOf<LineLayer>()
     private var placeSource: GeoJsonSource? = null
+    private var flagSource: GeoJsonSource? = null
+    private var flagCoordinate: Coordinate? = null
 
     private var routes: List<Route> = emptyList()
     private var selectedRouteIndex = 0
@@ -162,6 +176,16 @@ private class SatelliteMapHolder(context: Context) {
             routeLayers += line
         }
 
+        flagSource = GeoJsonSource(FLAG_SOURCE_ID, emptyFeatures()).also(loaded::addSource)
+        loaded.addLayer(
+            SymbolLayer(FLAG_LAYER_ID, FLAG_SOURCE_ID).withProperties(
+                PropertyFactory.textField("🚩"),
+                PropertyFactory.textSize(34f),
+                PropertyFactory.textAllowOverlap(true),
+                PropertyFactory.textIgnorePlacement(true)
+            )
+        )
+
         placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loaded::addSource)
         loaded.addLayer(
             CircleLayer(PLACE_CIRCLE_LAYER_ID, PLACE_SOURCE_ID).withProperties(
@@ -240,6 +264,16 @@ private class SatelliteMapHolder(context: Context) {
         placeSource?.setGeoJson(FeatureCollection.fromFeatures(features))
     }
 
+    fun placeFlagAtScreen(x: Float, y: Float): Coordinate? {
+        val readyMap = map ?: return null
+        val latLng = readyMap.projection.fromScreenLocation(PointF(x, y))
+        val coordinate = Coordinate(latLng.latitude, latLng.longitude)
+        flagCoordinate = coordinate
+        val feature = Feature.fromGeometry(Point.fromLngLat(coordinate.longitude, coordinate.latitude))
+        flagSource?.setGeoJson(FeatureCollection.fromFeature(feature))
+        return coordinate
+    }
+
     private fun updateCamera(frameRoute: Boolean) {
         val readyMap = map ?: return
         if (frameRoute && !navigationActive) {
@@ -313,6 +347,8 @@ private class SatelliteMapHolder(context: Context) {
         const val PLACE_SOURCE_ID = "nv9-sat-place-source"
         const val PLACE_CIRCLE_LAYER_ID = "nv9-sat-place-circle"
         const val PLACE_LABEL_LAYER_ID = "nv9-sat-place-label"
+        const val FLAG_SOURCE_ID = "nv9-sat-flag-source"
+        const val FLAG_LAYER_ID = "nv9-sat-flag-layer"
         const val BACKGROUND_ID = "nv9-sat-background"
         const val SAT_LAYER_ID = "nv9-world-imagery"
 

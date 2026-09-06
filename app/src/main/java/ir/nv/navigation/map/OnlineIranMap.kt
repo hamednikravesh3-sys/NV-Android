@@ -1,13 +1,19 @@
 package ir.nv.navigation.map
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.PointF
+import android.view.GestureDetector
 import android.view.MotionEvent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import ir.nv.navigation.R
 import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
@@ -53,6 +59,15 @@ fun OnlineIranMap(
     modifier: Modifier = Modifier
 ) {
     val holder = remember { VectorMapHolder(context.applicationContext) }
+    val doubleTapDetector = remember(holder) {
+        GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                holder.placeFlagAtScreen(e.x, e.y)?.let(NvMapInteractionBus::emitDoubleTap)
+                return true
+            }
+        })
+    }
 
     DisposableEffect(holder) {
         onDispose(holder::destroy)
@@ -63,6 +78,7 @@ fun OnlineIranMap(
         modifier = modifier,
         update = { view ->
             view.setOnTouchListener { _, event ->
+                doubleTapDetector.onTouchEvent(event)
                 if (navigationActive && (
                         event.actionMasked == MotionEvent.ACTION_MOVE ||
                             event.actionMasked == MotionEvent.ACTION_POINTER_DOWN
@@ -91,6 +107,7 @@ fun OnlineIranMap(
 }
 
 private class VectorMapHolder(context: Context) {
+    private val appContext = context
     val mapView: MapView
     private var map: MapLibreMap? = null
     private var style: Style? = null
@@ -100,6 +117,11 @@ private class VectorMapHolder(context: Context) {
     private val trafficSources = mutableListOf<GeoJsonSource>()
     private val trafficLayers = mutableListOf<LineLayer>()
     private var locationSource: GeoJsonSource? = null
+    private var locationCircleLayer: CircleLayer? = null
+    private var carLayer: SymbolLayer? = null
+    private var flagSource: GeoJsonSource? = null
+    private var flagLayer: SymbolLayer? = null
+    private var flagCoordinate: Coordinate? = null
     private var placeSource: GeoJsonSource? = null
     private var darkMode = false
     private var appliedDarkMode: Boolean? = null
@@ -267,14 +289,28 @@ private class VectorMapHolder(context: Context) {
         }
 
         locationSource = GeoJsonSource(LOCATION_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)
-        loadedStyle.addLayer(
-            CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
-                PropertyFactory.circleColor(Color.rgb(24, 212, 255)),
-                PropertyFactory.circleRadius(9f),
-                PropertyFactory.circleStrokeColor(Color.WHITE),
-                PropertyFactory.circleStrokeWidth(3f)
-            )
-        )
+        locationCircleLayer = CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+            PropertyFactory.circleColor(Color.rgb(24, 212, 255)),
+            PropertyFactory.circleRadius(9f),
+            PropertyFactory.circleStrokeColor(Color.WHITE),
+            PropertyFactory.circleStrokeWidth(3f)
+        ).also(loadedStyle::addLayer)
+        loadedStyle.addImage(CAR_IMAGE_ID, carBitmap(appContext))
+        carLayer = SymbolLayer(CAR_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+            PropertyFactory.iconImage(CAR_IMAGE_ID),
+            PropertyFactory.iconSize(0.62f),
+            PropertyFactory.iconAllowOverlap(true),
+            PropertyFactory.iconIgnorePlacement(true),
+            PropertyFactory.iconOpacity(0f)
+        ).also(loadedStyle::addLayer)
+
+        flagSource = GeoJsonSource(FLAG_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)
+        flagLayer = SymbolLayer(FLAG_LAYER_ID, FLAG_SOURCE_ID).withProperties(
+            PropertyFactory.textField("🚩"),
+            PropertyFactory.textSize(34f),
+            PropertyFactory.textAllowOverlap(true),
+            PropertyFactory.textIgnorePlacement(true)
+        ).also(loadedStyle::addLayer)
 
         placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)
         loadedStyle.addLayer(
@@ -358,6 +394,35 @@ private class VectorMapHolder(context: Context) {
         locationSource?.setGeoJson(
             if (point == null) emptyFeatures() else FeatureCollection.fromFeature(point)
         )
+        locationCircleLayer?.setProperties(PropertyFactory.circleOpacity(if (navigationActive) 0f else 1f))
+        carLayer?.setProperties(
+            PropertyFactory.iconOpacity(if (navigationActive && point != null) 1f else 0f),
+            PropertyFactory.iconRotate(if (bearingDegrees.isFinite()) bearingDegrees else 0f)
+        )
+        renderFlag()
+    }
+
+    fun placeFlagAtScreen(x: Float, y: Float): Coordinate? {
+        val readyMap = map ?: return null
+        val latLng = readyMap.projection.fromScreenLocation(PointF(x, y))
+        val coordinate = Coordinate(latLng.latitude, latLng.longitude)
+        flagCoordinate = coordinate
+        renderFlag()
+        return coordinate
+    }
+
+    private fun renderFlag() {
+        val feature = flagCoordinate?.let { Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude)) }
+        flagSource?.setGeoJson(if (feature == null) emptyFeatures() else FeatureCollection.fromFeature(feature))
+    }
+
+    private fun carBitmap(context: Context): Bitmap {
+        val drawable = requireNotNull(ContextCompat.getDrawable(context, R.drawable.nv_car_top))
+        val bitmap = Bitmap.createBitmap(96, 128, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bitmap
     }
 
     private fun updateCamera(frameRoute: Boolean) {
@@ -519,6 +584,10 @@ private class VectorMapHolder(context: Context) {
         const val BUILDING_LAYER_ID = "nv-building-3d"
         const val LOCATION_SOURCE_ID = "nv-location-source"
         const val LOCATION_LAYER_ID = "nv-location-layer"
+        const val CAR_IMAGE_ID = "nv-car-image"
+        const val CAR_LAYER_ID = "nv-car-layer"
+        const val FLAG_SOURCE_ID = "nv-flag-source"
+        const val FLAG_LAYER_ID = "nv-flag-layer"
         const val PLACE_SOURCE_ID = "nv-place-source"
         const val PLACE_CIRCLE_LAYER_ID = "nv-place-circle-layer"
         const val PLACE_LABEL_LAYER_ID = "nv-place-label-layer"
