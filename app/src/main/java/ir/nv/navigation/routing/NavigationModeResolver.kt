@@ -8,9 +8,8 @@ object NavigationModeResolver {
         offlineReady: Boolean,
         preferOffline: Boolean
     ): RouteSource = when {
-        preferOffline && offlineReady -> RouteSource.OFFLINE
-        onlineAvailable -> RouteSource.ONLINE
         offlineReady -> RouteSource.OFFLINE
+        onlineAvailable -> RouteSource.ONLINE
         else -> RouteSource.NONE
     }
 }
