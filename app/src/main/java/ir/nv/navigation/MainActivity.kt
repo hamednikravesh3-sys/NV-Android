@@ -7,18 +7,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.navigation.service.NvNavigationService
 import ir.nv.navigation.ui.NvCodeToolbarOverlay
 import ir.nv.navigation.ui.NvReferenceV13
 import ir.nv.navigation.ui.NvViewModel
+import ir.nv.navigation.ui.OfflineMapDiagnosticsButton
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
 import kotlinx.coroutines.delay
@@ -77,6 +82,13 @@ class MainActivity : ComponentActivity() {
                         viewModel = navigationViewModel
                     )
                     NvCodeToolbarOverlay(navigationViewModel)
+                    OfflineMapDiagnosticsButton(
+                        offlineReady = navigationState.offlineReady,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .navigationBarsPadding()
+                            .padding(start = 12.dp, bottom = 92.dp)
+                    )
                 }
             }
         }
