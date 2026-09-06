@@ -12,7 +12,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import ir.nv.navigation.core.Coordinate
 import org.maplibre.android.MapLibre
@@ -22,70 +21,33 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 
-/** Map picker with a fixed center pin. Move the map under the pin; camera target is the selected point. */
 @Composable
-fun NvCodePickerMap(
-    context: Context,
-    initial: Coordinate?,
-    satellite: Boolean,
-    onPointSelected: (Coordinate) -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun NvCodePickerMap(context: Context, initial: Coordinate?, satellite: Boolean, onPointSelected: (Coordinate) -> Unit, modifier: Modifier = Modifier) {
     val holder = remember(satellite) { NvCodePickerHolder(context.applicationContext, initial, satellite, onPointSelected) }
     DisposableEffect(holder) { onDispose(holder::destroy) }
     Box(modifier) {
         AndroidView(factory = { holder.mapView }, modifier = Modifier.fillMaxSize())
-        Icon(
-            Icons.Rounded.LocationOn,
-            contentDescription = "سنجاق انتخاب مکان",
-            tint = Color(0xFFFF3B30),
-            modifier = Modifier.align(Alignment.Center).then(Modifier)
-        )
+        Icon(Icons.Rounded.LocationOn, "سنجاق انتخاب مکان", tint = Color(0xFFFF3B30), modifier = Modifier.align(Alignment.Center))
     }
 }
 
-private class NvCodePickerHolder(
-    context: Context,
-    initial: Coordinate?,
-    satellite: Boolean,
-    private val onPointSelected: (Coordinate) -> Unit
-) {
+private class NvCodePickerHolder(context: Context, initial: Coordinate?, satellite: Boolean, private val onPointSelected: (Coordinate) -> Unit) {
     val mapView: MapView
-
     init {
-        MapLibre.getInstance(context)
-        mapView = MapView(context)
-        mapView.onCreate(null)
-        mapView.onStart()
-        mapView.onResume()
+        MapLibre.getInstance(context); mapView = MapView(context); mapView.onCreate(null); mapView.onStart(); mapView.onResume()
         mapView.getMapAsync { map ->
-            map.uiSettings.apply {
-                isRotateGesturesEnabled = true
-                isTiltGesturesEnabled = true
-                isZoomGesturesEnabled = true
-                isScrollGesturesEnabled = true
-                isCompassEnabled = true
-                isAttributionEnabled = true
-                isLogoEnabled = false
-            }
-            val center = initial?.let { LatLng(it.latitude, it.longitude) } ?: IRAN_CENTER
-            map.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(center).zoom(if (initial == null) 5.2 else 16.0).build()))
-            if (satellite) map.setStyle(Style.Builder().fromJson(SATELLITE_STYLE)) else map.setStyle(DAY_STYLE)
-            map.addOnCameraIdleListener {
-                val target = map.cameraPosition.target
-                onPointSelected(Coordinate(target.latitude, target.longitude))
-            }
-            onPointSelected(Coordinate(center.latitude, center.longitude))
+            map.uiSettings.apply { isRotateGesturesEnabled=true; isTiltGesturesEnabled=true; isZoomGesturesEnabled=true; isScrollGesturesEnabled=true; isCompassEnabled=true; isAttributionEnabled=true; isLogoEnabled=false }
+            val center = initial?.let { LatLng(it.latitude,it.longitude) } ?: IRAN_CENTER
+            map.moveCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(center).zoom(if(initial==null)5.2 else 16.0).build()))
+            if(satellite) map.setStyle(Style.Builder().fromJson(SATELLITE_STYLE)) else map.setStyle(DAY_STYLE)
+            map.addOnCameraIdleListener { map.cameraPosition.target?.let { t -> onPointSelected(Coordinate(t.latitude,t.longitude)) } }
+            onPointSelected(Coordinate(center.latitude,center.longitude))
         }
     }
-
-    fun destroy() {
-        mapView.onPause(); mapView.onStop(); mapView.onDestroy()
-    }
-
+    fun destroy(){mapView.onPause();mapView.onStop();mapView.onDestroy()}
     private companion object {
-        val IRAN_CENTER = LatLng(32.4279, 53.6880)
-        const val DAY_STYLE = "https://tiles.openfreemap.org/styles/liberty"
-        const val SATELLITE_STYLE = """{"version":8,"name":"NV Satellite Picker","sources":{"esri":{"type":"raster","tiles":["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],"tileSize":256,"minzoom":0,"maxzoom":19,"attribution":"Tiles © Esri, Maxar, Earthstar Geographics"}},"layers":[{"id":"background","type":"background","paint":{"background-color":"#101820"}},{"id":"sat","type":"raster","source":"esri","paint":{"raster-opacity":1.0,"raster-fade-duration":0}}]}"""
+        val IRAN_CENTER=LatLng(32.4279,53.6880)
+        const val DAY_STYLE="https://tiles.openfreemap.org/styles/liberty"
+        const val SATELLITE_STYLE="""{"version":8,"name":"NV Satellite Picker","sources":{"esri":{"type":"raster","tiles":["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],"tileSize":256,"minzoom":0,"maxzoom":19}},"layers":[{"id":"background","type":"background","paint":{"background-color":"#101820"}},{"id":"sat","type":"raster","source":"esri"}]}"""
     }
 }
