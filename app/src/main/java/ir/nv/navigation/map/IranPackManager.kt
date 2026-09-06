@@ -40,8 +40,6 @@ class IranPackManager(private val context: Context) {
             mapFile.isFile && placesFile.isFile && routingFile.isFile
 
     fun startDownload(): Long {
-        // Iran map is downloaded only once. Once installed successfully, all later
-        // launches use the local pack until the user explicitly deletes it.
         if (isReady()) return READY_DOWNLOAD_ID
 
         val existing = prefs.getLong(KEY_DOWNLOAD_ID, NO_DOWNLOAD_ID)
@@ -52,8 +50,6 @@ class IranPackManager(private val context: Context) {
                 DownloadManager.STATUS_PAUSED,
                 DownloadManager.STATUS_SUCCESSFUL -> return existing
                 else -> {
-                    // A stale/failed DownloadManager row must not permanently block
-                    // future attempts. Clean it and create a fresh request.
                     runCatching { downloads.remove(existing) }
                     prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
                 }
@@ -70,7 +66,11 @@ class IranPackManager(private val context: Context) {
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
-            .setDestinationUri(Uri.fromFile(downloadedPack))
+            .setDestinationInExternalFilesDir(
+                context,
+                Environment.DIRECTORY_DOWNLOADS,
+                PACK_FILE_NAME
+            )
 
         val id = downloads.enqueue(request)
         prefs.edit().putLong(KEY_DOWNLOAD_ID, id).apply()
@@ -92,7 +92,6 @@ class IranPackManager(private val context: Context) {
                 DownloadManager.STATUS_SUCCESSFUL -> Status.Installing
                 DownloadManager.STATUS_FAILED -> {
                     val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                    // Clear failed id so pressing download again starts immediately.
                     prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
                     Status.Failed(downloadErrorMessage(reason))
                 }
