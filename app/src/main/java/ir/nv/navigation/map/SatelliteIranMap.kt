@@ -19,6 +19,7 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.BackgroundLayer
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.PropertyFactory
@@ -98,6 +99,7 @@ private class SatelliteMapHolder(context: Context) {
         mapView.onCreate(null)
         mapView.onStart()
         mapView.onResume()
+        mapView.setBackgroundColor(Color.rgb(20, 31, 40))
         mapView.getMapAsync { readyMap ->
             map = readyMap
             readyMap.uiSettings.apply {
@@ -130,17 +132,24 @@ private class SatelliteMapHolder(context: Context) {
     }
 
     private fun setupDynamicLayers(loaded: Style) {
+        if (loaded.getLayer(BACKGROUND_ID) == null) {
+            loaded.addLayerBelow(
+                BackgroundLayer(BACKGROUND_ID).withProperties(PropertyFactory.backgroundColor(Color.rgb(20, 31, 40))),
+                SAT_LAYER_ID
+            )
+        }
+
         routeSources.clear()
         routeLayers.clear()
         routeGlowLayers.clear()
         repeat(MAX_ROUTE_LAYERS) { index ->
-            val source = GeoJsonSource("nv8-sat-route-source-$index", emptyFeatures())
-            val glow = LineLayer("nv8-sat-route-glow-$index", source.id).withProperties(
+            val source = GeoJsonSource("nv9-sat-route-source-$index", emptyFeatures())
+            val glow = LineLayer("nv9-sat-route-glow-$index", source.id).withProperties(
                 PropertyFactory.lineColor(routeColor(index)),
                 PropertyFactory.lineWidth(22f),
                 PropertyFactory.lineOpacity(0f)
             )
-            val line = LineLayer("nv8-sat-route-line-$index", source.id).withProperties(
+            val line = LineLayer("nv9-sat-route-line-$index", source.id).withProperties(
                 PropertyFactory.lineColor(routeColor(index)),
                 PropertyFactory.lineWidth(8f),
                 PropertyFactory.lineOpacity(0f)
@@ -189,14 +198,13 @@ private class SatelliteMapHolder(context: Context) {
         val routeChanged = routes != this.routes || selectedRouteIndex != this.selectedRouteIndex
         this.routes = routes
         this.selectedRouteIndex = selectedRouteIndex
-        this.codedPlaces = codedPlaces.take(20)
+        this.codedPlaces = codedPlaces.take(30)
         this.currentLocation = currentLocation
         this.followLocation = followLocation
         this.navigationActive = navigationActive
         this.navigationZoomLevel = navigationZoomLevel
         this.navigationRecenterToken = navigationRecenterToken
         this.bearingDegrees = bearingDegrees
-
         renderRoutes()
         renderPlaces()
         updateCamera(frameRoute = routeChanged)
@@ -249,7 +257,6 @@ private class SatelliteMapHolder(context: Context) {
                 return
             }
         }
-
         val location = currentLocation ?: return
         val mustRecenter = navigationRecenterToken != lastRecenterToken
         if (!followLocation && !mustRecenter) return
@@ -278,12 +285,6 @@ private class SatelliteMapHolder(context: Context) {
         else -> 6.5
     }
 
-    fun destroy() {
-        mapView.onPause()
-        mapView.onStop()
-        mapView.onDestroy()
-    }
-
     private fun emptyFeatures() = FeatureCollection.fromFeatures(emptyList())
 
     private fun routeColor(index: Int): Int = when (index % 4) {
@@ -300,40 +301,45 @@ private class SatelliteMapHolder(context: Context) {
         else -> 10f
     }
 
+    fun destroy() {
+        mapView.onPause()
+        mapView.onStop()
+        mapView.onDestroy()
+    }
+
     private companion object {
         val IRAN_CENTER = LatLng(32.4279, 53.6880)
         const val MAX_ROUTE_LAYERS = 8
-        const val PLACE_SOURCE_ID = "nv8-sat-place-source"
-        const val PLACE_CIRCLE_LAYER_ID = "nv8-sat-place-circle"
-        const val PLACE_LABEL_LAYER_ID = "nv8-sat-place-label"
+        const val PLACE_SOURCE_ID = "nv9-sat-place-source"
+        const val PLACE_CIRCLE_LAYER_ID = "nv9-sat-place-circle"
+        const val PLACE_LABEL_LAYER_ID = "nv9-sat-place-label"
+        const val BACKGROUND_ID = "nv9-sat-background"
+        const val SAT_LAYER_ID = "nv9-world-imagery"
 
         const val SATELLITE_STYLE_JSON = """{
-          "version": 8,
-          "name": "NV Real Satellite",
-          "glyphs": "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
-          "sources": {
-            "esri-world-imagery": {
-              "type": "raster",
-              "tiles": [
+          "version":8,
+          "name":"NV Real Satellite V9",
+          "sources":{
+            "esri-world-imagery":{
+              "type":"raster",
+              "tiles":[
+                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
                 "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
               ],
-              "tileSize": 256,
-              "minzoom": 0,
-              "maxzoom": 19,
-              "attribution": "Tiles © Esri, Maxar, Earthstar Geographics"
+              "tileSize":256,
+              "minzoom":0,
+              "maxzoom":19,
+              "attribution":"Tiles © Esri, Maxar, Earthstar Geographics"
             }
           },
-          "layers": [
+          "layers":[
             {
-              "id": "esri-world-imagery-layer",
-              "type": "raster",
-              "source": "esri-world-imagery",
-              "minzoom": 0,
-              "maxzoom": 22,
-              "paint": {
-                "raster-opacity": 1.0,
-                "raster-fade-duration": 0
-              }
+              "id":"nv9-world-imagery",
+              "type":"raster",
+              "source":"esri-world-imagery",
+              "minzoom":0,
+              "maxzoom":22,
+              "paint":{"raster-opacity":1.0,"raster-fade-duration":0}
             }
           ]
         }"""
