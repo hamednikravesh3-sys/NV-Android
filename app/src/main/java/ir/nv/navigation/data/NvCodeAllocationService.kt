@@ -1,6 +1,5 @@
 package ir.nv.navigation.data
 
-import ir.nv.navigation.BuildConfig
 import ir.nv.navigation.core.Coordinate
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -22,10 +21,10 @@ class NvCodeAllocationService(
         val online: Boolean
     )
 
-    fun isConfigured(): Boolean = BuildConfig.NV_CODE_REGISTRY_URL.isNotBlank()
+    fun isConfigured(): Boolean = NvCodeConfig.REGISTRY_BASE_URL.isNotBlank()
 
     fun allocateOnline(name: String, coordinate: Coordinate): Result<Allocation> = runCatching {
-        val base = BuildConfig.NV_CODE_REGISTRY_URL.trimEnd('/')
+        val base = NvCodeConfig.REGISTRY_BASE_URL.trimEnd('/')
         require(base.isNotBlank()) { "NV Code Registry هنوز روی سرور تنظیم نشده است" }
         val payload = JSONObject()
             .put("name", name.trim().ifBlank { "NV Place" })
@@ -45,7 +44,10 @@ class NvCodeAllocationService(
             Allocation(
                 code = code,
                 name = json.optString("name", name).ifBlank { name },
-                coordinate = Coordinate(json.optDouble("latitude", coordinate.latitude), json.optDouble("longitude", coordinate.longitude)),
+                coordinate = Coordinate(
+                    json.optDouble("latitude", coordinate.latitude),
+                    json.optDouble("longitude", coordinate.longitude)
+                ),
                 online = true
             )
         }
