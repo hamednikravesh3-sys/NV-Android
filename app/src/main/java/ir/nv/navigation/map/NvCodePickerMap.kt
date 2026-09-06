@@ -14,7 +14,7 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 
-/** Full map picker used to assign an NV code to any coordinate. Long-press selects the point. */
+/** Full map picker used to assign an NV code to any coordinate. Long-press or double-tap selects the point. */
 @Composable
 fun NvCodePickerMap(
     context: Context,
@@ -65,6 +65,10 @@ private class NvCodePickerHolder(
                 onPointSelected(Coordinate(latLng.latitude, latLng.longitude))
                 true
             }
+            map.addOnMapDoubleClickListener { latLng ->
+                onPointSelected(Coordinate(latLng.latitude, latLng.longitude))
+                true
+            }
         }
     }
 
@@ -84,15 +88,18 @@ private class NvCodePickerHolder(
             "esri":{
               "type":"raster",
               "tiles":[
-                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-                "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
               ],
               "tileSize":256,
+              "minzoom":0,
               "maxzoom":19,
               "attribution":"Tiles © Esri, Maxar, Earthstar Geographics"
             }
           },
-          "layers":[{"id":"sat","type":"raster","source":"esri","paint":{"raster-opacity":1.0,"raster-fade-duration":0}}]
+          "layers":[
+            {"id":"background","type":"background","paint":{"background-color":"#101820"}},
+            {"id":"sat","type":"raster","source":"esri","paint":{"raster-opacity":1.0,"raster-fade-duration":0}}
+          ]
         }"""
     }
 }
