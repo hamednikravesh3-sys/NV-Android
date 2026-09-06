@@ -14,7 +14,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -33,7 +35,7 @@ private val V13Panel=Color(0xF2071B2B); private val V13Cyan=Color(0xFF14D8FF); p
 
 @Composable
 fun NvReferenceV13(darkMode:Boolean,themeMode:AppThemeMode,onThemeModeChange:(AppThemeMode)->Unit,viewModel:NvViewModel){
- val state by viewModel.state.collectAsState(); val context=LocalContext.current; val scope=rememberCoroutineScope()
+ val state by viewModel.state.collectAsState(); val context=LocalContext.current; val clipboard=LocalClipboardManager.current; val scope=rememberCoroutineScope()
  val store=remember{NvBookmarkStore(context.applicationContext)}; val allocator=remember{NvCodeAllocationService()}; val local=remember{NvLocalSequentialCodeAllocator(context.applicationContext)}; val qrManager=remember{NvQrShareManager(context)}
  var bookmark by remember{mutableStateOf(store.load())}; var picker by remember{mutableStateOf(false)}; var pin by remember{mutableStateOf<Coordinate?>(bookmark?.coordinate?:state.currentLocation?:state.destination?.coordinate?:state.origin?.coordinate)}
  var qrOpen by remember{mutableStateOf(false)}; var qr by remember{mutableStateOf<NvQrShareManager.SavedQr?>(null)}; var working by remember{mutableStateOf(false)}; var error by remember{mutableStateOf<String?>(null)}
@@ -58,8 +60,14 @@ fun NvReferenceV13(darkMode:Boolean,themeMode:AppThemeMode,onThemeModeChange:(Ap
   pin?.let{Text("سنجاق: %.6f, %.6f".format(it.latitude,it.longitude),color=Color.White,modifier=Modifier.padding(12.dp))}
   Row(Modifier.fillMaxWidth().padding(10.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick={locate()},modifier=Modifier.weight(1f)){Icon(Icons.Rounded.MyLocation,null);Text("موقعیت من")};Button(onClick={savePin()},enabled=pin!=null,modifier=Modifier.weight(1f)){Icon(Icons.Rounded.Bookmark,null);Text("ثبت سنجاق")}}
  }}}
- if(qrOpen)AlertDialog(onDismissRequest={if(!working)qrOpen=false},containerColor=V13Panel,title={Text("QR مکان NV",color=Color.White,fontWeight=FontWeight.Black)},text={Column(verticalArrangement=Arrangement.spacedBy(10.dp),horizontalAlignment=Alignment.CenterHorizontally){
-  bookmark?.let{Text(it.name,color=Color.White);Text("%.6f, %.6f".format(it.coordinate.latitude,it.coordinate.longitude),color=Color.LightGray)};qr?.let{NvQrCode(it.payload,Modifier.size(220.dp));Text("NV:${it.code}",color=V13Green,fontWeight=FontWeight.Black)};error?.let{Text(it,color=Color.Red)}
+ if(qrOpen)AlertDialog(onDismissRequest={if(!working)qrOpen=false},containerColor=V13Panel,title={Text("QR و کد عددی NV",color=Color.White,fontWeight=FontWeight.Black)},text={Column(verticalArrangement=Arrangement.spacedBy(10.dp),horizontalAlignment=Alignment.CenterHorizontally){
+  bookmark?.let{Text(it.name,color=Color.White);Text("%.6f, %.6f".format(it.coordinate.latitude,it.coordinate.longitude),color=Color.LightGray)}
+  qr?.let{saved->
+   NvQrCode(saved.payload,Modifier.size(220.dp))
+   Text("کد عددی NV",color=Color.LightGray)
+   Surface(color=Color.Black.copy(alpha=.22f),shape=RoundedCornerShape(14.dp),border=BorderStroke(1.dp,V13Green.copy(alpha=.65f))){Row(Modifier.fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text(saved.code,color=V13Green,fontWeight=FontWeight.Black,style=MaterialTheme.typography.titleLarge);IconButton(onClick={clipboard.setText(AnnotatedString(saved.code))}){Icon(Icons.Rounded.ContentCopy,"کپی کد عددی",tint=V13Cyan)}}}
+  }
+  error?.let{Text(it,color=Color.Red)}
   if(qr==null)Button(onClick={val b=bookmark?:return@Button;working=true;scope.launch{val r=withContext(Dispatchers.IO){val old=b.personalCode;if(!old.isNullOrBlank())qrManager.createAndSave(old,b.name,b.coordinate)else{val a=if(allocator.isConfigured())allocator.allocateOnline(b.name,b.coordinate)else Result.success(NvCodeAllocationService.Allocation(local.nextCode(state.personalPlaces.mapNotNull{it.personalCode}),b.name,b.coordinate,false));a.fold(onSuccess={x->viewModel.savePersonalCode(b,x.code);store.attachCode(x.code);bookmark=b.copy(personalCode=x.code);qrManager.createAndSave(x.code,b.name,b.coordinate)},onFailure={Result.failure(it)})}};r.onSuccess{qr=it}.onFailure{error=it.message?:"ساخت QR ناموفق بود"};working=false}},enabled=!working,modifier=Modifier.fillMaxWidth()){Text("ساخت کد NV و QR",fontWeight=FontWeight.Black)}else Button(onClick={qr?.let(qrManager::share)},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=V13Green,contentColor=Color.Black)){Icon(Icons.Rounded.Share,null);Text(" اشتراک‌گذاری",fontWeight=FontWeight.Black)}
  }},confirmButton={},dismissButton={TextButton(onClick={if(!working)qrOpen=false}){Text("بستن")}})
 }
