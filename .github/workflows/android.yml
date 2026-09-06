@@ -56,6 +56,10 @@ jobs:
           name: NV-launch-diagnostics
           path: |
             nv-launch-screen.png
+            nv-nearby-screen.png
+            nv-satellite-screen.png
+            nv-code-screen.png
+            nv-ui.xml
             nv-window-state.txt
             nv-activity-state.txt
             nv-logcat.txt
