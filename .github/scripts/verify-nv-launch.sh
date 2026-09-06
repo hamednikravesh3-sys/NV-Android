@@ -71,7 +71,8 @@ adb exec-out screencap -p > nv-launch-screen.png
 dump_ui
 grep -q 'content-desc="جستجو"' nv-ui.xml
 grep -q 'content-desc="اطراف من"' nv-ui.xml
-grep -q 'content-desc="ماهواره"' nv-ui.xml
+grep -q 'content-desc="نقشه آفلاین"' nv-ui.xml
+grep -q 'content-desc="سنجاق NV"' nv-ui.xml
 grep -q 'کد NV' nv-ui.xml
 
 # Nearby must be an actionable bottom-toolbar control and must open its categories.
@@ -84,14 +85,26 @@ adb exec-out screencap -p > nv-nearby-screen.png
 adb shell input keyevent 4
 sleep 1
 
-# Satellite must be tappable without crashing the map/activity.
-tap_desc "ماهواره"
-sleep 6
+# Offline-map control must be present and actionable without crashing.
+tap_desc "نقشه آفلاین"
+sleep 2
 if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
-  echo "NV process died after enabling satellite map"
+  echo "NV process died after using offline map control"
   exit 1
 fi
-adb exec-out screencap -p > nv-satellite-screen.png
+adb exec-out screencap -p > nv-offline-screen.png
+
+# Explicit NV pin tool must open the point picker.
+tap_desc "سنجاق NV"
+sleep 2
+dump_ui
+if ! grep -q 'ثبت سنجاق' nv-ui.xml; then
+  echo "NV pin picker did not open"
+  exit 1
+fi
+adb exec-out screencap -p > nv-pin-screen.png
+adb shell input keyevent 4
+sleep 1
 
 # NV code/QR entry must remain visible and open its picker/dialog.
 tap_desc "کد NV"

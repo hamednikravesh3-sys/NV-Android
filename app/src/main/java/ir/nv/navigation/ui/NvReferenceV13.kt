@@ -90,6 +90,7 @@ fun NvReferenceV13(
         qr = null
         error = null
         picker = false
+        qrOpen = true
     }
 
     val doubleTapListener = remember {
@@ -219,7 +220,11 @@ fun NvReferenceV13(
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             viewModel = viewModel,
-            onNearby = { nearbyOpen = true }
+            onNearby = { nearbyOpen = true },
+            onPin = {
+                pin = state.currentLocation ?: state.destination?.coordinate ?: state.origin?.coordinate ?: pin
+                picker = true
+            }
         )
 
         if (
@@ -282,7 +287,7 @@ fun NvReferenceV13(
             containerColor = V13Panel,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.NearMe, null, tint = V13Green)
+                    Icon(Icons.Rounded.Explore, null, tint = V13Green)
                     Spacer(Modifier.width(8.dp))
                     Text("اطراف من", color = Color.White, fontWeight = FontWeight.Black)
                 }
@@ -426,7 +431,7 @@ fun NvReferenceV13(
                         NvCodePickerMap(
                             context,
                             pin,
-                            state.satelliteMode,
+                            false,
                             { pin = it },
                             Modifier.fillMaxSize()
                         )

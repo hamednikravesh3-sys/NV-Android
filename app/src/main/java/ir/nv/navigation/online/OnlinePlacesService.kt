@@ -86,36 +86,45 @@ class OnlinePlacesService(
     }
 
     private fun requestPlaces(overpass: String): List<Place> {
-        val request = Request.Builder()
-            .url(BuildConfig.PLACES_API_URL)
-            .header("Accept", "application/json")
-            .header("User-Agent", "NV-Android/${BuildConfig.VERSION_NAME}")
-            .post(FormBody.Builder().add("data", overpass).build())
-            .build()
-        client.newCall(request).execute().use { response ->
-            check(response.isSuccessful) { "Places HTTP ${response.code}" }
-            val elements = JSONObject(requireNotNull(response.body).string()).optJSONArray("elements") ?: return emptyList()
-            return buildList {
-                for (index in 0 until elements.length()) {
-                    val element = elements.optJSONObject(index) ?: continue
-                    val tags = element.optJSONObject("tags") ?: continue
-                    val center = element.optJSONObject("center")
-                    val latitude = if (element.has("lat")) element.optDouble("lat") else center?.optDouble("lat")
-                    val longitude = if (element.has("lon")) element.optDouble("lon") else center?.optDouble("lon")
-                    if (latitude == null || longitude == null || latitude.isNaN() || longitude.isNaN()) continue
-                    val name = tags.optString("name:fa").ifBlank { tags.optString("name") }.ifBlank { tags.optString("brand") }
-                    if (name.isBlank()) continue
-                    add(
-                        Place(
-                            code = -element.optLong("id", index.toLong() + 1L),
-                            name = name,
-                            coordinate = Coordinate(latitude, longitude),
-                            category = category(tags) ?: "poi"
-                        )
-                    )
+        val endpoints = listOf(
+            BuildConfig.PLACES_API_URL,
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter"
+        ).distinct()
+        var lastReason = "سرویس مکان‌های اطراف پاسخ نداد"
+        for (endpoint in endpoints) {
+            val result = runCatching {
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "NV-Android/${BuildConfig.VERSION_NAME}")
+                    .post(FormBody.Builder().add("data", overpass).build())
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (response.code == 429 || response.code in 500..599) {
+                        throw IllegalStateException("HTTP ${response.code}")
+                    }
+                    check(response.isSuccessful) { "Places HTTP ${response.code}" }
+                    val elements = JSONObject(requireNotNull(response.body).string()).optJSONArray("elements")
+                        ?: return@use emptyList<Place>()
+                    buildList {
+                        for (index in 0 until elements.length()) {
+                            val element = elements.optJSONObject(index) ?: continue
+                            val tags = element.optJSONObject("tags") ?: continue
+                            val center = element.optJSONObject("center")
+                            val latitude = if (element.has("lat")) element.optDouble("lat") else center?.optDouble("lat")
+                            val longitude = if (element.has("lon")) element.optDouble("lon") else center?.optDouble("lon")
+                            if (latitude == null || longitude == null || latitude.isNaN() || longitude.isNaN()) continue
+                            val name = tags.optString("name:fa").ifBlank { tags.optString("name") }.ifBlank { tags.optString("brand") }
+                            if (name.isBlank()) continue
+                            add(Place(code = -element.optLong("id", index.toLong() + 1L), name = name, coordinate = Coordinate(latitude, longitude), category = category(tags) ?: "poi"))
+                        }
+                    }
                 }
             }
+            result.onSuccess { return it }.onFailure { lastReason = it.message ?: lastReason }
         }
+        throw IllegalStateException("سرویس مکان‌های اطراف موقتاً شلوغ است؛ دوباره تلاش کنید ($lastReason)")
     }
 
     private fun nearbySelectors(query: String): List<String> {

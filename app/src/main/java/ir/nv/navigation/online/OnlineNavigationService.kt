@@ -57,7 +57,7 @@ class OnlineNavigationService {
             runCatching { searchPhoton("$q ایران", limit) }.getOrDefault(emptyList())
         } else emptyList()
         val photonResults = generic + roads + iranQualified
-        val fallback = if (photonResults.size < 4) {
+        val fallback = if (photonResults.size < 8) {
             runCatching { searchNominatim(q, limit) }
                 .onFailure { failures += "Nominatim: ${it.message}" }
                 .getOrDefault(emptyList())
