@@ -1,0 +1,1 @@
+CI trigger for version 0.16.0 after restoring NV pin, replacing satellite UI with offline map, improving search fallback, and handling nearby Overpass rate limits.
