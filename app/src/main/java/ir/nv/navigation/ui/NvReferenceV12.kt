@@ -71,7 +71,7 @@ fun NvReferenceV12(
     var previousOrigin by remember { mutableStateOf<Place?>(null) }
 
     fun openCodePicker(initial: Coordinate? = null) {
-        selectedPoint = initial ?: state.currentLocation ?: state.destination?.coordinate ?: state.origin?.coordinate
+        selectedPoint = initial
         placeName = ""
         pickerSatellite = state.satelliteMode
         allocating = false
@@ -125,11 +125,14 @@ fun NvReferenceV12(
             .fillMaxSize()
             .pointerInput(pickerVisible, state.navigationActive) {
                 if (!pickerVisible && !state.navigationActive) {
-                    detectTapGestures(onDoubleTap = { openCodePicker() })
+                    detectTapGestures(
+                        onLongPress = {
+                            openCodePicker(null)
+                        }
+                    )
                 }
             }
     ) {
-        // V8 is the single base surface. V9/V10 are intentionally not stacked, eliminating duplicate End Route controls.
         NvReferenceV8(
             darkMode = darkMode,
             themeMode = themeMode,
@@ -137,7 +140,6 @@ fun NvReferenceV12(
             viewModel = viewModel
         )
 
-        // My Location is always available in browse mode and driving mode.
         Surface(
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp).size(60.dp),
             color = V12Panel,
@@ -150,21 +152,6 @@ fun NvReferenceV12(
                     CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 3.dp, color = V12Cyan)
                 } else {
                     Icon(Icons.Rounded.MyLocation, "موقعیت من", tint = V12Cyan, modifier = Modifier.size(32.dp))
-                }
-            }
-        }
-
-        // Manual shortcut for automatic NV-code mode. Double-tap on the browse map opens the same mode.
-        if (!state.navigationActive) {
-            Surface(
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp).size(58.dp),
-                color = V12Panel,
-                shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(2.dp, V12Gold),
-                shadowElevation = 8.dp
-            ) {
-                IconButton(onClick = { openCodePicker() }) {
-                    Icon(Icons.Rounded.QrCode2, "کد NV", tint = V12Gold, modifier = Modifier.size(30.dp))
                 }
             }
         }
@@ -211,7 +198,7 @@ fun NvReferenceV12(
                                     Icon(Icons.Rounded.Close, "بستن", tint = Color.White)
                                 }
                             }
-                            Text("روی محل دلخواه دوبار ضربه بزنید یا چند لحظه نگه دارید.", color = Color(0xFFB7C9D4))
+                            Text("برای انتخاب دقیق، انگشت را چند لحظه روی نقطه موردنظر نگه دارید.", color = Color(0xFFB7C9D4))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("ماهواره‌ای", color = Color.White, modifier = Modifier.weight(1f))
                                 Switch(checked = pickerSatellite, onCheckedChange = { pickerSatellite = it })
@@ -228,7 +215,7 @@ fun NvReferenceV12(
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 selectedPoint?.let { "مختصات: %.6f, %.6f".format(it.latitude, it.longitude) }
-                                    ?: "یک نقطه روی نقشه انتخاب کنید",
+                                    ?: "روی نقطه موردنظر چند لحظه نگه دارید",
                                 color = if (selectedPoint == null) V12Gold else Color.White,
                                 fontWeight = FontWeight.Bold
                             )
