@@ -13,7 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.navigation.service.NvNavigationService
-import ir.nv.navigation.ui.NvReferenceV9
+import ir.nv.navigation.ui.NvReferenceV10
 import ir.nv.navigation.ui.NvViewModel
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
             }
 
             NvTheme(darkTheme = darkMode) {
-                NvReferenceV9(
+                NvReferenceV10(
                     darkMode = darkMode,
                     themeMode = themeMode,
                     onThemeModeChange = { selected ->
