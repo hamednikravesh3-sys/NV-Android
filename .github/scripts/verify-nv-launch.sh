@@ -3,15 +3,23 @@ set -euo pipefail
 
 PACKAGE="ir.nv.navigation.debug"
 ACTIVITY="ir.nv.navigation.MainActivity"
+MAP_PATH="/sdcard/Android/data/$PACKAGE/files/Download/Iran map.nvpack"
 
 adb wait-for-device
-adb shell settings put global hide_error_dialogs 1
+adb shell settings put global hide_error_dialogs 1 || true
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION
 adb shell pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
 adb logcat -c
 adb shell am force-stop "$PACKAGE"
 adb shell am start -n "$PACKAGE/$ACTIVITY"
+
+function dismiss_system_dialogs() {
+  adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
+  adb shell input keyevent 4 >/dev/null 2>&1 || true
+}
+
+dismiss_system_dialogs
 
 app_alive=0
 for _ in $(seq 1 30); do
@@ -31,12 +39,15 @@ for _ in $(seq 1 60); do
   if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
     break
   fi
+  dismiss_system_dialogs
   sleep 2
 done
 
 sleep 3
+dismiss_system_dialogs
 
 function dump_ui() {
+  dismiss_system_dialogs
   adb shell uiautomator dump /sdcard/nv-ui.xml >/dev/null 2>&1 || true
   adb shell cat /sdcard/nv-ui.xml > nv-ui.xml 2>/dev/null || true
 }
@@ -75,7 +86,7 @@ grep -q 'content-desc="نقشه آفلاین"' nv-ui.xml
 grep -q 'content-desc="سنجاق NV"' nv-ui.xml
 grep -q 'کد NV' nv-ui.xml
 
-# Nearby must be an actionable bottom-toolbar control and must open its categories.
+# Nearby must be actionable and show categories.
 tap_desc "اطراف من"
 sleep 2
 dump_ui
@@ -85,11 +96,30 @@ adb exec-out screencap -p > nv-nearby-screen.png
 adb shell input keyevent 4
 sleep 1
 
-# Offline-map control must be present and actionable without crashing.
+# Start the production Iran map download and prove real bytes are arriving from the release URL.
 tap_desc "نقشه آفلاین"
-sleep 2
+map_started=0
+map_bytes=0
+for _ in $(seq 1 45); do
+  dismiss_system_dialogs
+  raw="$(adb shell stat -c %s "$MAP_PATH" 2>/dev/null | tr -d '\r' || true)"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then
+    map_bytes="$raw"
+    if (( map_bytes >= 65536 )); then
+      map_started=1
+      break
+    fi
+  fi
+  sleep 2
+done
+printf 'Iran map downloaded bytes during smoke test: %s\n' "$map_bytes"
+if [[ "$map_started" -ne 1 ]]; then
+  echo "Iran map production download did not receive data"
+  adb shell dumpsys download || true
+  exit 1
+fi
 if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
-  echo "NV process died after using offline map control"
+  echo "NV process died after starting Iran map download"
   exit 1
 fi
 adb exec-out screencap -p > nv-offline-screen.png
@@ -148,4 +178,4 @@ if ! grep -q "$PACKAGE/$ACTIVITY" nv-activity-state.txt; then
   exit 1
 fi
 
-echo "NV launch and UI smoke verification passed"
+echo "NV launch, core UI, and Iran map download-start verification passed"
