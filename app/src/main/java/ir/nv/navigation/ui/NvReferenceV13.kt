@@ -44,17 +44,17 @@ fun NvReferenceV13(darkMode:Boolean,themeMode:AppThemeMode,onThemeModeChange:(Ap
  val store=remember{NvBookmarkStore(context.applicationContext)}; val allocator=remember{NvCodeAllocationService()}; val local=remember{NvLocalSequentialCodeAllocator(context.applicationContext)}; val qrManager=remember{NvQrShareManager(context)}
  var bookmark by remember{mutableStateOf(store.load())}; var picker by remember{mutableStateOf(false)}; var pin by remember{mutableStateOf<Coordinate?>(bookmark?.coordinate?:state.currentLocation?:state.destination?.coordinate?:state.origin?.coordinate)}
  var qrOpen by remember{mutableStateOf(false)}; var qr by remember{mutableStateOf<NvQrShareManager.SavedQr?>(null)}; var working by remember{mutableStateOf(false)}; var error by remember{mutableStateOf<String?>(null)}
- var emergencyOpen by remember{mutableStateOf(false)}; var emergencyQuery by remember{mutableStateOf("")}
+ var nearbyOpen by remember{mutableStateOf(false)}; var nearbyQuery by remember{mutableStateOf("")}
  fun savePin(){val c=pin?:return;val p=Place(-8300000000L,"سنجاق NV",c,"bookmark:pin");store.save(p);bookmark=p;qr=null;error=null;picker=false}
  val doubleTapListener=remember{ { c:Coordinate -> pin=c; val p=Place(-8300000000L,"پرچم NV",c,"bookmark:flag"); store.save(p); bookmark=p; qr=null; error=null; NvMapInteractionBus.recenterOn(c) } }
  DisposableEffect(Unit){ NvMapInteractionBus.onDoubleTap=doubleTapListener; onDispose{NvMapInteractionBus.clearListener(doubleTapListener)} }
  fun useCurrent(){state.currentLocation?.let{c->pin=c;val p=Place(-8300000000L,"موقعیت فعلی من",c,"bookmark:current");store.save(p);bookmark=p;qr=null;error=null;picker=false}}
  val launcher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){p->if(p.values.any{it})viewModel.useCurrentLocationAsOrigin()}
  fun locate(){if(state.currentLocation!=null){useCurrent();viewModel.recenterNavigation();return};val ok=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED||ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED;if(ok)viewModel.useCurrentLocationAsOrigin()else launcher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))}
- fun emergencySearch(query:String){emergencyQuery=query; if(state.origin==null||state.currentLocation==null) locate(); viewModel.updateDestinationQuery(query)}
+ fun nearbySearch(query:String){nearbyQuery=query; if(state.origin==null||state.currentLocation==null) locate(); viewModel.updateDestinationQuery(query)}
  LaunchedEffect(state.currentLocation){if(state.currentLocation!=null&&!state.locating)pin=state.currentLocation}
- val emergencyResults=remember(state.destinationSuggestions,state.currentLocation,emergencyQuery){
-  if(emergencyQuery.isBlank()) emptyList() else state.destinationSuggestions.sortedBy{p->state.currentLocation?.let{emergencyDistanceMeters(it,p.coordinate)}?:Double.MAX_VALUE}.take(10)
+ val nearbyResults=remember(state.destinationSuggestions,state.currentLocation,nearbyQuery){
+  if(nearbyQuery.isBlank()) emptyList() else state.destinationSuggestions.sortedBy{p->state.currentLocation?.let{nearbyDistanceMeters(it,p.coordinate)}?:Double.MAX_VALUE}.take(12)
  }
  Box(Modifier.fillMaxSize()){
   NvReferenceV8(darkMode,themeMode,onThemeModeChange,viewModel)
@@ -65,19 +65,32 @@ fun NvReferenceV13(darkMode:Boolean,themeMode:AppThemeMode,onThemeModeChange:(Ap
     IconButton(onClick={savePin()},enabled=pin!=null){Icon(if(bookmark!=null)Icons.Rounded.BookmarkAdded else Icons.Rounded.Bookmark,"ثبت سنجاق",tint=if(bookmark!=null)V13Gold else Color.White)}
     IconButton(onClick={qrOpen=true;qr=null;error=null},enabled=bookmark!=null){Icon(Icons.Rounded.QrCode2,"QR",tint=if(bookmark!=null)V13Green else Color.Gray)}
    }}
-   Button(onClick={emergencyOpen=true},modifier=Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end=12.dp,bottom=144.dp),colors=ButtonDefaults.buttonColors(containerColor=V13Emergency,contentColor=Color.White),shape=RoundedCornerShape(18.dp)){Icon(Icons.Rounded.Warning,null);Spacer(Modifier.width(6.dp));Text("اورژانس",fontWeight=FontWeight.Black)}
+   Button(onClick={nearbyOpen=true},modifier=Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end=12.dp,bottom=144.dp),colors=ButtonDefaults.buttonColors(containerColor=V13Cyan,contentColor=Color.Black),shape=RoundedCornerShape(18.dp)){Icon(Icons.Rounded.Explore,null);Spacer(Modifier.width(6.dp));Text("اطراف من",fontWeight=FontWeight.Black)}
   }
  }
- if(emergencyOpen)AlertDialog(onDismissRequest={emergencyOpen=false},containerColor=V13Panel,title={Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Rounded.Warning,null,tint=V13Emergency);Spacer(Modifier.width(8.dp));Text("موقعیت‌های ضروری نزدیک من",color=Color.White,fontWeight=FontWeight.Black)}},text={Column(Modifier.fillMaxWidth().heightIn(max=520.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(9.dp)){
-  Text("نیاز خود را انتخاب کنید. NV نتایج را با توجه به موقعیت فعلی شما مرتب می‌کند.",color=Color.LightGray)
-  val categories=listOf("🚑 اورژانس و بیمارستان" to "اورژانس بیمارستان","🏥 بیمارستان" to "بیمارستان","💊 داروخانه" to "داروخانه","🚓 پلیس" to "پلیس","🚒 آتش‌نشانی" to "آتش نشانی","🩺 درمانگاه" to "درمانگاه")
-  categories.chunked(2).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){row.forEach{(label,q)->OutlinedButton(onClick={emergencySearch(q)},modifier=Modifier.weight(1f),border=BorderStroke(1.dp,if(emergencyQuery==q)V13Emergency else V13Cyan.copy(alpha=.45f))){Text(label,maxLines=1,overflow=TextOverflow.Ellipsis)}};if(row.size==1)Spacer(Modifier.weight(1f))}}
+ if(nearbyOpen)AlertDialog(onDismissRequest={nearbyOpen=false},containerColor=V13Panel,title={Row(verticalAlignment=Alignment.CenterVertically){Icon(Icons.Rounded.Explore,null,tint=V13Cyan);Spacer(Modifier.width(8.dp));Text("همه مکان‌های نزدیک من",color=Color.White,fontWeight=FontWeight.Black)}},text={Column(Modifier.fillMaxWidth().heightIn(max=560.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(9.dp)){
+  Text("مکان‌های اضطراری، عمومی، خدماتی و دیدنی را انتخاب کنید. NV نتایج را بر اساس فاصله از موقعیت فعلی مرتب می‌کند.",color=Color.LightGray)
+  Text("اضطراری و درمانی",color=V13Emergency,fontWeight=FontWeight.Black)
+  val emergencyCategories=listOf("🚑 اورژانس" to "اورژانس بیمارستان","🏥 بیمارستان" to "بیمارستان","💊 داروخانه" to "داروخانه","🚓 پلیس" to "پلیس","🚒 آتش‌نشانی" to "آتش نشانی","🩺 درمانگاه" to "درمانگاه")
+  emergencyCategories.chunked(2).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){row.forEach{(label,q)->OutlinedButton(onClick={nearbySearch(q)},modifier=Modifier.weight(1f),border=BorderStroke(1.dp,if(nearbyQuery==q)V13Emergency else V13Emergency.copy(alpha=.45f))){Text(label,maxLines=1,overflow=TextOverflow.Ellipsis)}};if(row.size==1)Spacer(Modifier.weight(1f))}}
+  Text("حمل‌ونقل و سفر",color=V13Cyan,fontWeight=FontWeight.Black)
+  val transport=listOf("🚌 ترمینال" to "ترمینال پایانه مسافربری","✈️ فرودگاه" to "فرودگاه","🚉 ایستگاه قطار" to "ایستگاه قطار راه آهن","🚇 مترو" to "ایستگاه مترو","🚕 تاکسی" to "ایستگاه تاکسی","🅿️ پارکینگ" to "پارکینگ","⛽ پمپ بنزین" to "پمپ بنزین جایگاه سوخت","⚡ شارژ خودرو" to "ایستگاه شارژ خودرو برقی")
+  transport.chunked(2).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){row.forEach{(label,q)->OutlinedButton(onClick={nearbySearch(q)},modifier=Modifier.weight(1f),border=BorderStroke(1.dp,if(nearbyQuery==q)V13Cyan else V13Cyan.copy(alpha=.35f))){Text(label,maxLines=1,overflow=TextOverflow.Ellipsis)}};if(row.size==1)Spacer(Modifier.weight(1f))}}
+  Text("خوراک، خرید و اقامت",color=V13Gold,fontWeight=FontWeight.Black)
+  val commerce=listOf("🍽 رستوران" to "رستوران","☕ کافه" to "کافه کافی شاپ","🏨 هتل" to "هتل اقامتگاه","🛒 فروشگاه" to "سوپرمارکت فروشگاه","🏬 مرکز خرید" to "مرکز خرید مجتمع تجاری","🏦 بانک" to "بانک","💳 خودپرداز" to "خودپرداز ATM","🍞 نانوایی" to "نانوایی")
+  commerce.chunked(2).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){row.forEach{(label,q)->OutlinedButton(onClick={nearbySearch(q)},modifier=Modifier.weight(1f),border=BorderStroke(1.dp,if(nearbyQuery==q)V13Gold else V13Gold.copy(alpha=.35f))){Text(label,maxLines=1,overflow=TextOverflow.Ellipsis)}};if(row.size==1)Spacer(Modifier.weight(1f))}}
+  Text("عمومی و خدماتی",color=V13Green,fontWeight=FontWeight.Black)
+  val publicPlaces=listOf("🏫 مدرسه" to "مدرسه","🎓 دانشگاه" to "دانشگاه","🕌 مسجد" to "مسجد","🏛 اداره دولتی" to "اداره دولتی","📮 پست" to "اداره پست","🚻 سرویس بهداشتی" to "سرویس بهداشتی عمومی","🔧 تعمیرگاه" to "تعمیرگاه خودرو مکانیکی","💇 خدمات شخصی" to "آرایشگاه خدمات شخصی","🏟 ورزشگاه" to "ورزشگاه مجموعه ورزشی","🎬 سینما" to "سینما")
+  publicPlaces.chunked(2).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){row.forEach{(label,q)->OutlinedButton(onClick={nearbySearch(q)},modifier=Modifier.weight(1f),border=BorderStroke(1.dp,if(nearbyQuery==q)V13Green else V13Green.copy(alpha=.35f))){Text(label,maxLines=1,overflow=TextOverflow.Ellipsis)}};if(row.size==1)Spacer(Modifier.weight(1f))}}
+  Text("دیدنی و تفریحی",color=Color(0xFFBB75FF),fontWeight=FontWeight.Black)
+  val tourism=listOf("🏞 جاذبه دیدنی" to "جاذبه گردشگری دیدنی","🏛 موزه" to "موزه","🏰 اثر تاریخی" to "اثر تاریخی بنای تاریخی","🌳 پارک" to "پارک بوستان","🌲 طبیعت" to "طبیعت منطقه طبیعی","🗿 یادمان" to "یادمان بنای یادبود","🎡 تفریحی" to "شهربازی مرکز تفریحی","🏖 ساحل" to "ساحل","⛰ کوه و بام" to "کوه بام منظره","🌉 پل دیدنی" to "پل تاریخی دیدنی")
+  tourism.chunked(2).forEach{row->Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){row.forEach{(label,q)->OutlinedButton(onClick={nearbySearch(q)},modifier=Modifier.weight(1f),border=BorderStroke(1.dp,if(nearbyQuery==q)Color(0xFFBB75FF) else Color(0xFFBB75FF).copy(alpha=.35f))){Text(label,maxLines=1,overflow=TextOverflow.Ellipsis)}};if(row.size==1)Spacer(Modifier.weight(1f))}}
   if(state.locating)LinearProgressIndicator(Modifier.fillMaxWidth())
   if(state.destinationSearching)LinearProgressIndicator(Modifier.fillMaxWidth())
-  if(emergencyQuery.isNotBlank()&&!state.destinationSearching&&emergencyResults.isEmpty())Surface(color=V13Emergency.copy(alpha=.16f),shape=RoundedCornerShape(14.dp)){Text("برای این مورد نتیجه‌ای پیدا نشد. اینترنت/GPS را بررسی کنید یا یک دسته دیگر را انتخاب کنید.",color=Color.White,modifier=Modifier.padding(10.dp))}
-  emergencyResults.forEach{place->val d=state.currentLocation?.let{emergencyDistanceMeters(it,place.coordinate)};Surface(Modifier.fillMaxWidth().clickable{if(state.origin==null)locate();viewModel.selectDestination(place);emergencyOpen=false},color=Color.Black.copy(alpha=.18f),shape=RoundedCornerShape(14.dp),border=BorderStroke(1.dp,V13Cyan.copy(alpha=.25f))){Row(Modifier.padding(10.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Rounded.Place,null,tint=V13Emergency);Spacer(Modifier.width(8.dp));Column(Modifier.weight(1f)){Text(place.name,color=Color.White,fontWeight=FontWeight.Bold,maxLines=2,overflow=TextOverflow.Ellipsis);Text(d?.let{formatEmergencyDistance(it)}?:"فاصله پس از دریافت GPS نمایش داده می‌شود",color=Color.LightGray,style=MaterialTheme.typography.labelSmall)};Icon(Icons.Rounded.Navigation,null,tint=V13Green)}}}
+  if(nearbyQuery.isNotBlank()&&!state.destinationSearching&&nearbyResults.isEmpty())Surface(color=V13Emergency.copy(alpha=.16f),shape=RoundedCornerShape(14.dp)){Text("برای این دسته نتیجه‌ای پیدا نشد. اینترنت/GPS را بررسی کنید یا دسته دیگری را انتخاب کنید.",color=Color.White,modifier=Modifier.padding(10.dp))}
+  nearbyResults.forEach{place->val d=state.currentLocation?.let{nearbyDistanceMeters(it,place.coordinate)};Surface(Modifier.fillMaxWidth().clickable{if(state.origin==null)locate();viewModel.selectDestination(place);nearbyOpen=false},color=Color.Black.copy(alpha=.18f),shape=RoundedCornerShape(14.dp),border=BorderStroke(1.dp,V13Cyan.copy(alpha=.25f))){Row(Modifier.padding(10.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Rounded.Place,null,tint=V13Cyan);Spacer(Modifier.width(8.dp));Column(Modifier.weight(1f)){Text(place.name,color=Color.White,fontWeight=FontWeight.Bold,maxLines=2,overflow=TextOverflow.Ellipsis);Text(d?.let{formatNearbyDistance(it)}?:"فاصله پس از دریافت GPS نمایش داده می‌شود",color=Color.LightGray,style=MaterialTheme.typography.labelSmall)};Icon(Icons.Rounded.Navigation,null,tint=V13Green)}}}
   if(state.searchMessage!=null)Text(state.searchMessage!!,color=V13Gold)
- }},confirmButton={TextButton(onClick={emergencyOpen=false}){Text("بستن")}})
+ }},confirmButton={TextButton(onClick={nearbyOpen=false}){Text("بستن")}})
  if(picker)Dialog(onDismissRequest={picker=false}){Surface(Modifier.fillMaxWidth().fillMaxHeight(.82f),color=V13Panel,shape=RoundedCornerShape(24.dp)){Column{
   Box(Modifier.weight(1f).fillMaxWidth()){NvCodePickerMap(context,pin,state.satelliteMode,{pin=it},Modifier.fillMaxSize())}
   pin?.let{Text("سنجاق: %.6f, %.6f".format(it.latitude,it.longitude),color=Color.White,modifier=Modifier.padding(12.dp))}
@@ -95,9 +108,9 @@ fun NvReferenceV13(darkMode:Boolean,themeMode:AppThemeMode,onThemeModeChange:(Ap
  }},confirmButton={},dismissButton={TextButton(onClick={if(!working)qrOpen=false}){Text("بستن")}})
 }
 
-private fun emergencyDistanceMeters(a:Coordinate,b:Coordinate):Double{
+private fun nearbyDistanceMeters(a:Coordinate,b:Coordinate):Double{
  val r=6371000.0; val lat1=Math.toRadians(a.latitude); val lat2=Math.toRadians(b.latitude); val dLat=lat2-lat1; val dLon=Math.toRadians(b.longitude-a.longitude)
  val h=sin(dLat/2).pow(2)+cos(lat1)*cos(lat2)*sin(dLon/2).pow(2)
  return 2*r*atan2(sqrt(h),sqrt(1-h))
 }
-private fun formatEmergencyDistance(meters:Double):String=if(meters<1000)"${meters.roundToInt()} متر" else String.format("%.1f کیلومتر",meters/1000.0)
+private fun formatNearbyDistance(meters:Double):String=if(meters<1000)"${meters.roundToInt()} متر" else String.format("%.1f کیلومتر",meters/1000.0)
