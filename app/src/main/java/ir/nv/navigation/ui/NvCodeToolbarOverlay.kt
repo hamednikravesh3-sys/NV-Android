@@ -53,26 +53,29 @@ fun NvCodeToolbarOverlay(viewModel: NvViewModel) {
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    if (!state.navigationActive) {
-        Surface(
-            modifier = Modifier
-                .navigationBarsPadding()
-                .padding(start = 12.dp, bottom = 82.dp),
-            color = NvCodePanel,
-            shape = RoundedCornerShape(18.dp),
-            border = BorderStroke(1.dp, NvCodeCyan.copy(alpha = .72f)),
-            shadowElevation = 5.dp
-        ) {
-            TextButton(
-                onClick = {
-                    bookmark = store.load()
-                    if (bookmark == null) pickerOpen = true else qrOpen = true
-                },
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+    Box(Modifier.fillMaxSize()) {
+        if (!state.navigationActive) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .navigationBarsPadding()
+                    .padding(start = 12.dp, bottom = 82.dp),
+                color = NvCodePanel,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, NvCodeCyan.copy(alpha = .72f)),
+                shadowElevation = 5.dp
             ) {
-                Icon(Icons.Rounded.QrCode2, "کد NV", tint = NvCodeGreen)
-                Spacer(Modifier.width(6.dp))
-                Text("کد NV", color = Color.White, fontWeight = FontWeight.Black)
+                TextButton(
+                    onClick = {
+                        bookmark = store.load()
+                        if (bookmark == null) pickerOpen = true else qrOpen = true
+                    },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Rounded.QrCode2, "کد NV", tint = NvCodeGreen)
+                    Spacer(Modifier.width(6.dp))
+                    Text("کد NV", color = Color.White, fontWeight = FontWeight.Black)
+                }
             }
         }
     }
@@ -85,29 +88,12 @@ fun NvCodeToolbarOverlay(viewModel: NvViewModel) {
                 shape = RoundedCornerShape(24.dp)
             ) {
                 Column {
-                    Text(
-                        "نقطه را برای کد NV انتخاب کنید",
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        modifier = Modifier.padding(14.dp)
-                    )
+                    Text("نقطه را برای کد NV انتخاب کنید", color = Color.White, fontWeight = FontWeight.Black, modifier = Modifier.padding(14.dp))
                     Box(Modifier.weight(1f).fillMaxWidth()) {
-                        NvCodePickerMap(
-                            context,
-                            pin,
-                            state.satelliteMode,
-                            { pin = it },
-                            Modifier.fillMaxSize()
-                        )
+                        NvCodePickerMap(context, pin, state.satelliteMode, { pin = it }, Modifier.fillMaxSize())
                     }
-                    Row(
-                        Modifier.fillMaxWidth().padding(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { pin = state.currentLocation ?: pin },
-                            modifier = Modifier.weight(1f)
-                        ) { Text("موقعیت من") }
+                    Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { pin = state.currentLocation ?: pin }, modifier = Modifier.weight(1f)) { Text("موقعیت من") }
                         Button(
                             onClick = {
                                 val coordinate = pin ?: return@Button
@@ -144,16 +130,8 @@ fun NvCodeToolbarOverlay(viewModel: NvViewModel) {
                     }
                     qr?.let { savedQr ->
                         NvQrCode(savedQr.payload, Modifier.size(220.dp))
-                        Surface(
-                            color = Color.Black.copy(alpha = .22f),
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, NvCodeGreen.copy(alpha = .65f))
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
+                        Surface(color = Color.Black.copy(alpha = .22f), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, NvCodeGreen.copy(alpha = .65f))) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(savedQr.code, color = NvCodeGreen, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
                                 IconButton(onClick = { clipboard.setText(AnnotatedString(savedQr.code)) }) {
                                     Icon(Icons.Rounded.ContentCopy, "کپی کد NV", tint = NvCodeCyan)
@@ -177,14 +155,7 @@ fun NvCodeToolbarOverlay(viewModel: NvViewModel) {
                                             val allocation = if (allocator.isConfigured()) {
                                                 allocator.allocateOnline(savedBookmark.name, savedBookmark.coordinate)
                                             } else {
-                                                Result.success(
-                                                    NvCodeAllocationService.Allocation(
-                                                        localAllocator.nextCode(state.personalPlaces.mapNotNull { it.personalCode }),
-                                                        savedBookmark.name,
-                                                        savedBookmark.coordinate,
-                                                        false
-                                                    )
-                                                )
+                                                Result.success(NvCodeAllocationService.Allocation(localAllocator.nextCode(state.personalPlaces.mapNotNull { it.personalCode }), savedBookmark.name, savedBookmark.coordinate, false))
                                             }
                                             allocation.fold(
                                                 onSuccess = { allocated ->
@@ -217,9 +188,7 @@ fun NvCodeToolbarOverlay(viewModel: NvViewModel) {
                 }
             },
             confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { if (!working) qrOpen = false }) { Text("بستن") }
-            }
+            dismissButton = { TextButton(onClick = { if (!working) qrOpen = false }) { Text("بستن") } }
         )
     }
 }
