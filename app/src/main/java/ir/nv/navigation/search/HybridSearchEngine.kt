@@ -65,11 +65,10 @@ class HybridSearchEngine(
                 (it.coordinate.longitude * 10_000).toInt()
             )
         }
-        .sortedWith(
-            compareBy<Place> { smartScore(it, query) }
-                .thenBy { normalize(it.name).length }
-                .thenBy { it.code }
-        )
+        // Kotlin's sortedWith is stable. Equal relevance therefore preserves provider order:
+        // exact/local data stays ahead of an equally relevant remote result, while genuinely
+        // better fuzzy matches can still move upward.
+        .sortedWith(compareBy<Place> { smartScore(it, query) })
         .take(limit)
 
     private fun smartScore(place: Place, query: String): Double {
@@ -104,7 +103,6 @@ class HybridSearchEngine(
             }
         }
 
-        // Common Persian user phrasing: searching a category should also try a POI-qualified form.
         if (words.size <= 3) {
             categoryHints.entries.firstOrNull { (key, _) -> query.contains(key) }?.value?.forEach { hint ->
                 variants += "$query $hint"
