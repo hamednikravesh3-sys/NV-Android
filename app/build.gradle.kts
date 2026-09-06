@@ -11,11 +11,14 @@ android {
         val trafficApiKey = System.getenv("NV_TRAFFIC_API_KEY").orEmpty()
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
+        val googleMapsApiKey = System.getenv("NV_GOOGLE_MAPS_API_KEY").orEmpty()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.16.0"
+        versionCode = 18
+        versionName = "0.17.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -36,6 +39,12 @@ android {
             "String",
             "PLACES_API_URL",
             "\"https://overpass-api.de/api/interpreter\""
+        )
+        buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$googleMapsApiKey\"")
+        buildConfigField(
+            "String",
+            "GOOGLE_PLACES_API_URL",
+            "\"https://places.googleapis.com/v1/places:searchNearby\""
         )
         buildConfigField("String", "TRAFFIC_API_KEY", "\"$trafficApiKey\"")
         buildConfigField(
@@ -137,8 +146,6 @@ dependencies {
 
     implementation("org.mapsforge:mapsforge-map-android:0.25.0")
     implementation("org.mapsforge:mapsforge-themes:0.25.0")
-    // 11.7.1 retains the vector camera/3D APIs and is binary-compatible with
-    // this project's Kotlin 1.9 / Compose compiler toolchain.
     implementation("org.maplibre.gl:android-sdk:11.7.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.android.billingclient:billing-ktx:7.1.1")
