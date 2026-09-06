@@ -23,7 +23,7 @@ class NetworkMonitor(context: Context) : AutoCloseable {
         connectivity.registerDefaultNetworkCallback(callback)
     }
 
-    fun isOnline(): Boolean = mutableOnline.value
+    fun isOnline(): Boolean = currentStatus().also { mutableOnline.value = it }
 
     private fun refresh() {
         mutableOnline.value = currentStatus()
@@ -32,8 +32,11 @@ class NetworkMonitor(context: Context) : AutoCloseable {
     private fun currentStatus(): Boolean {
         val network = connectivity.activeNetwork ?: return false
         val capabilities = connectivity.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        // NET_CAPABILITY_VALIDATED is intentionally not required. Some Android devices,
+        // VPNs and emulators can reach HTTPS services while Android's captive-portal
+        // validation is delayed or unavailable. Requiring VALIDATED made NV falsely
+        // disable online search and satellite imagery even with working internet.
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     override fun close() {
