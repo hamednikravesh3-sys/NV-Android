@@ -2,6 +2,7 @@ package ir.nv.navigation.map
 
 import android.app.DownloadManager
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.os.Environment
 import ir.nv.navigation.BuildConfig
@@ -39,20 +40,38 @@ class IranPackManager(private val context: Context) {
             mapFile.isFile && placesFile.isFile && routingFile.isFile
 
     fun startDownload(): Long {
+        // Iran map is downloaded only once. Once installed successfully, all later
+        // launches use the local pack until the user explicitly deletes it.
         if (isReady()) return READY_DOWNLOAD_ID
+
         val existing = prefs.getLong(KEY_DOWNLOAD_ID, NO_DOWNLOAD_ID)
-        if (existing != NO_DOWNLOAD_ID) return existing
+        if (existing != NO_DOWNLOAD_ID && existing != READY_DOWNLOAD_ID) {
+            when (downloadStatus(existing)) {
+                DownloadManager.STATUS_PENDING,
+                DownloadManager.STATUS_RUNNING,
+                DownloadManager.STATUS_PAUSED,
+                DownloadManager.STATUS_SUCCESSFUL -> return existing
+                else -> {
+                    // A stale/failed DownloadManager row must not permanently block
+                    // future attempts. Clean it and create a fresh request.
+                    runCatching { downloads.remove(existing) }
+                    prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
+                }
+            }
+        }
 
         downloadedPack.parentFile?.mkdirs()
         if (downloadedPack.exists()) downloadedPack.delete()
+
         val request = DownloadManager.Request(Uri.parse(BuildConfig.IRAN_PACK_URL))
-            .setTitle("نقشه آفلاین کل ایران — NV")
-            .setDescription("نقشه، جست‌وجوی مکان و مسیریابی آفلاین؛ دانلود با انتخاب شما")
-            .setMimeType("application/zip")
+            .setTitle(DISPLAY_NAME)
+            .setDescription("Iran map — نقشه، مکان‌ها و مسیریابی آفلاین کل ایران")
+            .setMimeType("application/octet-stream")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
             .setDestinationUri(Uri.fromFile(downloadedPack))
+
         val id = downloads.enqueue(request)
         prefs.edit().putLong(KEY_DOWNLOAD_ID, id).apply()
         return id
@@ -61,15 +80,21 @@ class IranPackManager(private val context: Context) {
     fun status(): Status {
         if (isReady()) return Status.Ready
         val id = prefs.getLong(KEY_DOWNLOAD_ID, NO_DOWNLOAD_ID)
-        if (id == NO_DOWNLOAD_ID) return Status.NotStarted
+        if (id == NO_DOWNLOAD_ID || id == READY_DOWNLOAD_ID) return Status.NotStarted
+
         downloads.query(DownloadManager.Query().setFilterById(id))?.use { cursor ->
-            if (!cursor.moveToFirst()) return Status.Failed("دانلود در سیستم پیدا نشد")
-            val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-            return when (status) {
+            if (!cursor.moveToFirst()) {
+                prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
+                return Status.Failed("دانلود Iran map در سیستم پیدا نشد؛ دوباره دانلود را بزنید")
+            }
+            val dmStatus = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+            return when (dmStatus) {
                 DownloadManager.STATUS_SUCCESSFUL -> Status.Installing
                 DownloadManager.STATUS_FAILED -> {
                     val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                    Status.Failed("خطای دانلود: $reason")
+                    // Clear failed id so pressing download again starts immediately.
+                    prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
+                    Status.Failed(downloadErrorMessage(reason))
                 }
                 else -> Status.Downloading(
                     bytes = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
@@ -77,27 +102,27 @@ class IranPackManager(private val context: Context) {
                 )
             }
         }
-        return Status.Failed("وضعیت دانلود قابل خواندن نیست")
+        return Status.Failed("وضعیت دانلود Iran map قابل خواندن نیست")
     }
 
     suspend fun installDownloadedPack(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            check(downloadedPack.isFile) { "فایل بسته ایران پیدا نشد" }
+            check(downloadedPack.isFile) { "فایل Iran map پیدا نشد" }
             verifyChecksum(downloadedPack)
 
             val staging = context.filesDir.resolve(INSTALL_DIRECTORY + "-staging")
             staging.deleteRecursively()
-            check(staging.mkdirs()) { "ساخت پوشه نصب ممکن نشد" }
+            check(staging.mkdirs()) { "ساخت پوشه نصب Iran map ممکن نشد" }
             unzipSafely(downloadedPack, staging)
 
             val required = listOf(MANIFEST_FILE, MAP_FILE, PLACES_FILE, ROUTING_FILE)
             check(required.all { staging.resolve(it).isFile }) {
-                "بسته ایران ناقص است: " + required.filterNot { staging.resolve(it).isFile }
+                "بسته Iran map ناقص است: " + required.filterNot { staging.resolve(it).isFile }
             }
             verifyManifest(staging)
 
             installDirectory.deleteRecursively()
-            check(staging.renameTo(installDirectory)) { "جابه‌جایی بسته نصب‌شده ناموفق بود" }
+            check(staging.renameTo(installDirectory)) { "جابه‌جایی Iran map نصب‌شده ناموفق بود" }
             downloadedPack.delete()
             prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
         }
@@ -110,7 +135,7 @@ class IranPackManager(private val context: Context) {
 
     fun cancelDownload() {
         val id = prefs.getLong(KEY_DOWNLOAD_ID, NO_DOWNLOAD_ID)
-        if (id != NO_DOWNLOAD_ID && id != READY_DOWNLOAD_ID) downloads.remove(id)
+        if (id != NO_DOWNLOAD_ID && id != READY_DOWNLOAD_ID) runCatching { downloads.remove(id) }
         prefs.edit().remove(KEY_DOWNLOAD_ID).apply()
         if (downloadedPack.exists()) downloadedPack.delete()
     }
@@ -120,17 +145,37 @@ class IranPackManager(private val context: Context) {
         installDirectory.deleteRecursively()
     }
 
+    private fun downloadStatus(id: Long): Int? {
+        return runCatching {
+            downloads.query(DownloadManager.Query().setFilterById(id))?.use { cursor: Cursor ->
+                if (!cursor.moveToFirst()) null
+                else cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+            }
+        }.getOrNull()
+    }
+
+    private fun downloadErrorMessage(reason: Int): String = when (reason) {
+        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "فضای ذخیره‌سازی برای Iran map کافی نیست"
+        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "حافظه دستگاه برای ذخیره Iran map در دسترس نیست"
+        DownloadManager.ERROR_CANNOT_RESUME -> "دانلود Iran map قابل ادامه نبود؛ دوباره تلاش کنید"
+        DownloadManager.ERROR_HTTP_DATA_ERROR -> "ارتباط هنگام دانلود Iran map قطع شد؛ دوباره تلاش کنید"
+        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "خطای انتقال لینک دانلود Iran map"
+        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "سرور دانلود Iran map پاسخ نامعتبر داد"
+        DownloadManager.ERROR_FILE_ERROR -> "خطا در ذخیره فایل Iran map"
+        else -> "دانلود Iran map ناموفق بود (کد $reason)؛ دوباره تلاش کنید"
+    }
+
     private fun verifyChecksum(file: File) {
         val expected = BuildConfig.IRAN_PACK_SHA256.trim().lowercase()
         if (expected.isEmpty()) return
         val actual = sha256(file)
-        check(actual == expected) { "امضای SHA-256 بسته ایران صحیح نیست" }
+        check(actual == expected) { "امضای SHA-256 بسته Iran map صحیح نیست" }
     }
 
     private fun verifyManifest(directory: File) {
         val manifest = JSONObject(directory.resolve(MANIFEST_FILE).readText())
         check(manifest.optInt("schemaVersion") == SUPPORTED_SCHEMA_VERSION) {
-            "نسخه بسته داده پشتیبانی نمی‌شود"
+            "نسخه بسته Iran map پشتیبانی نمی‌شود"
         }
         val files = manifest.getJSONObject("files")
         listOf(MAP_FILE, PLACES_FILE, ROUTING_FILE).forEach { name ->
@@ -178,7 +223,8 @@ class IranPackManager(private val context: Context) {
         const val KEY_DOWNLOAD_ID = "download_id"
         const val NO_DOWNLOAD_ID = -1L
         const val READY_DOWNLOAD_ID = -2L
-        const val PACK_FILE_NAME = "iran.nvpack"
+        const val DISPLAY_NAME = "Iran map"
+        const val PACK_FILE_NAME = "Iran map.nvpack"
         const val INSTALL_DIRECTORY = "iran-pack"
         const val MANIFEST_FILE = "manifest.json"
         const val MAP_FILE = "iran.map"
