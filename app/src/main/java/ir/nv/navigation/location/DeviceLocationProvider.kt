@@ -45,6 +45,7 @@ class DeviceLocationProvider(private val context: Context) {
             val handler = Handler(Looper.getMainLooper())
             var best: Location? = recent
             var completed = false
+            lateinit var listener: LocationListener
 
             fun finish(location: Location?) {
                 if (completed) return
@@ -54,7 +55,6 @@ class DeviceLocationProvider(private val context: Context) {
                 if (continuation.isActive) continuation.resume(location?.toCoordinate())
             }
 
-            lateinit var listener: LocationListener
             listener = object : LocationListener {
                 override fun onLocationChanged(location: Location) {
                     if (!isUsable(location)) return
