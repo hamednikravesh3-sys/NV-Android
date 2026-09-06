@@ -1,4 +1,4 @@
-name: Apply V13 map interaction fix
+name: Apply NV offline/search/pin fix
 
 on:
   push:
@@ -14,92 +14,197 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch V13 map behavior
+      - name: Apply requested NV fixes
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          def replace(path, old, new, count=1):
+          def replace_once(path, old, new):
               p = Path(path)
               s = p.read_text()
               if old not in s:
-                  raise SystemExit(f'pattern not found in {path}: {old[:120]!r}')
-              p.write_text(s.replace(old, new, count))
+                  raise SystemExit(f'pattern not found in {path}: {old[:180]!r}')
+              p.write_text(s.replace(old, new, 1))
 
-          # V13: receive map double-tap and make it the active bookmark/pin.
-          p = Path('app/src/main/java/ir/nv/navigation/ui/NvReferenceV13.kt')
-          s = p.read_text()
-          s = s.replace('import ir.nv.navigation.map.NvCodePickerMap\n', 'import ir.nv.navigation.map.NvCodePickerMap\nimport ir.nv.navigation.map.NvMapInteractionBus\n')
-          marker = ' fun savePin(){val c=pin?:return;val p=Place(-8300000000L,"سنجاق NV",c,"bookmark:pin");store.save(p);bookmark=p;qr=null;error=null;picker=false}\n'
-          inject = marker + ' val doubleTapListener=remember{ { c:Coordinate -> pin=c; val p=Place(-8300000000L,"پرچم NV",c,"bookmark:flag"); store.save(p); bookmark=p; qr=null; error=null; NvMapInteractionBus.recenterOn(c) } }\n DisposableEffect(Unit){ NvMapInteractionBus.onDoubleTap=doubleTapListener; onDispose{NvMapInteractionBus.clearListener(doubleTapListener)} }\n'
-          if marker not in s: raise SystemExit('V13 marker not found')
-          s = s.replace(marker, inject, 1)
-          p.write_text(s)
-
-          # Remove the old fixed-center car overlay; the car will be rendered at the GPS coordinate by the map.
+          # V8: remove satellite UI and replace it with offline-map control.
           p = Path('app/src/main/java/ir/nv/navigation/ui/NvReferenceV8.kt')
           s = p.read_text()
-          old = '        if (state.navigationActive && state.currentLocation != null && state.followNavigation) V8CarMarker(state.route?.maneuvers?.getOrNull(state.maneuverIndex)?.direction, state.distanceToNextManeuverMeters, Modifier.align(Alignment.Center))\n'
-          if old not in s: raise SystemExit('V8 fixed car line not found')
-          p.write_text(s.replace(old, '', 1))
-
-          # Online MapLibre: double-tap flag + car symbol at real GPS coordinate.
-          p = Path('app/src/main/java/ir/nv/navigation/map/OnlineIranMap.kt')
-          s = p.read_text()
-          s = s.replace('import android.graphics.Color\nimport android.view.MotionEvent\n', 'import android.graphics.Bitmap\nimport android.graphics.Canvas\nimport android.graphics.Color\nimport android.graphics.PointF\nimport android.view.GestureDetector\nimport android.view.MotionEvent\n')
-          s = s.replace('import androidx.compose.ui.viewinterop.AndroidView\n', 'import androidx.compose.ui.viewinterop.AndroidView\nimport androidx.core.content.ContextCompat\nimport ir.nv.navigation.R\n')
-          old = '    val holder = remember { VectorMapHolder(context.applicationContext) }\n\n    DisposableEffect(holder) {'
-          new = '''    val holder = remember { VectorMapHolder(context.applicationContext) }\n    val doubleTapDetector = remember(holder) {\n        GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {\n            override fun onDown(e: MotionEvent): Boolean = true\n            override fun onDoubleTap(e: MotionEvent): Boolean {\n                holder.placeFlagAtScreen(e.x, e.y)?.let(NvMapInteractionBus::emitDoubleTap)\n                return true\n            }\n        })\n    }\n\n    DisposableEffect(holder) {'''
-          if old not in s: raise SystemExit('Online holder marker not found')
-          s = s.replace(old, new, 1)
-          old = '            view.setOnTouchListener { _, event ->\n                if (navigationActive && ('
-          new = '            view.setOnTouchListener { _, event ->\n                doubleTapDetector.onTouchEvent(event)\n                if (navigationActive && ('
-          if old not in s: raise SystemExit('Online touch marker not found')
-          s = s.replace(old, new, 1)
-          s = s.replace('private class VectorMapHolder(context: Context) {\n    val mapView: MapView\n', 'private class VectorMapHolder(context: Context) {\n    private val appContext = context\n    val mapView: MapView\n')
-          s = s.replace('    private var locationSource: GeoJsonSource? = null\n    private var placeSource: GeoJsonSource? = null\n', '    private var locationSource: GeoJsonSource? = null\n    private var locationCircleLayer: CircleLayer? = null\n    private var carLayer: SymbolLayer? = null\n    private var flagSource: GeoJsonSource? = null\n    private var flagLayer: SymbolLayer? = null\n    private var flagCoordinate: Coordinate? = null\n    private var placeSource: GeoJsonSource? = null\n')
-          old = '''        locationSource = GeoJsonSource(LOCATION_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)\n        loadedStyle.addLayer(\n            CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(\n                PropertyFactory.circleColor(Color.rgb(24, 212, 255)),\n                PropertyFactory.circleRadius(9f),\n                PropertyFactory.circleStrokeColor(Color.WHITE),\n                PropertyFactory.circleStrokeWidth(3f)\n            )\n        )\n\n        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)'''
-          new = '''        locationSource = GeoJsonSource(LOCATION_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)\n        locationCircleLayer = CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(\n            PropertyFactory.circleColor(Color.rgb(24, 212, 255)),\n            PropertyFactory.circleRadius(9f),\n            PropertyFactory.circleStrokeColor(Color.WHITE),\n            PropertyFactory.circleStrokeWidth(3f)\n        ).also(loadedStyle::addLayer)\n        loadedStyle.addImage(CAR_IMAGE_ID, carBitmap(appContext))\n        carLayer = SymbolLayer(CAR_LAYER_ID, LOCATION_SOURCE_ID).withProperties(\n            PropertyFactory.iconImage(CAR_IMAGE_ID),\n            PropertyFactory.iconSize(0.62f),\n            PropertyFactory.iconAllowOverlap(true),\n            PropertyFactory.iconIgnorePlacement(true),\n            PropertyFactory.iconOpacity(0f)\n        ).also(loadedStyle::addLayer)\n\n        flagSource = GeoJsonSource(FLAG_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)\n        flagLayer = SymbolLayer(FLAG_LAYER_ID, FLAG_SOURCE_ID).withProperties(\n            PropertyFactory.textField("🚩"),\n            PropertyFactory.textSize(34f),\n            PropertyFactory.textAllowOverlap(true),\n            PropertyFactory.textIgnorePlacement(true)\n        ).also(loadedStyle::addLayer)\n\n        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)'''
-          if old not in s: raise SystemExit('Online location layer block not found')
-          s = s.replace(old, new, 1)
-          old = '''    private fun renderLocation() {\n        val point = currentLocation?.let {\n            Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))\n        }\n        locationSource?.setGeoJson(\n            if (point == null) emptyFeatures() else FeatureCollection.fromFeature(point)\n        )\n    }\n\n    private fun updateCamera(frameRoute: Boolean) {'''
-          new = '''    private fun renderLocation() {\n        val point = currentLocation?.let {\n            Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))\n        }\n        locationSource?.setGeoJson(\n            if (point == null) emptyFeatures() else FeatureCollection.fromFeature(point)\n        )\n        locationCircleLayer?.setProperties(PropertyFactory.circleOpacity(if (navigationActive) 0f else 1f))\n        carLayer?.setProperties(\n            PropertyFactory.iconOpacity(if (navigationActive && point != null) 1f else 0f),\n            PropertyFactory.iconRotate(if (bearingDegrees.isFinite()) bearingDegrees else 0f)\n        )\n        renderFlag()\n    }\n\n    fun placeFlagAtScreen(x: Float, y: Float): Coordinate? {\n        val readyMap = map ?: return null\n        val latLng = readyMap.projection.fromScreenLocation(PointF(x, y))\n        val coordinate = Coordinate(latLng.latitude, latLng.longitude)\n        flagCoordinate = coordinate\n        renderFlag()\n        return coordinate\n    }\n\n    private fun renderFlag() {\n        val feature = flagCoordinate?.let { Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude)) }\n        flagSource?.setGeoJson(if (feature == null) emptyFeatures() else FeatureCollection.fromFeature(feature))\n    }\n\n    private fun carBitmap(context: Context): Bitmap {\n        val drawable = requireNotNull(ContextCompat.getDrawable(context, R.drawable.nv_car_top))\n        val bitmap = Bitmap.createBitmap(96, 128, Bitmap.Config.ARGB_8888)\n        val canvas = Canvas(bitmap)\n        drawable.setBounds(0, 0, canvas.width, canvas.height)\n        drawable.draw(canvas)\n        return bitmap\n    }\n\n    private fun updateCamera(frameRoute: Boolean) {'''
-          if old not in s: raise SystemExit('Online renderLocation block not found')
-          s = s.replace(old, new, 1)
-          # Add constants next to existing location constants.
-          s = s.replace('        const val LOCATION_SOURCE_ID = "nv-location-source"\n        const val LOCATION_LAYER_ID = "nv-location-layer"\n', '        const val LOCATION_SOURCE_ID = "nv-location-source"\n        const val LOCATION_LAYER_ID = "nv-location-layer"\n        const val CAR_IMAGE_ID = "nv-car-image"\n        const val CAR_LAYER_ID = "nv-car-layer"\n        const val FLAG_SOURCE_ID = "nv-flag-source"\n        const val FLAG_LAYER_ID = "nv-flag-layer"\n')
+          s = s.replace('import ir.nv.navigation.map.SatelliteIranMap\n', '')
+          s = s.replace(
+              '    viewModel: NvViewModel,\n    onNearby: (() -> Unit)? = null\n)',
+              '    viewModel: NvViewModel,\n    onNearby: (() -> Unit)? = null,\n    onPin: (() -> Unit)? = null\n)'
+          )
+          s = s.replace(
+              '            state.satelliteMode,\n',
+              '            state.preferOffline,\n',
+              1
+          )
+          s = s.replace(
+              '            onNearby,\n            viewModel::toggleSatelliteMode,\n',
+              '            onNearby,\n            onPin,\n            { if (state.offlineReady) viewModel.setPreferOffline(!state.preferOffline) else viewModel.startMapDownload() },\n',
+              1
+          )
+          old_settings = 'Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("نقشه ماهواره‌ای واقعی"); Switch(checked = state.satelliteMode, onCheckedChange = { viewModel.toggleSatelliteMode() }) }; Text("Satellite از Esri World Imagery بارگذاری می‌شود.", color = V8Muted, style = MaterialTheme.typography.labelSmall); Spacer(Modifier.height(12.dp))'
+          new_settings = 'Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("نقشه آفلاین ایران"); Switch(checked = state.preferOffline, onCheckedChange = { enabled -> if (enabled && !state.offlineReady) viewModel.startMapDownload() else viewModel.setPreferOffline(enabled) }) }; Text(if (state.offlineReady) "بسته آفلاین ایران نصب است؛ نمایش و مسیریابی می‌تواند بدون اینترنت انجام شود." else "برای استفاده آفلاین، بسته کامل ایران را دانلود کنید.", color = V8Muted, style = MaterialTheme.typography.labelSmall); if (!state.offlineReady) Button(onClick = viewModel::startMapDownload, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Rounded.Download, null); Spacer(Modifier.width(6.dp)); Text("دانلود نقشه آفلاین ایران") }; Spacer(Modifier.height(12.dp))'
+          if old_settings not in s:
+              raise SystemExit('V8 settings satellite block not found')
+          s = s.replace(old_settings, new_settings, 1)
+          sat_branch = '    if (state.satelliteMode && state.onlineAvailable) { SatelliteIranMap(context, routes, state.selectedRouteIndex, coded, state.currentLocation, state.navigationActive && state.followNavigation, state.navigationActive, state.navigationZoomLevel, state.navigationRecenterToken, state.bearingDegrees, vm::pauseNavigationFollow, Modifier.fillMaxSize()); return }\n'
+          s = s.replace(sat_branch, '')
+          pattern = re.compile(r'@Composable private fun V8BottomBar\(.*?\nprivate fun v8RouteColor', re.S)
+          replacement = '''@Composable private fun V8BottomBar(navigationActive:Boolean,hasRoute:Boolean,panel:Color,text:Color,offline:Boolean,onSearch:()->Unit,onStartStop:()->Unit,onNearby:(()->Unit)?,onPin:(()->Unit)?,onOffline:()->Unit,onSettings:()->Unit,modifier:Modifier=Modifier){Surface(modifier.fillMaxWidth(),RoundedCornerShape(24.dp),panel,border=BorderStroke(1.dp,V8Cyan.copy(alpha=.35f))){Row(Modifier.fillMaxWidth().padding(horizontal=4.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceEvenly){IconButton(onSearch){Icon(Icons.Rounded.Search,"جستجو",tint=text)};Button(onStartStop,enabled=hasRoute||navigationActive,shape=RoundedCornerShape(22.dp)){Icon(if(navigationActive)Icons.Rounded.Stop else Icons.Rounded.Navigation,null);Spacer(Modifier.width(5.dp));Text(if(navigationActive)"پایان" else "شروع",fontWeight=FontWeight.Bold)};if(!navigationActive&&onNearby!=null)IconButton(onNearby){Icon(Icons.Rounded.Explore,"اطراف من",tint=V8Green)};if(!navigationActive&&onPin!=null)IconButton(onPin){Icon(Icons.Rounded.LocationOn,"سنجاق NV",tint=V8Gold)};IconButton(onOffline){Icon(Icons.Rounded.Map,"نقشه آفلاین",tint=if(offline)V8Green else text)};IconButton(onSettings){Icon(Icons.Rounded.Settings,"تنظیمات",tint=text)}}}}
+private fun v8RouteColor'''
+          s, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit('V8 bottom bar block not found')
           p.write_text(s)
 
-          # Satellite: double tap emits a flag and keep flag visible as emoji label.
-          p = Path('app/src/main/java/ir/nv/navigation/map/SatelliteIranMap.kt')
+          # V13: restore an explicit pin action and keep QR/code flow intact.
+          p = Path('app/src/main/java/ir/nv/navigation/ui/NvReferenceV13.kt')
           s = p.read_text()
-          s = s.replace('import android.graphics.Color\nimport android.view.MotionEvent\n', 'import android.graphics.Color\nimport android.graphics.PointF\nimport android.view.GestureDetector\nimport android.view.MotionEvent\n')
-          old = '    val holder = remember { SatelliteMapHolder(context.applicationContext) }\n    DisposableEffect(holder) { onDispose(holder::destroy) }'
-          new = '''    val holder = remember { SatelliteMapHolder(context.applicationContext) }\n    val doubleTapDetector = remember(holder) {\n        GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {\n            override fun onDown(e: MotionEvent): Boolean = true\n            override fun onDoubleTap(e: MotionEvent): Boolean {\n                holder.placeFlagAtScreen(e.x, e.y)?.let(NvMapInteractionBus::emitDoubleTap)\n                return true\n            }\n        })\n    }\n    DisposableEffect(holder) { onDispose(holder::destroy) }'''
-          if old not in s: raise SystemExit('Satellite holder marker not found')
-          s = s.replace(old, new, 1)
-          old = '            view.setOnTouchListener { _, event ->\n                if (navigationActive && ('
-          new = '            view.setOnTouchListener { _, event ->\n                doubleTapDetector.onTouchEvent(event)\n                if (navigationActive && ('
-          if old not in s: raise SystemExit('Satellite touch marker not found')
-          s = s.replace(old, new, 1)
-          s = s.replace('    private var placeSource: GeoJsonSource? = null\n', '    private var placeSource: GeoJsonSource? = null\n    private var flagSource: GeoJsonSource? = null\n    private var flagCoordinate: Coordinate? = null\n')
-          old = '''        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loaded::addSource)\n        loaded.addLayer(\n            CircleLayer(PLACE_CIRCLE_LAYER_ID, PLACE_SOURCE_ID).withProperties('''
-          new = '''        flagSource = GeoJsonSource(FLAG_SOURCE_ID, emptyFeatures()).also(loaded::addSource)\n        loaded.addLayer(\n            SymbolLayer(FLAG_LAYER_ID, FLAG_SOURCE_ID).withProperties(\n                PropertyFactory.textField("🚩"),\n                PropertyFactory.textSize(34f),\n                PropertyFactory.textAllowOverlap(true),\n                PropertyFactory.textIgnorePlacement(true)\n            )\n        )\n\n        placeSource = GeoJsonSource(PLACE_SOURCE_ID, emptyFeatures()).also(loaded::addSource)\n        loaded.addLayer(\n            CircleLayer(PLACE_CIRCLE_LAYER_ID, PLACE_SOURCE_ID).withProperties('''
-          if old not in s: raise SystemExit('Satellite place block not found')
-          s = s.replace(old, new, 1)
-          old = '    private fun updateCamera(frameRoute: Boolean) {'
-          new = '''    fun placeFlagAtScreen(x: Float, y: Float): Coordinate? {\n        val readyMap = map ?: return null\n        val latLng = readyMap.projection.fromScreenLocation(PointF(x, y))\n        val coordinate = Coordinate(latLng.latitude, latLng.longitude)\n        flagCoordinate = coordinate\n        val feature = Feature.fromGeometry(Point.fromLngLat(coordinate.longitude, coordinate.latitude))\n        flagSource?.setGeoJson(FeatureCollection.fromFeature(feature))\n        return coordinate\n    }\n\n    private fun updateCamera(frameRoute: Boolean) {'''
-          if old not in s: raise SystemExit('Satellite updateCamera marker not found')
-          s = s.replace(old, new, 1)
-          s = s.replace('        const val PLACE_LABEL_LAYER_ID = "nv9-sat-place-label"\n', '        const val PLACE_LABEL_LAYER_ID = "nv9-sat-place-label"\n        const val FLAG_SOURCE_ID = "nv9-sat-flag-source"\n        const val FLAG_LAYER_ID = "nv9-sat-flag-layer"\n')
+          old_call = '''            viewModel = viewModel,
+            onNearby = { nearbyOpen = true }
+        )'''
+          new_call = '''            viewModel = viewModel,
+            onNearby = { nearbyOpen = true },
+            onPin = {
+                pin = state.currentLocation ?: state.destination?.coordinate ?: state.origin?.coordinate ?: pin
+                picker = true
+            }
+        )'''
+          if old_call not in s:
+              raise SystemExit('V13 V8 call block not found')
+          s = s.replace(old_call, new_call, 1)
+          s = s.replace('                    Icon(Icons.Rounded.NearMe, null, tint = V13Green)', '                    Icon(Icons.Rounded.Explore, null, tint = V13Green)', 1)
+          s = s.replace('                            state.satelliteMode,', '                            false,', 1)
+          old_save = '''        qr = null
+        error = null
+        picker = false
+    }'''
+          new_save = '''        qr = null
+        error = null
+        picker = false
+        qrOpen = true
+    }'''
+          if old_save not in s:
+              raise SystemExit('V13 savePin block not found')
+          s = s.replace(old_save, new_save, 1)
+          p.write_text(s)
+
+          # Nearby service: rotate among public Overpass endpoints instead of surfacing raw HTTP 429.
+          p = Path('app/src/main/java/ir/nv/navigation/online/OnlinePlacesService.kt')
+          s = p.read_text()
+          pattern = re.compile(r'    private fun requestPlaces\(overpass: String\): List<Place> \{.*?\n    \}\n\n    private fun nearbySelectors', re.S)
+          new_method = '''    private fun requestPlaces(overpass: String): List<Place> {
+        val endpoints = listOf(
+            BuildConfig.PLACES_API_URL,
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter"
+        ).distinct()
+        var lastReason = "سرویس مکان‌های اطراف پاسخ نداد"
+        for (endpoint in endpoints) {
+            val result = runCatching {
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "NV-Android/${BuildConfig.VERSION_NAME}")
+                    .post(FormBody.Builder().add("data", overpass).build())
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (response.code == 429 || response.code in 500..599) {
+                        throw IllegalStateException("HTTP ${response.code}")
+                    }
+                    check(response.isSuccessful) { "Places HTTP ${response.code}" }
+                    val elements = JSONObject(requireNotNull(response.body).string()).optJSONArray("elements") ?: return@use emptyList<Place>()
+                    buildList {
+                        for (index in 0 until elements.length()) {
+                            val element = elements.optJSONObject(index) ?: continue
+                            val tags = element.optJSONObject("tags") ?: continue
+                            val center = element.optJSONObject("center")
+                            val latitude = if (element.has("lat")) element.optDouble("lat") else center?.optDouble("lat")
+                            val longitude = if (element.has("lon")) element.optDouble("lon") else center?.optDouble("lon")
+                            if (latitude == null || longitude == null || latitude.isNaN() || longitude.isNaN()) continue
+                            val name = tags.optString("name:fa").ifBlank { tags.optString("name") }.ifBlank { tags.optString("brand") }
+                            if (name.isBlank()) continue
+                            add(Place(code = -element.optLong("id", index.toLong() + 1L), name = name, coordinate = Coordinate(latitude, longitude), category = category(tags) ?: "poi"))
+                        }
+                    }
+                }
+            }
+            result.onSuccess { return it }.onFailure { lastReason = it.message ?: lastReason }
+        }
+        throw IllegalStateException("سرویس مکان‌های اطراف موقتاً شلوغ است؛ دوباره تلاش کنید ($lastReason)")
+    }
+
+    private fun nearbySelectors'''
+          s, n = pattern.subn(new_method, s, count=1)
+          if n != 1:
+              raise SystemExit('OnlinePlaces requestPlaces block not found')
+          p.write_text(s)
+
+          # Search: use the more current Nominatim fallback sooner when Photon misses a specific place.
+          p = Path('app/src/main/java/ir/nv/navigation/online/OnlineNavigationService.kt')
+          s = p.read_text()
+          s = s.replace('        val fallback = if (photonResults.size < 4) {', '        val fallback = if (photonResults.size < 8) {', 1)
+          p.write_text(s)
+
+          # Version bump so this build is distinguishable from the broken APK.
+          p = Path('app/build.gradle.kts')
+          s = p.read_text().replace('versionCode = 16', 'versionCode = 17', 1).replace('versionName = "0.15.0"', 'versionName = "0.16.0"', 1)
+          p.write_text(s)
+
+          # Smoke test: verify Offline and Pin controls instead of Satellite.
+          p = Path('.github/scripts/verify-nv-launch.sh')
+          s = p.read_text()
+          s = s.replace('grep -q \'content-desc="ماهواره"\' nv-ui.xml', 'grep -q \'content-desc="نقشه آفلاین"\' nv-ui.xml')
+          s = s.replace('grep -q \'کد NV\' nv-ui.xml', 'grep -q \'content-desc="سنجاق NV"\' nv-ui.xml\ngrep -q \'کد NV\' nv-ui.xml')
+          old_sat = '''# Satellite must be tappable without crashing the map/activity.
+tap_desc "ماهواره"
+sleep 6
+if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
+  echo "NV process died after enabling satellite map"
+  exit 1
+fi
+adb exec-out screencap -p > nv-satellite-screen.png
+'''
+          new_offline = '''# Offline-map control must be present and actionable without crashing.
+tap_desc "نقشه آفلاین"
+sleep 2
+if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
+  echo "NV process died after using offline map control"
+  exit 1
+fi
+adb exec-out screencap -p > nv-offline-screen.png
+
+# Explicit NV pin tool must open the point picker.
+tap_desc "سنجاق NV"
+sleep 2
+dump_ui
+if ! grep -q 'ثبت سنجاق' nv-ui.xml; then
+  echo "NV pin picker did not open"
+  exit 1
+fi
+adb exec-out screencap -p > nv-pin-screen.png
+adb shell input keyevent 4
+sleep 1
+'''
+          if old_sat not in s:
+              raise SystemExit('smoke satellite block not found')
+          s = s.replace(old_sat, new_offline, 1)
           p.write_text(s)
           PY
 
-      - name: Commit patch
+      - name: Commit fixes
         run: |
-          git config user.name "NV Build Bot"
-          git config user.email "actions@github.com"
-          git add app/src/main/java/ir/nv/navigation
-          git commit -m "Fix V13 double-tap flag and GPS car tracking"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/ir/nv/navigation/ui/NvReferenceV8.kt \
+                  app/src/main/java/ir/nv/navigation/ui/NvReferenceV13.kt \
+                  app/src/main/java/ir/nv/navigation/online/OnlinePlacesService.kt \
+                  app/src/main/java/ir/nv/navigation/online/OnlineNavigationService.kt \
+                  app/build.gradle.kts \
+                  .github/scripts/verify-nv-launch.sh
+          git commit -m "Restore NV pin, switch to offline map, improve search and nearby reliability"
           git push
