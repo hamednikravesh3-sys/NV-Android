@@ -28,7 +28,7 @@ android {
             "IRAN_PACK_URL",
             "\"https://github.com/hamednikravesh3-sys/NV-Android/releases/download/map-v1/iran.nvpack\""
         )
-        buildConfigField("String", "IRAN_PACK_SHA256", "\"\"")
+        buildConfigField("String", "IRAN_PACK_SHA256", "\"999156a4d2e1bb2756bda602d9f00527d0cf77f1c420863baf3483002f252f6d\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
         buildConfigField(
             "String",
