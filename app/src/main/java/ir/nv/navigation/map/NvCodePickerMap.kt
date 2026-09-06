@@ -35,6 +35,7 @@ private class NvCodePickerHolder(
     private val onPointSelected: (Coordinate) -> Unit
 ) {
     val mapView: MapView
+    private var lastTapAt = 0L
 
     init {
         MapLibre.getInstance(context)
@@ -65,9 +66,16 @@ private class NvCodePickerHolder(
                 onPointSelected(Coordinate(latLng.latitude, latLng.longitude))
                 true
             }
-            map.addOnMapDoubleClickListener { latLng ->
-                onPointSelected(Coordinate(latLng.latitude, latLng.longitude))
-                true
+            map.addOnMapClickListener { latLng ->
+                val now = System.currentTimeMillis()
+                val isDoubleTap = now - lastTapAt in 70..360
+                lastTapAt = if (isDoubleTap) 0L else now
+                if (isDoubleTap) {
+                    onPointSelected(Coordinate(latLng.latitude, latLng.longitude))
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
