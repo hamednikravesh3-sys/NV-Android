@@ -12,10 +12,23 @@ export default {
         return json({ error: 'invalid_request' }, 400);
       }
 
+      const locationKey = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+
       try {
+        const existing = await env.DB.prepare(
+          'SELECT code,name,latitude,longitude,created_at FROM nv_codes WHERE location_key=?1'
+        ).bind(locationKey).first();
+        if (existing) return json({ status: 'existing', ...existing }, 200);
+
+        await env.DB.prepare(
+          'INSERT OR IGNORE INTO nv_codes(location_key,name,latitude,longitude,created_at) VALUES(?1,?2,?3,?4,unixepoch())'
+        ).bind(locationKey, name || 'NV Place', latitude, longitude).run();
+
         const row = await env.DB.prepare(
-          'INSERT INTO nv_codes(name,latitude,longitude,created_at) VALUES(?1,?2,?3,unixepoch()) RETURNING code,name,latitude,longitude,created_at'
-        ).bind(name || 'NV Place', latitude, longitude).first();
+          'SELECT code,name,latitude,longitude,created_at FROM nv_codes WHERE location_key=?1'
+        ).bind(locationKey).first();
+
+        if (!row) return json({ error: 'allocation_failed' }, 500);
         return json({ status: 'allocated', ...row }, 201);
       } catch (e) {
         return json({ error: 'server_error', detail: String(e) }, 500);
@@ -31,7 +44,7 @@ export default {
       return row ? json(row, 200) : json({ error: 'not_found' }, 404);
     }
 
-    return json({ service: 'NV Code Registry', status: 'ok', allocation: 'sequential-1-to-N' }, 200);
+    return json({ service: 'NV Code Registry', status: 'ok', allocation: 'online-unique' }, 200);
   }
 };
 
