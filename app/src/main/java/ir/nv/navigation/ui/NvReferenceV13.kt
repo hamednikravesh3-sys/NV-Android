@@ -27,7 +27,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Place
-import ir.nv.navigation.data.*
+import ir.nv.navigation.data.NvBookmarkStore
+import ir.nv.navigation.data.NvCodeAllocationService
+import ir.nv.navigation.data.NvQrShareManager
 import ir.nv.navigation.map.NvCodePickerMap
 import ir.nv.navigation.map.NvMapInteractionBus
 import ir.nv.navigation.online.OnlinePlacesService
@@ -57,18 +59,17 @@ fun NvReferenceV13(
 
     val store = remember { NvBookmarkStore(context.applicationContext) }
     val allocator = remember { NvCodeAllocationService() }
-    val local = remember { NvLocalSequentialCodeAllocator(context.applicationContext) }
     val qrManager = remember { NvQrShareManager(context) }
     val nearbyService = remember { OnlinePlacesService() }
 
     var bookmark by remember { mutableStateOf(store.load()) }
-    var picker by remember { mutableStateOf(false) }
+    var pickerOpen by remember { mutableStateOf(false) }
     var pin by remember {
         mutableStateOf<Coordinate?>(
             bookmark?.coordinate ?: state.currentLocation ?: state.destination?.coordinate ?: state.origin?.coordinate
         )
     }
-    var qrOpen by remember { mutableStateOf(false) }
+    var codeDialogOpen by remember { mutableStateOf(false) }
     var qr by remember { mutableStateOf<NvQrShareManager.SavedQr?>(null) }
     var working by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -82,25 +83,26 @@ fun NvReferenceV13(
     var smartResults by remember { mutableStateOf<List<Place>>(emptyList()) }
     var smartLoading by remember { mutableStateOf(false) }
 
-    fun savePin() {
+    fun openPicker() {
+        pin = state.destination?.coordinate ?: state.currentLocation ?: state.origin?.coordinate ?: pin
+        error = null
+        pickerOpen = true
+    }
+
+    fun savePinAndOpenCode() {
         val coordinate = pin ?: return
-        val place = Place(-8300000000L, "سنجاق NV", coordinate, "bookmark:pin")
+        val place = Place(-8300000000L, "مکان انتخاب‌شده", coordinate, "bookmark:pin")
         store.save(place)
         bookmark = place
         qr = null
         error = null
-        picker = false
-        qrOpen = true
+        pickerOpen = false
+        codeDialogOpen = true
     }
 
     val doubleTapListener = remember {
         { coordinate: Coordinate ->
             pin = coordinate
-            val place = Place(-8300000000L, "پرچم NV", coordinate, "bookmark:flag")
-            store.save(place)
-            bookmark = place
-            qr = null
-            error = null
             NvMapInteractionBus.recenterOn(coordinate)
         }
     }
@@ -109,47 +111,22 @@ fun NvReferenceV13(
         onDispose { NvMapInteractionBus.clearListener(doubleTapListener) }
     }
 
-    fun useCurrent() {
-        state.currentLocation?.let { coordinate ->
-            pin = coordinate
-            val place = Place(-8300000000L, "موقعیت فعلی من", coordinate, "bookmark:current")
-            store.save(place)
-            bookmark = place
-            qr = null
-            error = null
-            picker = false
-        }
-    }
-
     val locationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.values.any { it }) viewModel.useCurrentLocationAsOrigin()
     }
 
-    fun locate() {
-        if (state.currentLocation != null) {
-            useCurrent()
-            viewModel.recenterNavigation()
+    fun useCurrentPin() {
+        state.currentLocation?.let {
+            pin = it
+            NvMapInteractionBus.recenterOn(it)
             return
         }
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            viewModel.useCurrentLocationAsOrigin()
-        } else {
-            locationLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            )
-        }
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (granted) viewModel.useCurrentLocationAsOrigin()
+        else locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
     fun nearbySearch(query: String) {
@@ -158,39 +135,33 @@ fun NvReferenceV13(
         nearbyError = null
         val center = state.currentLocation
         if (center == null) {
-            locate()
-            nearbyError = "در حال دریافت موقعیت دقیق شما؛ پس از نمایش موقعیت، دوباره دسته را لمس کنید"
+            useCurrentPin()
+            nearbyError = "در حال دریافت موقعیت شما؛ سپس دوباره جستجو کنید"
             return
         }
         if (!state.onlineAvailable) {
-            nearbyError = "برای جستجوی کامل اطراف، اتصال اینترنت لازم است"
+            nearbyError = "جستجوی آنلاین اطراف در حالت آفلاین در دسترس نیست"
             return
         }
         nearbyLoading = true
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { nearbyService.searchNearby(center, query) }
-            }
-            result.onSuccess { places ->
-                nearbyResults = places
-                if (places.isEmpty()) nearbyError = "در شعاع فعلی مکانی از این نوع پیدا نشد"
-            }.onFailure { throwable ->
-                nearbyError = throwable.message ?: "دریافت مکان‌های اطراف ناموفق بود"
-            }
+            val result = withContext(Dispatchers.IO) { runCatching { nearbyService.searchNearby(center, query) } }
+            result.onSuccess {
+                nearbyResults = it
+                if (it.isEmpty()) nearbyError = "مکانی از این نوع پیدا نشد"
+            }.onFailure { nearbyError = it.message ?: "جستجو ناموفق بود" }
             nearbyLoading = false
         }
     }
 
     LaunchedEffect(state.currentLocation) {
-        if (state.currentLocation != null && !state.locating) pin = state.currentLocation
+        if (state.currentLocation != null && !state.locating && pin == null) pin = state.currentLocation
     }
 
-    // If the normal geocoder cannot resolve a typed destination, search named POIs
-    // and relevant POI categories around the user's current GPS position.
     LaunchedEffect(state.destinationQuery, state.currentLocation, state.destinationSuggestions) {
         val query = state.destinationQuery.trim()
         val center = state.currentLocation
-        if (query.length < 3 || center == null || state.destinationSuggestions.isNotEmpty()) {
+        if (query.length < 3 || center == null || state.destinationSuggestions.isNotEmpty() || !state.onlineAvailable) {
             smartResults = emptyList()
             smartLoading = false
             return@LaunchedEffect
@@ -201,13 +172,7 @@ fun NvReferenceV13(
             val named = runCatching { nearbyService.searchNamedNearby(center, query) }.getOrDefault(emptyList())
             val categorized = runCatching { nearbyService.searchNearby(center, query) }.getOrDefault(emptyList())
             (named + categorized)
-                .distinctBy {
-                    Triple(
-                        it.name,
-                        (it.coordinate.latitude * 10_000).toInt(),
-                        (it.coordinate.longitude * 10_000).toInt()
-                    )
-                }
+                .distinctBy { Triple(it.name, (it.coordinate.latitude * 10_000).toInt(), (it.coordinate.longitude * 10_000).toInt()) }
                 .sortedBy { nearbyDistanceMeters(center, it.coordinate) }
                 .take(8)
         }
@@ -221,25 +186,12 @@ fun NvReferenceV13(
             onThemeModeChange = onThemeModeChange,
             viewModel = viewModel,
             onNearby = { nearbyOpen = true },
-            onPin = {
-                pin = state.currentLocation ?: state.destination?.coordinate ?: state.origin?.coordinate ?: pin
-                picker = true
-            }
+            onPin = ::openPicker
         )
 
-        if (
-            !state.navigationActive &&
-            state.destinationQuery.trim().length >= 3 &&
-            state.destinationSuggestions.isEmpty() &&
-            (smartLoading || smartResults.isNotEmpty())
-        ) {
+        if (!state.navigationActive && state.destinationQuery.trim().length >= 3 && state.destinationSuggestions.isEmpty() && (smartLoading || smartResults.isNotEmpty())) {
             Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(horizontal = 18.dp)
-                    .padding(top = 230.dp)
-                    .fillMaxWidth(),
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 18.dp).padding(top = 230.dp).fillMaxWidth(),
                 color = V13Panel,
                 shape = RoundedCornerShape(16.dp),
                 border = BorderStroke(1.dp, V13Cyan.copy(alpha = .55f)),
@@ -249,30 +201,17 @@ fun NvReferenceV13(
                     if (smartLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
                     smartResults.take(5).forEach { place ->
                         Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    viewModel.selectDestination(place)
-                                    smartResults = emptyList()
-                                }
-                                .padding(9.dp),
+                            Modifier.fillMaxWidth().clickable {
+                                viewModel.selectDestination(place)
+                                smartResults = emptyList()
+                            }.padding(9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Rounded.Place, null, tint = V13Cyan)
                             Spacer(Modifier.width(7.dp))
-                            Text(
-                                place.name,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Text(place.name, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                             state.currentLocation?.let { current ->
-                                Text(
-                                    formatNearbyDistance(nearbyDistanceMeters(current, place.coordinate)),
-                                    color = Color.LightGray,
-                                    style = MaterialTheme.typography.labelSmall
-                                )
+                                Text(formatNearbyDistance(nearbyDistanceMeters(current, place.coordinate)), color = Color.LightGray, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -285,127 +224,44 @@ fun NvReferenceV13(
         AlertDialog(
             onDismissRequest = { nearbyOpen = false },
             containerColor = V13Panel,
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Explore, null, tint = V13Green)
-                    Spacer(Modifier.width(8.dp))
-                    Text("اطراف من", color = Color.White, fontWeight = FontWeight.Black)
-                }
-            },
+            title = { Text("اطراف من", color = Color.White, fontWeight = FontWeight.Black) },
             text = {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 550.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(9.dp)
-                ) {
-                    Text(
-                        "مکان‌های عمومی، ضروری و دیدنی بر اساس فاصله واقعی از GPS شما",
-                        color = Color.LightGray
-                    )
+                Column(Modifier.fillMaxWidth().heightIn(max = 550.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("مکان‌های نزدیک بر اساس موقعیت واقعی شما", color = Color.LightGray)
                     val categories = listOf(
-                        "🚑 اورژانس" to "اورژانس بیمارستان",
-                        "🏥 بیمارستان" to "بیمارستان",
-                        "💊 داروخانه" to "داروخانه",
-                        "🚓 پلیس" to "پلیس",
-                        "🚒 آتش‌نشانی" to "آتش نشانی",
-                        "🩺 درمانگاه" to "درمانگاه",
-                        "🚌 ترمینال" to "ترمینال پایانه",
-                        "✈️ فرودگاه" to "فرودگاه",
-                        "🚆 راه‌آهن" to "راه آهن",
-                        "🚇 مترو" to "مترو",
-                        "🚕 تاکسی" to "تاکسی",
-                        "🅿️ پارکینگ" to "پارکینگ",
-                        "⛽ پمپ‌بنزین" to "پمپ بنزین",
-                        "🔌 شارژ خودرو" to "شارژ خودرو",
-                        "🍽 رستوران" to "رستوران",
-                        "☕ کافه" to "کافه",
-                        "🏨 هتل" to "هتل",
-                        "🛒 فروشگاه" to "فروشگاه",
-                        "🛍 مرکز خرید" to "مرکز خرید",
-                        "🏦 بانک" to "بانک",
-                        "🏧 خودپرداز" to "خودپرداز",
-                        "🥖 نانوایی" to "نانوایی",
-                        "🏫 مدرسه" to "مدرسه",
-                        "🎓 دانشگاه" to "دانشگاه",
-                        "🕌 مسجد" to "مسجد",
-                        "📮 پست" to "پست",
-                        "🚻 سرویس" to "سرویس بهداشتی",
-                        "🔧 تعمیرگاه" to "تعمیرگاه",
-                        "🏟 ورزشگاه" to "ورزشگاه",
-                        "🎬 سینما" to "سینما",
-                        "🏛 موزه" to "موزه",
-                        "🌳 پارک" to "پارک",
-                        "📸 دیدنی" to "جاذبه گردشگری دیدنی",
-                        "🏺 تاریخی" to "اثر تاریخی",
-                        "🏞 طبیعت" to "طبیعت منظره",
-                        "🎡 تفریحی" to "تفریح",
-                        "🏖 ساحل" to "ساحل",
-                        "⛰ کوه/منظره" to "کوه منظره",
-                        "🌉 پل دیدنی" to "پل"
+                        "🚑 اورژانس" to "اورژانس بیمارستان", "🏥 بیمارستان" to "بیمارستان",
+                        "💊 داروخانه" to "داروخانه", "🚓 پلیس" to "پلیس",
+                        "⛽ پمپ‌بنزین" to "پمپ بنزین", "🅿️ پارکینگ" to "پارکینگ",
+                        "🍽 رستوران" to "رستوران", "☕ کافه" to "کافه",
+                        "🏨 هتل" to "هتل", "🏦 بانک" to "بانک",
+                        "🌳 پارک" to "پارک", "📸 دیدنی" to "جاذبه گردشگری"
                     )
                     categories.chunked(2).forEach { rowItems ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(7.dp)
-                        ) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                             rowItems.forEach { (label, query) ->
-                                OutlinedButton(
-                                    onClick = { nearbySearch(query) },
-                                    modifier = Modifier.weight(1f),
-                                    border = BorderStroke(
-                                        1.dp,
-                                        if (nearbyQuery == query) V13Green else V13Cyan.copy(alpha = .4f)
-                                    )
-                                ) {
-                                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
+                                OutlinedButton(onClick = { nearbySearch(query) }, modifier = Modifier.weight(1f)) { Text(label, maxLines = 1) }
                             }
-                            if (rowItems.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
-
-                    if (state.locating || nearbyLoading) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                    }
+                    if (nearbyLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
                     nearbyError?.let { Text(it, color = V13Gold) }
-
                     nearbyResults.forEach { place ->
-                        val distance = state.currentLocation?.let {
-                            nearbyDistanceMeters(it, place.coordinate)
-                        }
                         Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
-                                    viewModel.selectDestination(place)
-                                    nearbyOpen = false
-                                },
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
+                                viewModel.selectDestination(place)
+                                nearbyOpen = false
+                            },
                             color = Color.Black.copy(alpha = .18f),
                             shape = RoundedCornerShape(14.dp),
                             border = BorderStroke(1.dp, V13Cyan.copy(alpha = .25f))
                         ) {
-                            Row(
-                                Modifier.padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Place, null, tint = V13Green)
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(
-                                        place.name,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        distance?.let(::formatNearbyDistance) ?: "در حال دریافت فاصله",
-                                        color = Color.LightGray,
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                                    Text(place.name, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    state.currentLocation?.let { Text(formatNearbyDistance(nearbyDistanceMeters(it, place.coordinate)), color = Color.LightGray) }
                                 }
                                 Icon(Icons.Rounded.Navigation, null, tint = V13Green)
                             }
@@ -413,51 +269,31 @@ fun NvReferenceV13(
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { nearbyOpen = false }) { Text("بستن") }
-            }
+            confirmButton = { TextButton(onClick = { nearbyOpen = false }) { Text("بستن") } }
         )
     }
 
-    if (picker) {
-        Dialog(onDismissRequest = { picker = false }) {
-            Surface(
-                Modifier.fillMaxWidth().fillMaxHeight(.82f),
-                color = V13Panel,
-                shape = RoundedCornerShape(24.dp)
-            ) {
+    if (pickerOpen) {
+        Dialog(onDismissRequest = { pickerOpen = false }) {
+            Surface(Modifier.fillMaxWidth().fillMaxHeight(.82f), color = V13Panel, shape = RoundedCornerShape(24.dp)) {
                 Column {
+                    Text("نقطه دقیق را روی نقشه مشخص کنید", color = Color.White, fontWeight = FontWeight.Black, modifier = Modifier.padding(14.dp))
                     Box(Modifier.weight(1f).fillMaxWidth()) {
-                        NvCodePickerMap(
-                            context,
-                            pin,
-                            false,
-                            { pin = it },
-                            Modifier.fillMaxSize()
-                        )
+                        NvCodePickerMap(context, pin, state.satelliteMode, { pin = it }, Modifier.fillMaxSize())
                     }
                     pin?.let {
-                        Text(
-                            "سنجاق: %.6f, %.6f".format(it.latitude, it.longitude),
-                            color = Color.White,
-                            modifier = Modifier.padding(12.dp)
-                        )
+                        Text("نشانگر: %.6f, %.6f".format(it.latitude, it.longitude), color = Color.White, modifier = Modifier.padding(horizontal = 12.dp))
                     }
-                    Row(
-                        Modifier.fillMaxWidth().padding(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedButton(onClick = { locate() }, modifier = Modifier.weight(1f)) {
+                    Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = ::useCurrentPin, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Rounded.MyLocation, null)
+                            Spacer(Modifier.width(4.dp))
                             Text("موقعیت من")
                         }
-                        Button(
-                            onClick = { savePin() },
-                            enabled = pin != null,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Rounded.Bookmark, null)
-                            Text("ثبت سنجاق")
+                        Button(onClick = ::savePinAndOpenCode, enabled = pin != null, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Rounded.Place, null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("تأیید مکان")
                         }
                     }
                 }
@@ -465,130 +301,88 @@ fun NvReferenceV13(
         }
     }
 
-    if (qrOpen) {
+    if (codeDialogOpen) {
         AlertDialog(
-            onDismissRequest = { if (!working) qrOpen = false },
+            onDismissRequest = { if (!working) codeDialogOpen = false },
             containerColor = V13Panel,
-            title = {
-                Text("QR و کد عددی NV", color = Color.White, fontWeight = FontWeight.Black)
-            },
+            title = { Text("کد عددی و QR مکان", color = Color.White, fontWeight = FontWeight.Black) },
             text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    bookmark?.let {
-                        Text(it.name, color = Color.White)
-                        Text(
-                            "%.6f, %.6f".format(it.coordinate.latitude, it.coordinate.longitude),
-                            color = Color.LightGray
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    bookmark?.let { saved ->
+                        Text(saved.name, color = Color.White)
+                        Text("%.6f, %.6f".format(saved.coordinate.latitude, saved.coordinate.longitude), color = Color.LightGray)
                     }
+
                     qr?.let { saved ->
                         NvQrCode(saved.payload, Modifier.size(220.dp))
-                        Text("کد عددی NV", color = Color.LightGray)
-                        Surface(
-                            color = Color.Black.copy(alpha = .22f),
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, V13Green.copy(alpha = .65f))
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    saved.code,
-                                    color = V13Green,
-                                    fontWeight = FontWeight.Black,
-                                    style = MaterialTheme.typography.titleLarge
-                                )
-                                IconButton(
-                                    onClick = { clipboard.setText(AnnotatedString(saved.code)) }
-                                ) {
-                                    Icon(Icons.Rounded.ContentCopy, "کپی کد عددی", tint = V13Cyan)
+                        Surface(color = Color.Black.copy(alpha = .22f), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, V13Green.copy(alpha = .65f))) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(saved.code, color = V13Green, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                                IconButton(onClick = { clipboard.setText(AnnotatedString(saved.code)) }) {
+                                    Icon(Icons.Rounded.ContentCopy, "کپی کد", tint = V13Cyan)
                                 }
                             }
                         }
                     }
-                    error?.let { Text(it, color = Color.Red) }
+
+                    if (!state.onlineAvailable && qr == null) {
+                        Text("برای تعریف کد جدید باید آنلاین باشید.", color = V13Gold)
+                    }
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
                     if (qr == null) {
                         Button(
                             onClick = {
                                 val savedBookmark = bookmark ?: return@Button
+                                if (!state.onlineAvailable) {
+                                    error = "اینترنت در دسترس نیست؛ کد جدید فقط آنلاین تعریف می‌شود"
+                                    return@Button
+                                }
+                                if (!allocator.isConfigured()) {
+                                    error = "سامانه مرکزی کد NV هنوز تنظیم نشده است"
+                                    return@Button
+                                }
                                 working = true
+                                error = null
                                 scope.launch {
                                     val result = withContext(Dispatchers.IO) {
-                                        val existingCode = savedBookmark.personalCode
-                                        if (!existingCode.isNullOrBlank()) {
-                                            qrManager.createAndSave(
-                                                existingCode,
-                                                savedBookmark.name,
-                                                savedBookmark.coordinate
-                                            )
-                                        } else {
-                                            val allocation = if (allocator.isConfigured()) {
-                                                allocator.allocateOnline(
-                                                    savedBookmark.name,
-                                                    savedBookmark.coordinate
-                                                )
-                                            } else {
-                                                Result.success(
-                                                    NvCodeAllocationService.Allocation(
-                                                        local.nextCode(
-                                                            state.personalPlaces.mapNotNull { it.personalCode }
-                                                        ),
-                                                        savedBookmark.name,
-                                                        savedBookmark.coordinate,
-                                                        false
-                                                    )
-                                                )
-                                            }
-                                            allocation.fold(
-                                                onSuccess = { allocated ->
-                                                    viewModel.savePersonalCode(savedBookmark, allocated.code)
-                                                    store.attachCode(allocated.code)
-                                                    bookmark = savedBookmark.copy(personalCode = allocated.code)
-                                                    qrManager.createAndSave(
-                                                        allocated.code,
-                                                        savedBookmark.name,
-                                                        savedBookmark.coordinate
-                                                    )
-                                                },
-                                                onFailure = { Result.failure(it) }
-                                            )
-                                        }
+                                        allocator.allocateOnline(savedBookmark.name, savedBookmark.coordinate).fold(
+                                            onSuccess = { allocation ->
+                                                viewModel.savePersonalCode(savedBookmark, allocation.code)
+                                                store.attachCode(allocation.code)
+                                                bookmark = savedBookmark.copy(personalCode = allocation.code)
+                                                qrManager.createAndSave(allocation.code, savedBookmark.name, allocation.coordinate)
+                                            },
+                                            onFailure = { Result.failure(it) }
+                                        )
                                     }
-                                    result.onSuccess { qr = it }
-                                        .onFailure { error = it.message ?: "ساخت QR ناموفق بود" }
+                                    result.onSuccess { qr = it }.onFailure { error = it.message ?: "دریافت کد NV ناموفق بود" }
                                     working = false
                                 }
                             },
-                            enabled = !working,
+                            enabled = !working && state.onlineAvailable,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("ساخت کد NV و QR", fontWeight = FontWeight.Black)
+                            if (working) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Rounded.QrCode2, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (working) "در حال دریافت..." else "دریافت کد یکتا و QR", fontWeight = FontWeight.Black)
                         }
                     } else {
                         Button(
                             onClick = { qr?.let(qrManager::share) },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = V13Green,
-                                contentColor = Color.Black
-                            )
+                            colors = ButtonDefaults.buttonColors(containerColor = V13Green, contentColor = Color.Black)
                         ) {
                             Icon(Icons.Rounded.Share, null)
-                            Text(" اشتراک‌گذاری", fontWeight = FontWeight.Black)
+                            Spacer(Modifier.width(6.dp))
+                            Text("اشتراک‌گذاری کد و QR", fontWeight = FontWeight.Black)
                         }
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { if (!working) qrOpen = false }) { Text("بستن") }
-            }
+            dismissButton = { TextButton(onClick = { if (!working) codeDialogOpen = false }) { Text("بستن") } }
         )
     }
 }
@@ -604,5 +398,4 @@ private fun nearbyDistanceMeters(a: Coordinate, b: Coordinate): Double {
 }
 
 private fun formatNearbyDistance(meters: Double): String =
-    if (meters < 1000) "${meters.roundToInt()} متر"
-    else String.format("%.1f کیلومتر", meters / 1000.0)
+    if (meters < 1000) "${meters.roundToInt()} متر" else String.format("%.1f کیلومتر", meters / 1000.0)
