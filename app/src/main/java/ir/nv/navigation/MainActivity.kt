@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.navigation.service.NvNavigationService
-import ir.nv.navigation.ui.NvCodeToolbarOverlay
 import ir.nv.navigation.ui.NvReferenceV13
 import ir.nv.navigation.ui.NvViewModel
 import ir.nv.navigation.ui.OfflineMapDiagnosticsButton
@@ -98,7 +97,6 @@ class MainActivity : ComponentActivity() {
                             },
                             viewModel = navigationViewModel
                         )
-                        NvCodeToolbarOverlay(navigationViewModel)
                         OfflineMapDiagnosticsButton(
                             offlineReady = navigationState.offlineReady,
                             modifier = Modifier
