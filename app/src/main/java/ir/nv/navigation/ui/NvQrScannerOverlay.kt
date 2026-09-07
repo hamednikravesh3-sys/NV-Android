@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -29,7 +28,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -49,11 +47,10 @@ fun NvQrScannerOverlay(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val scanner = remember { NvQrScanner() }
     val scope = rememberCoroutineScope()
-    var dialogOpen by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
+    var dialogOpen by androidx.compose.runtime.remember { mutableStateOf(false) }
+    var busy by androidx.compose.runtime.remember { mutableStateOf(false) }
+    var message by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
 
     fun applyScan(bitmap: Bitmap?) {
         if (bitmap == null) {
@@ -62,7 +59,7 @@ fun NvQrScannerOverlay(
         }
         busy = true
         scope.launch {
-            val result = withContext(Dispatchers.Default) { scanner.decode(bitmap) }
+            val result = withContext(Dispatchers.Default) { NvQrScanner.decode(bitmap) }
             result.onSuccess { scan ->
                 val stored = viewModel.state.value.personalPlaces.firstOrNull { it.personalCode == scan.code }
                 val coordinate = scan.coordinate ?: stored?.coordinate
