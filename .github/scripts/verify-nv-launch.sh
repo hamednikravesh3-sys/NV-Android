@@ -51,9 +51,11 @@ function clear_emulator_dialogs() {
 clear_emulator_dialogs
 
 app_alive=0
+APP_PID=""
 for _ in $(seq 1 30); do
   clear_emulator_dialogs
-  if adb shell pidof "$PACKAGE" >/dev/null 2>&1; then app_alive=1; break; fi
+  APP_PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
+  if [[ -n "$APP_PID" ]]; then app_alive=1; break; fi
   sleep 2
 done
 
@@ -157,9 +159,18 @@ adb shell dumpsys window windows > nv-window-state.txt
 adb shell dumpsys activity activities > nv-activity-state.txt
 adb logcat -d > nv-logcat.txt
 
+# A system process can crash on the Android 10 emulator without NV crashing.
+# Treat only AndroidRuntime fatals emitted by the NV process as application
+# failures. ANRs are reported by system_server, so match them by package name.
+: > nv-app-logcat.txt
+if [[ -n "$APP_PID" ]]; then
+  adb logcat -d --pid="$APP_PID" > nv-app-logcat.txt 2>/dev/null || true
+fi
+
 if [[ "$app_alive" -ne 1 ]]; then echo "NV process did not stay alive after launch"; exit 1; fi
 if [[ "$first_frame" -ne 1 ]]; then echo "NV did not render its first frame before the timeout"; exit 1; fi
-if grep -E 'FATAL EXCEPTION: main|ANR in ir\.nv\.navigation\.debug' nv-logcat.txt; then echo "NV fatal exception or ANR detected"; exit 1; fi
+if grep -E 'FATAL EXCEPTION:' nv-app-logcat.txt; then echo "NV fatal exception detected"; exit 1; fi
+if grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-logcat.txt; then echo "NV ANR detected"; exit 1; fi
 if ! grep -q "$PACKAGE/$ACTIVITY" nv-activity-state.txt; then echo "NV MainActivity not present in activity state"; exit 1; fi
 
 echo "NV launch and core Persian UI verification passed"
