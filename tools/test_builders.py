@@ -92,5 +92,20 @@ class RoutingBuilderTest(unittest.TestCase):
         self.assertGreater(haversine((35.0, 51.0), (35.01, 51.0)), 1_000)
 
 
+class NvCodeRegistryContractTest(unittest.TestCase):
+    def test_registry_is_online_only_unique_and_idempotent(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        schema = (repo / "backend" / "nv-code-registry" / "schema.sql").read_text(encoding="utf-8")
+        worker = (repo / "backend" / "nv-code-registry" / "worker.js").read_text(encoding="utf-8")
+        local_allocator = repo / "app" / "src" / "main" / "java" / "ir" / "nv" / "navigation" / "data" / "NvLocalSequentialCodeAllocator.kt"
+
+        self.assertIn("location_key TEXT NOT NULL UNIQUE", schema)
+        self.assertIn("CREATE UNIQUE INDEX IF NOT EXISTS idx_nv_codes_code", schema)
+        self.assertIn("latitude.toFixed(6)", worker)
+        self.assertIn("INSERT OR IGNORE INTO nv_codes", worker)
+        self.assertIn("status: 'existing'", worker)
+        self.assertFalse(local_allocator.exists(), "NV Code must never have an offline/local allocator")
+
+
 if __name__ == "__main__":
     unittest.main()
