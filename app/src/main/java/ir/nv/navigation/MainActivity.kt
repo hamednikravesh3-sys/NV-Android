@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.navigation.service.NvNavigationService
+import ir.nv.navigation.ui.NvQrScannerOverlay
 import ir.nv.navigation.ui.NvReferenceV13
 import ir.nv.navigation.ui.NvViewModel
 import ir.nv.navigation.ui.OfflineMapDiagnosticsButton
@@ -104,6 +105,15 @@ class MainActivity : ComponentActivity() {
                                 .navigationBarsPadding()
                                 .padding(start = 12.dp, bottom = 92.dp)
                         )
+                        if (!navigationState.navigationActive) {
+                            NvQrScannerOverlay(
+                                viewModel = navigationViewModel,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .navigationBarsPadding()
+                                    .padding(end = 12.dp, bottom = 92.dp)
+                            )
+                        }
                     }
                 }
             }
