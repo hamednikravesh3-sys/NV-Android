@@ -27,7 +27,7 @@ class HybridRouteCoordinator(
                 .getOrDefault(emptyList())
         }
 
-        val routes = when {
+        val resolvedRoutes = when {
             initial.isNotEmpty() -> initial
             !primaryOffline && request.offlineAvailable -> {
                 fallbackUsed = true
@@ -41,6 +41,8 @@ class HybridRouteCoordinator(
             }
             else -> emptyList()
         }
+        // NV exposes at most four alternatives to keep comparison clear and deterministic.
+        val routes = resolvedRoutes.take(MAX_ROUTE_ALTERNATIVES)
 
         val source = when {
             routes.isEmpty() -> RouteSource.NONE
@@ -80,5 +82,9 @@ class HybridRouteCoordinator(
             fallbackUsed = fallbackUsed,
             warning = warning
         )
+    }
+
+    private companion object {
+        const val MAX_ROUTE_ALTERNATIVES = 4
     }
 }
