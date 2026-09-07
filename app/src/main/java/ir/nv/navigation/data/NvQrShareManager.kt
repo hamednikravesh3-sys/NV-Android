@@ -33,6 +33,7 @@ class NvQrShareManager(private val context: Context) {
         FileOutputStream(file).use { output ->
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) { "ذخیره QR ناموفق بود" }
         }
+        File(dir, "NV-$safeCode.payload").writeText(payload, Charsets.UTF_8)
         SavedQr(file, payload, safeCode, cleanName, coordinate)
     }
 
@@ -63,10 +64,20 @@ class NvQrShareManager(private val context: Context) {
     fun existing(code: String): SavedQr? {
         val safeCode = code.filter(Char::isDigit)
         if (safeCode.isBlank()) return null
-        val file = File(File(context.filesDir, "nv_qr"), "NV-$safeCode.png")
-        return file.takeIf(File::exists)?.let {
-            SavedQr(it, "nv://place/$safeCode", safeCode, "مکان NV $safeCode", Coordinate(0.0, 0.0))
-        }
+        val dir = File(context.filesDir, "nv_qr")
+        val file = File(dir, "NV-$safeCode.png")
+        val payloadFile = File(dir, "NV-$safeCode.payload")
+        if (!file.exists() || !payloadFile.exists()) return null
+        val payload = runCatching { payloadFile.readText(Charsets.UTF_8) }.getOrNull() ?: return null
+        val parsed = runCatching { NvQrScanner.parse(payload) }.getOrNull() ?: return null
+        val coordinate = parsed.coordinate ?: return null
+        return SavedQr(
+            file = file,
+            payload = payload,
+            code = parsed.code,
+            name = parsed.name?.takeIf { it.isNotBlank() } ?: "مکان NV ${parsed.code}",
+            coordinate = coordinate
+        )
     }
 
     private fun buildPayload(code: String, name: String, coordinate: Coordinate): String =
