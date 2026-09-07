@@ -11,6 +11,7 @@ import com.google.zxing.common.BitMatrix
 import ir.nv.navigation.core.Coordinate
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URLEncoder
 
 class NvQrShareManager(private val context: Context) {
     data class SavedQr(
@@ -23,7 +24,7 @@ class NvQrShareManager(private val context: Context) {
 
     fun createAndSave(code: String, name: String, coordinate: Coordinate): Result<SavedQr> = runCatching {
         val safeCode = code.filter(Char::isDigit).ifBlank { error("کد NV نامعتبر است") }
-        val cleanName = name.trim().ifBlank { "NV Place $safeCode" }
+        val cleanName = name.trim().ifBlank { "مکان NV $safeCode" }
         val payload = buildPayload(safeCode, cleanName, coordinate)
         val matrix = MultiFormatWriter().encode(payload, BarcodeFormat.QR_CODE, 720, 720)
         val bitmap = matrix.toBitmap()
@@ -42,16 +43,13 @@ class NvQrShareManager(private val context: Context) {
             saved.file
         )
         val text = buildString {
-            append("NV Code: ").append(saved.code).append('\n')
             append(saved.name).append('\n')
-            append("Location: ")
+            append("کد NV: ").append(saved.code).append('\n')
+            append("موقعیت: ")
                 .append("%.6f".format(saved.coordinate.latitude))
                 .append(", ")
                 .append("%.6f".format(saved.coordinate.longitude))
-            append('\n').append("geo:")
-                .append(saved.coordinate.latitude)
-                .append(',')
-                .append(saved.coordinate.longitude)
+            append('\n').append("باز کردن در NV: ").append(saved.payload)
         }
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
@@ -59,7 +57,7 @@ class NvQrShareManager(private val context: Context) {
             putExtra(Intent.EXTRA_TEXT, text)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری کد NV"))
+        context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری مکان و کد NV"))
     }
 
     fun existing(code: String): SavedQr? {
@@ -67,12 +65,12 @@ class NvQrShareManager(private val context: Context) {
         if (safeCode.isBlank()) return null
         val file = File(File(context.filesDir, "nv_qr"), "NV-$safeCode.png")
         return file.takeIf(File::exists)?.let {
-            SavedQr(it, "", safeCode, "NV Place $safeCode", Coordinate(0.0, 0.0))
+            SavedQr(it, "nv://place/$safeCode", safeCode, "مکان NV $safeCode", Coordinate(0.0, 0.0))
         }
     }
 
     private fun buildPayload(code: String, name: String, coordinate: Coordinate): String =
-        "nv://place/$code?lat=${coordinate.latitude}&lon=${coordinate.longitude}&name=${java.net.URLEncoder.encode(name, "UTF-8")}" 
+        "nv://place/$code?lat=${coordinate.latitude}&lon=${coordinate.longitude}&name=${URLEncoder.encode(name, "UTF-8")}" 
 
     private fun BitMatrix.toBitmap(): Bitmap {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
