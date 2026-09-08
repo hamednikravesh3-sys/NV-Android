@@ -1,6 +1,11 @@
-const json = (body, status = 200) => new Response(JSON.stringify(body), {
+const json = (body, status = 200, extraHeaders = {}) => new Response(JSON.stringify(body), {
   status,
-  headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
+  headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    ...extraHeaders
+  }
 });
 
 async function userIdFromRequest(request) {
@@ -14,8 +19,8 @@ async function userIdFromRequest(request) {
 
 function validPlace(place) {
   return place && /^[0-9]+$/.test(String(place.code || '')) &&
-    typeof place.latitude === 'number' && place.latitude >= -90 && place.latitude <= 90 &&
-    typeof place.longitude === 'number' && place.longitude >= -180 && place.longitude <= 180;
+    typeof place.latitude === 'number' && Number.isFinite(place.latitude) && place.latitude >= -90 && place.latitude <= 90 &&
+    typeof place.longitude === 'number' && Number.isFinite(place.longitude) && place.longitude >= -180 && place.longitude <= 180;
 }
 
 async function ensureUser(db, userId) {
@@ -31,20 +36,39 @@ async function snapshot(db, userId) {
   return { revision: Number(state?.revision || 0), places: places.results || [] };
 }
 
+async function readJson(request) {
+  try {
+    return await request.json();
+  } catch {
+    return null;
+  }
+}
+
 export default {
   async fetch(request, env) {
     try {
       const url = new URL(request.url);
-      if (url.pathname === '/health') return json({ ok: true, service: 'nv-cloud-sync' });
+
+      if (url.pathname === '/health') {
+        if (request.method !== 'GET') return json({ error: 'method_not_allowed' }, 405, { allow: 'GET' });
+        return json({ ok: true, service: 'nv-cloud-sync' });
+      }
+
       if (url.pathname !== '/v1/sync') return json({ error: 'not_found' }, 404);
+      if (request.method !== 'GET' && request.method !== 'POST') {
+        return json({ error: 'method_not_allowed' }, 405, { allow: 'GET, POST' });
+      }
 
       const userId = await userIdFromRequest(request);
       await ensureUser(env.DB, userId);
 
       if (request.method === 'GET') return json(await snapshot(env.DB, userId));
-      if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
-      const body = await request.json();
+      const body = await readJson(request);
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return json({ error: 'invalid_json' }, 400);
+      }
+
       const expectedRevision = Number(body.revision);
       const places = Array.isArray(body.places) ? body.places : [];
       if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
