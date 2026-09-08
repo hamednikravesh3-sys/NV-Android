@@ -1,7 +1,7 @@
 package ir.nv.navigation.cloud
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFails
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class NvCloudSyncClientTest {
@@ -19,7 +19,7 @@ class NvCloudSyncClientTest {
 
     @Test
     fun rejectsInvalidCoordinate() {
-        assertFails {
+        assertThrows(IllegalArgumentException::class.java) {
             client.parseSnapshot(
                 """{"revision":1,"places":[{"code":"12","name":"x","latitude":120.0,"longitude":51.4,"updatedAt":1}]}"""
             )
@@ -28,7 +28,7 @@ class NvCloudSyncClientTest {
 
     @Test
     fun rejectsNonNumericNvCode() {
-        assertFails {
+        assertThrows(IllegalArgumentException::class.java) {
             client.parseSnapshot(
                 """{"revision":1,"places":[{"code":"NV-12","name":"x","latitude":35.7,"longitude":51.4,"updatedAt":1}]}"""
             )
