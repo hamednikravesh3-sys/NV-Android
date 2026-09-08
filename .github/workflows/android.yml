@@ -120,21 +120,16 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: bash .github/scripts/verify-nv-launch.sh
+          script: bash .github/scripts/verify-nv-launch-modern.sh
       - name: Upload Android 15 launch diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: NV-launch-diagnostics-android15
           path: |
-            nv-launch-screen.png
-            nv-nearby-screen.png
-            nv-offline-screen.png
-            nv-pin-screen.png
-            nv-code-screen.png
-            nv-ui.xml
-            nv-window-state.txt
-            nv-activity-state.txt
-            nv-logcat.txt
-            nv-app-logcat.txt
+            nv-modern-launch-screen.png
+            nv-modern-window-state.txt
+            nv-modern-activity-state.txt
+            nv-modern-logcat.txt
+            nv-modern-app-logcat.txt
           if-no-files-found: warn
