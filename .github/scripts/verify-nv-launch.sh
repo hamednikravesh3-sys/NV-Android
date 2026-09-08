@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PACKAGE="ir.nv.navigation.debug"
-ACTIVITY="ir.nv.navigation.MainActivity"
+PACKAGE="${NV_VERIFY_PACKAGE:-ir.nv.navigation.debug}"
+ACTIVITY="${NV_VERIFY_ACTIVITY:-ir.nv.navigation.MainActivity}"
+APK_PATH="${NV_VERIFY_APK:-app/build/outputs/apk/debug/app-debug.apk}"
 MAP_PATH="/sdcard/Android/data/$PACKAGE/files/Download/Iran map.nvpack"
 
 adb wait-for-device
 adb shell settings put global hide_error_dialogs 1 || true
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+test -s "$APK_PATH"
+adb install -r "$APK_PATH"
 adb shell pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION
 adb shell pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
 adb logcat -c
@@ -92,7 +94,6 @@ PY
   adb shell input tap $coords
 }
 
-# Wait for the actual NV Compose controls, not transient System UI dialogs.
 ui_ready=0
 for _ in $(seq 1 45); do
   dump_ui
@@ -111,7 +112,6 @@ adb exec-out screencap -p > nv-launch-screen.png
 grep -q 'content-desc="اطراف من"' nv-ui.xml
 grep -q 'content-desc="سنجاق NV"' nv-ui.xml
 
-# Nearby must be actionable and show Persian categories.
 tap_desc "اطراف من"
 sleep 2
 dump_ui
@@ -121,9 +121,6 @@ adb exec-out screencap -p > nv-nearby-screen.png
 adb shell input keyevent 4
 sleep 1
 
-# Exercise the Iran-map download action. External release/CDN availability is not
-# a launch-test invariant; zero bytes is recorded as diagnostics instead of
-# making unrelated application builds red.
 tap_desc "نقشه آفلاین"
 map_started=0
 map_bytes=0
@@ -146,7 +143,6 @@ if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then
 fi
 adb exec-out screencap -p > nv-offline-screen.png
 
-# NV pin is the single entry point for assigning an online-only numeric code + QR.
 tap_desc "سنجاق NV"
 sleep 2
 dump_ui
@@ -159,9 +155,6 @@ adb shell dumpsys window windows > nv-window-state.txt
 adb shell dumpsys activity activities > nv-activity-state.txt
 adb logcat -d > nv-logcat.txt
 
-# A system process can crash on the Android 10 emulator without NV crashing.
-# Treat only AndroidRuntime fatals emitted by the NV process as application
-# failures. ANRs are reported by system_server, so match them by package name.
 : > nv-app-logcat.txt
 if [[ -n "$APP_PID" ]]; then
   adb logcat -d --pid="$APP_PID" > nv-app-logcat.txt 2>/dev/null || true
@@ -173,4 +166,4 @@ if grep -E 'FATAL EXCEPTION:' nv-app-logcat.txt; then echo "NV fatal exception d
 if grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-logcat.txt; then echo "NV ANR detected"; exit 1; fi
 if ! grep -q "$PACKAGE/$ACTIVITY" nv-activity-state.txt; then echo "NV MainActivity not present in activity state"; exit 1; fi
 
-echo "NV launch and core Persian UI verification passed"
+echo "NV launch and core Persian UI verification passed for $PACKAGE"
