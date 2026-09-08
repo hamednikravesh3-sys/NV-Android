@@ -29,6 +29,7 @@ import ir.nv.navigation.ui.NvQrScannerOverlay
 import ir.nv.navigation.ui.NvReferenceV13
 import ir.nv.navigation.ui.NvViewModel
 import ir.nv.navigation.ui.OfflineMapDiagnosticsButton
+import ir.nv.navigation.ui.ProvinceDownloadOverlay
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
 import kotlinx.coroutines.delay
@@ -106,6 +107,12 @@ class MainActivity : ComponentActivity() {
                                 .padding(start = 12.dp, bottom = 92.dp)
                         )
                         if (!navigationState.navigationActive) {
+                            ProvinceDownloadOverlay(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .navigationBarsPadding()
+                                    .padding(bottom = 92.dp)
+                            )
                             NvQrScannerOverlay(
                                 viewModel = navigationViewModel,
                                 modifier = Modifier
