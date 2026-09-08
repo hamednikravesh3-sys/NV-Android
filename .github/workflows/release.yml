@@ -50,6 +50,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Backend and release tooling tests
+        run: python -m unittest discover -s tools -p "test_*.py"
+
+      - name: Validate production service configuration
+        run: python tools/release_readiness.py
+
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -69,16 +76,11 @@ jobs:
           [[ "$CERT" =~ ^[0-9A-F]{64}$ ]] || { echo "Could not read SHA-256 fingerprint from release keystore"; exit 1; }
           test "$CERT" = "$NV_EXPECTED_CERT_SHA256" || { echo "Release keystore certificate does not match pinned production certificate"; exit 1; }
 
-      - name: Validate production service configuration
-        run: python tools/release_readiness.py
-
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Test and build signed release
-        run: |
-          python -m unittest discover -s tools -p "test_*.py"
-          gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease
+      - name: Build signed release
+        run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease
 
       - name: Verify APK signature, identity and provenance
         shell: bash
