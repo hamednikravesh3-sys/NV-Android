@@ -9,7 +9,7 @@ permissions:
 jobs:
   signed-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       KEYSTORE_BASE64: ${{ secrets.NV_KEYSTORE_BASE64 }}
       NV_KEYSTORE_PASSWORD: ${{ secrets.NV_KEYSTORE_PASSWORD }}
@@ -46,6 +46,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -69,6 +72,35 @@ jobs:
           "$AAPT" dump badging "$APK" | tee app-release-badging.txt
           grep -q "package: name='ir.nv.navigation'" app-release-badging.txt
           sha256sum "$APK" | tee app-release.apk.sha256
+
+      - name: Install and verify signed release on Android 10
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          NV_VERIFY_PACKAGE: ir.nv.navigation
+          NV_VERIFY_APK: app/build/outputs/apk/release/app-release.apk
+        with:
+          api-level: 29
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: bash .github/scripts/verify-nv-launch.sh
+
+      - name: Upload signed release diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-signed-release-diagnostics
+          path: |
+            nv-launch-screen.png
+            nv-nearby-screen.png
+            nv-offline-screen.png
+            nv-pin-screen.png
+            nv-ui.xml
+            nv-window-state.txt
+            nv-activity-state.txt
+            nv-logcat.txt
+            nv-app-logcat.txt
+          if-no-files-found: warn
 
       - name: Upload signed release bundle
         uses: actions/upload-artifact@v4
