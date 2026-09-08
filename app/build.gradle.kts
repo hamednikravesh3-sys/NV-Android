@@ -14,6 +14,9 @@ android {
         val googleMapsApiKey = System.getenv("NV_GOOGLE_MAPS_API_KEY").orEmpty()
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
+        val cloudApiUrl = System.getenv("NV_CLOUD_API_URL").orEmpty()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
@@ -34,6 +37,7 @@ android {
             "PROVINCE_PACK_BASE_URL",
             "\"https://github.com/hamednikravesh3-sys/NV-Android/releases/download/map-v1\""
         )
+        buildConfigField("String", "CLOUD_API_URL", "\"$cloudApiUrl\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
         buildConfigField(
             "String",
