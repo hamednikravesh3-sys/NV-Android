@@ -3,6 +3,10 @@ name: Signed Release APK
 on:
   workflow_dispatch:
 
+concurrency:
+  group: nv-production-signed-release
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
