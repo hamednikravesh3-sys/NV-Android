@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
+from build_pack import valid_region_id
 from build_places import build_database, normalize
 from build_routing import direction, haversine, is_drivable, speed_kmh
 
@@ -90,6 +92,16 @@ class RoutingBuilderTest(unittest.TestCase):
         self.assertAlmostEqual(80.0, speed_kmh({"highway": "primary"}))
         self.assertAlmostEqual(80.4672, speed_kmh({"highway": "primary", "maxspeed": "50 mph"}), places=3)
         self.assertGreater(haversine((35.0, 51.0), (35.01, 51.0)), 1_000)
+
+
+class OfflinePackBuilderTest(unittest.TestCase):
+    def test_region_ids_are_stable_and_path_safe(self) -> None:
+        self.assertEqual("tehran", valid_region_id(" Tehran "))
+        self.assertEqual("sistan-baluchestan", valid_region_id("sistan-baluchestan"))
+        with self.assertRaises(argparse.ArgumentTypeError):
+            valid_region_id("../tehran")
+        with self.assertRaises(argparse.ArgumentTypeError):
+            valid_region_id("تهران")
 
 
 class NvCodeRegistryContractTest(unittest.TestCase):
