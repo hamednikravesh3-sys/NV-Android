@@ -55,6 +55,7 @@ jobs:
         run: |
           python -m unittest discover -s tools -p "test_*.py"
           node --test backend/nv-code-registry/worker.test.mjs
+          node --test backend/cloud-sync/worker.test.mjs
 
       - name: Validate production service configuration
         run: python tools/release_readiness.py
