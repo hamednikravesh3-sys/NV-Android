@@ -14,7 +14,7 @@ adb shell pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION
 adb shell pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
 adb logcat -c
 adb shell am force-stop "$PACKAGE"
-adb shell am start -n "$PACKAGE/$ACTIVITY"
+adb shell am start -W -n "$PACKAGE/$ACTIVITY" || adb shell am start -n "$PACKAGE/$ACTIVITY"
 
 function dump_ui_raw() {
   adb shell uiautomator dump /sdcard/nv-ui.xml >/dev/null 2>&1 || true
@@ -50,12 +50,22 @@ function clear_emulator_dialogs() {
   done
 }
 
+function ensure_app_foreground() {
+  local resumed
+  resumed="$(adb shell dumpsys activity activities 2>/dev/null | grep -m1 'ResumedActivity' || true)"
+  if [[ "$resumed" != *"$PACKAGE/$ACTIVITY"* ]]; then
+    adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null 2>&1 || adb shell am start -n "$PACKAGE/$ACTIVITY" >/dev/null 2>&1 || true
+    sleep 2
+  fi
+}
+
 clear_emulator_dialogs
 
 app_alive=0
 APP_PID=""
 for _ in $(seq 1 30); do
   clear_emulator_dialogs
+  ensure_app_foreground
   APP_PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
   if [[ -n "$APP_PID" ]]; then app_alive=1; break; fi
   sleep 2
@@ -64,6 +74,7 @@ done
 first_frame=0
 for _ in $(seq 1 60); do
   clear_emulator_dialogs
+  ensure_app_foreground
   if adb logcat -d | grep -F "Displayed $PACKAGE/$ACTIVITY" >/dev/null; then first_frame=1; break; fi
   if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then break; fi
   sleep 2
@@ -71,6 +82,7 @@ done
 
 function dump_ui() {
   clear_emulator_dialogs
+  ensure_app_foreground
   dump_ui_raw
 }
 
@@ -95,16 +107,24 @@ PY
 }
 
 ui_ready=0
-for _ in $(seq 1 45); do
+for attempt in $(seq 1 60); do
   dump_ui
-  if grep -q 'content-desc="جستجو"' nv-ui.xml && grep -q 'content-desc="نقشه آفلاین"' nv-ui.xml; then
+  if grep -q "package=\"$PACKAGE\"" nv-ui.xml && grep -q 'content-desc="جستجو"' nv-ui.xml && grep -q 'content-desc="نقشه آفلاین"' nv-ui.xml; then
     ui_ready=1
     break
+  fi
+  if (( attempt % 10 == 0 )); then
+    echo "NV UI not ready after $attempt checks; reasserting foreground activity"
+    adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null 2>&1 || true
   fi
   sleep 2
 done
 if [[ "$ui_ready" -ne 1 ]]; then
   echo "NV controls did not become visible"
+  adb shell dumpsys window windows > nv-window-state.txt || true
+  adb shell dumpsys activity activities > nv-activity-state.txt || true
+  adb logcat -d > nv-logcat.txt || true
+  adb exec-out screencap -p > nv-launch-screen.png || true
   exit 1
 fi
 
@@ -156,6 +176,7 @@ adb shell dumpsys activity activities > nv-activity-state.txt
 adb logcat -d > nv-logcat.txt
 
 : > nv-app-logcat.txt
+APP_PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
 if [[ -n "$APP_PID" ]]; then
   adb logcat -d --pid="$APP_PID" > nv-app-logcat.txt 2>/dev/null || true
 fi
