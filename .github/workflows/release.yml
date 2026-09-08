@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require production configuration
+      - name: Require signing configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -29,10 +29,6 @@ jobs:
           test -n "$NV_KEYSTORE_PASSWORD"
           test -n "$NV_KEY_ALIAS"
           test -n "$NV_KEY_PASSWORD"
-          test -n "$NV_CLOUD_API_URL"
-          test -n "$NV_CODE_REGISTRY_URL"
-          case "$NV_CLOUD_API_URL" in https://*) ;; *) echo "NV_CLOUD_API_URL must use HTTPS"; exit 1;; esac
-          case "$NV_CODE_REGISTRY_URL" in https://*) ;; *) echo "NV_CODE_REGISTRY_URL must use HTTPS"; exit 1;; esac
 
       - name: Decode keystore
         shell: bash
@@ -54,11 +50,16 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Validate production service configuration
+        run: python tools/release_readiness.py
+
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Test and build signed release
-        run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease
+        run: |
+          python -m unittest discover -s tools -p "test_*.py"
+          gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease
 
       - name: Verify APK signature and identity
         shell: bash
