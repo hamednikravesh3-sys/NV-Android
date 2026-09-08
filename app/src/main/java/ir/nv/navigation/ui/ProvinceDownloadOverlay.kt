@@ -33,15 +33,38 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.offline.OfflinePackCatalog
 import ir.nv.navigation.offline.OfflineRegionPack
+import ir.nv.navigation.offline.ProvincePackAvailabilityService
 import ir.nv.navigation.offline.ProvincePackDownloadManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ProvinceDownloadOverlay(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val manager = remember { ProvincePackDownloadManager(context.applicationContext) }
+    val availabilityService = remember { ProvincePackAvailabilityService() }
     val statuses = remember { mutableStateMapOf<String, ProvincePackDownloadManager.Status>() }
     var open by remember { mutableStateOf(false) }
+    var publishedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var availabilityLoaded by remember { mutableStateOf(false) }
+    var availabilityError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(open) {
+        if (!open) return@LaunchedEffect
+        availabilityLoaded = false
+        availabilityError = null
+        withContext(Dispatchers.IO) { availabilityService.fetch() }
+            .onSuccess {
+                publishedIds = it.publishedPackIds
+                availabilityLoaded = true
+            }
+            .onFailure {
+                publishedIds = emptySet()
+                availabilityError = it.message ?: "وضعیت انتشار بسته‌های استانی دریافت نشد"
+                availabilityLoaded = true
+            }
+    }
 
     LaunchedEffect(open) {
         if (!open) return@LaunchedEffect
@@ -66,9 +89,19 @@ fun ProvinceDownloadOverlay(modifier: Modifier = Modifier) {
                     Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("هر استان جداگانه دانلود می‌شود و دانلود پس از بسته‌شدن برنامه توسط Android ادامه پیدا می‌کند.")
+                    Text("۳۱ استان به‌صورت مستقل مدیریت می‌شوند. دانلود فقط برای بسته‌ای فعال است که واقعاً روی سرور منتشر شده باشد.")
+                    if (!availabilityLoaded) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    availabilityError?.let {
+                        Text("بررسی بسته‌های منتشرشده ناموفق بود؛ برای جلوگیری از دانلود خراب، شروع دانلود موقتاً غیرفعال است. $it")
+                    }
                     OfflinePackCatalog.provinces.forEach { pack ->
-                        ProvincePackRow(pack, statuses[pack.id] ?: manager.status(pack), manager) {
+                        ProvincePackRow(
+                            pack = pack,
+                            status = statuses[pack.id] ?: manager.status(pack),
+                            manager = manager,
+                            published = availabilityLoaded && pack.id in publishedIds,
+                            availabilityLoaded = availabilityLoaded
+                        ) {
                             statuses[pack.id] = manager.status(pack)
                         }
                     }
@@ -85,6 +118,8 @@ private fun ProvincePackRow(
     pack: OfflineRegionPack,
     status: ProvincePackDownloadManager.Status,
     manager: ProvincePackDownloadManager,
+    published: Boolean,
+    availabilityLoaded: Boolean,
     refresh: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -92,16 +127,32 @@ private fun ProvincePackRow(
             Column(Modifier.weight(1f)) {
                 Text(pack.title, fontWeight = FontWeight.Bold)
                 Text("حدود ${pack.estimatedSizeMb} مگابایت")
+                if (availabilityLoaded && !published && status == ProvincePackDownloadManager.Status.NotStarted) {
+                    Text("بسته هنوز روی سرور منتشر نشده است")
+                }
             }
             when (status) {
-                ProvincePackDownloadManager.Status.NotStarted -> Button(onClick = { manager.start(pack); refresh() }) { Text("دانلود") }
-                is ProvincePackDownloadManager.Status.Downloading -> OutlinedButton(onClick = { manager.cancel(pack); refresh() }) { Text("لغو") }
-                ProvincePackDownloadManager.Status.Downloaded -> OutlinedButton(onClick = { manager.cancel(pack); refresh() }) {
+                ProvincePackDownloadManager.Status.NotStarted -> Button(
+                    onClick = { manager.start(pack); refresh() },
+                    enabled = published
+                ) { Text(if (published) "دانلود" else "در انتظار انتشار") }
+
+                is ProvincePackDownloadManager.Status.Downloading -> OutlinedButton(
+                    onClick = { manager.cancel(pack); refresh() }
+                ) { Text("لغو") }
+
+                ProvincePackDownloadManager.Status.Downloaded -> OutlinedButton(
+                    onClick = { manager.cancel(pack); refresh() }
+                ) {
                     Icon(Icons.Rounded.DeleteOutline, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("حذف")
                 }
-                is ProvincePackDownloadManager.Status.Failed -> Button(onClick = { manager.start(pack); refresh() }) { Text("تلاش دوباره") }
+
+                is ProvincePackDownloadManager.Status.Failed -> Button(
+                    onClick = { manager.start(pack); refresh() },
+                    enabled = published
+                ) { Text(if (published) "تلاش دوباره" else "منتظر انتشار") }
             }
         }
         when (status) {
