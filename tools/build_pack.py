@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Create a reproducible, checksummed NV Iran data pack."""
+"""Create a reproducible, checksummed NV offline region data pack."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import re
 import sqlite3
 import zipfile
 from datetime import datetime, timezone
@@ -25,17 +26,28 @@ def sqlite_count(path: Path, table: str) -> int:
         return int(database.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
+def valid_region_id(value: str) -> str:
+    value = value.strip().lower()
+    if not re.fullmatch(r"[a-z0-9-]+", value):
+        raise argparse.ArgumentTypeError("region id must contain only a-z, 0-9 and hyphen")
+    return value
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--map", type=Path, required=True)
     parser.add_argument("--places", type=Path, required=True)
     parser.add_argument("--routing", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--region-id", type=valid_region_id, default="iran")
     parser.add_argument("--osm-timestamp", default="unknown")
     args = parser.parse_args()
-    files = {"iran.map": args.map, "places.db": args.places, "routing.db": args.routing}
+
+    map_name = f"{args.region_id}.map"
+    files = {map_name: args.map, "places.db": args.places, "routing.db": args.routing}
     manifest = {
         "schemaVersion": 2,
+        "regionId": args.region_id,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "osmTimestamp": args.osm_timestamp,
         "attribution": "© OpenStreetMap contributors, ODbL 1.0",
