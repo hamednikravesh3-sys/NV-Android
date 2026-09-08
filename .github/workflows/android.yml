@@ -46,8 +46,11 @@ jobs:
       - name: Verify unsigned release package
         run: |
           RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          AAPT="$BUILD_TOOLS/aapt"
           test -f "$RELEASE_APK"
-          BADGING="$(aapt dump badging "$RELEASE_APK")"
+          test -x "$AAPT"
+          BADGING="$("$AAPT" dump badging "$RELEASE_APK")"
           echo "$BADGING" > nv-release-badging.txt
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
           shasum -a 256 "$RELEASE_APK" > nv-release-sha256.txt
