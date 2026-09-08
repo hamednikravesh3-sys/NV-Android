@@ -27,17 +27,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Backend and release tooling tests
+        run: python -m unittest discover -s tools -p "test_*.py"
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Unit tests and debug/release APKs
+      - name: Android unit tests and debug/release APKs
         env:
           NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
         run: |
-          python -m unittest discover -s tools -p "test_*.py"
           gradle --no-daemon \
             :app:testDebugUnitTest \
             :app:assembleDebug \
