@@ -64,6 +64,9 @@ jobs:
       - name: Validate production service configuration
         run: python tools/release_readiness.py
 
+      - name: Probe deployed production services
+        run: python tools/production_service_probe.py
+
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
