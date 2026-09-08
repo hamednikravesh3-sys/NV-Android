@@ -45,6 +45,7 @@ jobs:
             :app:assembleRelease
       - name: Verify unsigned release package
         run: |
+          set -euo pipefail
           RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
           AAPT="$BUILD_TOOLS/aapt"
@@ -53,7 +54,20 @@ jobs:
           BADGING="$("$AAPT" dump badging "$RELEASE_APK")"
           echo "$BADGING" > nv-release-badging.txt
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
+          echo "$BADGING" | grep -q "versionCode='18'"
+          echo "$BADGING" | grep -q "versionName='0.17.0'"
+          echo "$BADGING" | grep -q "sdkVersion:'29'"
+          echo "$BADGING" | grep -q "targetSdkVersion:'35'"
           shasum -a 256 "$RELEASE_APK" > nv-release-sha256.txt
+          {
+            echo "git_sha=$GITHUB_SHA"
+            echo "package=ir.nv.navigation"
+            echo "version_code=18"
+            echo "version_name=0.17.0"
+            echo "min_sdk=29"
+            echo "target_sdk=35"
+            cat nv-release-sha256.txt
+          } > nv-release-provenance.txt
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -68,6 +82,7 @@ jobs:
             app/build/outputs/apk/release/app-release-unsigned.apk
             nv-release-badging.txt
             nv-release-sha256.txt
+            nv-release-provenance.txt
           if-no-files-found: error
       - name: Install and verify NV launch
         uses: reactivecircus/android-emulator-runner@v2
