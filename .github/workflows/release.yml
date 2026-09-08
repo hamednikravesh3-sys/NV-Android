@@ -13,7 +13,7 @@ permissions:
 jobs:
   signed-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       KEYSTORE_BASE64: ${{ secrets.NV_KEYSTORE_BASE64 }}
       NV_KEYSTORE_PASSWORD: ${{ secrets.NV_KEYSTORE_PASSWORD }}
@@ -134,11 +134,11 @@ jobs:
           disable-animations: true
           script: bash .github/scripts/verify-nv-launch.sh
 
-      - name: Upload signed release diagnostics
+      - name: Upload signed Android 10 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-signed-release-diagnostics
+          name: NV-signed-release-diagnostics-android10
           path: |
             nv-launch-screen.png
             nv-nearby-screen.png
@@ -149,6 +149,31 @@ jobs:
             nv-activity-state.txt
             nv-logcat.txt
             nv-app-logcat.txt
+          if-no-files-found: warn
+
+      - name: Install and verify signed release on Android 15
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          NV_VERIFY_PACKAGE: ir.nv.navigation
+          NV_VERIFY_APK: app/build/outputs/apk/release/app-release.apk
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: bash .github/scripts/verify-nv-launch-android15.sh
+
+      - name: Upload signed Android 15 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-signed-release-diagnostics-android15
+          path: |
+            nv-android15-screen.png
+            nv-android15-window-state.txt
+            nv-android15-activity-state.txt
+            nv-android15-logcat.txt
+            nv-android15-app-logcat.txt
           if-no-files-found: warn
 
       - name: Upload signed release bundle
