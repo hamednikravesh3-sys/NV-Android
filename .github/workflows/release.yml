@@ -15,6 +15,7 @@ jobs:
       NV_KEYSTORE_PASSWORD: ${{ secrets.NV_KEYSTORE_PASSWORD }}
       NV_KEY_ALIAS: ${{ secrets.NV_KEY_ALIAS }}
       NV_KEY_PASSWORD: ${{ secrets.NV_KEY_PASSWORD }}
+      NV_RELEASE_CERT_SHA256: ${{ secrets.NV_RELEASE_CERT_SHA256 }}
       NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
       NV_CLOUD_API_URL: ${{ secrets.NV_CLOUD_API_URL }}
       NV_CODE_REGISTRY_URL: ${{ secrets.NV_CODE_REGISTRY_URL }}
@@ -29,6 +30,10 @@ jobs:
           test -n "$NV_KEYSTORE_PASSWORD"
           test -n "$NV_KEY_ALIAS"
           test -n "$NV_KEY_PASSWORD"
+          test -n "$NV_RELEASE_CERT_SHA256"
+          EXPECTED="$(printf '%s' "$NV_RELEASE_CERT_SHA256" | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          [[ "$EXPECTED" =~ ^[0-9A-F]{64}$ ]] || { echo "NV_RELEASE_CERT_SHA256 must be a SHA-256 certificate fingerprint"; exit 1; }
+          echo "NV_EXPECTED_CERT_SHA256=$EXPECTED" >> "$GITHUB_ENV"
 
       - name: Decode keystore
         shell: bash
@@ -50,6 +55,20 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Verify release keystore certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          CERT="$(keytool -list -v \
+            -keystore "$NV_KEYSTORE_FILE" \
+            -storepass "$NV_KEYSTORE_PASSWORD" \
+            -alias "$NV_KEY_ALIAS" \
+            | awk -F': ' '/SHA256:/{print $2; exit}' \
+            | tr -d ':[:space:]' \
+            | tr '[:lower:]' '[:upper:]')"
+          [[ "$CERT" =~ ^[0-9A-F]{64}$ ]] || { echo "Could not read SHA-256 fingerprint from release keystore"; exit 1; }
+          test "$CERT" = "$NV_EXPECTED_CERT_SHA256" || { echo "Release keystore certificate does not match pinned production certificate"; exit 1; }
+
       - name: Validate production service configuration
         run: python tools/release_readiness.py
 
@@ -70,6 +89,9 @@ jobs:
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee app-release-signature.txt
+          APK_CERT="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' app-release-signature.txt | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          [[ "$APK_CERT" =~ ^[0-9A-F]{64}$ ]] || { echo "Could not read SHA-256 signing certificate from APK"; exit 1; }
+          test "$APK_CERT" = "$NV_EXPECTED_CERT_SHA256" || { echo "Signed APK certificate does not match pinned production certificate"; exit 1; }
           "$AAPT" dump badging "$APK" | tee app-release-badging.txt
           grep -q "package: name='ir.nv.navigation'" app-release-badging.txt
           grep -q "versionCode='18'" app-release-badging.txt
@@ -84,6 +106,7 @@ jobs:
             echo "version_name=0.17.0"
             echo "min_sdk=29"
             echo "target_sdk=35"
+            echo "signing_cert_sha256=$APK_CERT"
             cat app-release.apk.sha256
           } > app-release-provenance.txt
 
