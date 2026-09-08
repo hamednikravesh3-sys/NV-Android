@@ -111,6 +111,7 @@ jobs:
           grep -q "sdkVersion:'29'" app-release-badging.txt
           grep -q "targetSdkVersion:'35'" app-release-badging.txt
           sha256sum "$APK" | tee app-release.apk.sha256
+          APK_SHA256="$(awk '{print $1}' app-release.apk.sha256)"
           {
             echo "git_sha=$GITHUB_SHA"
             echo "package=ir.nv.navigation"
@@ -119,8 +120,45 @@ jobs:
             echo "min_sdk=29"
             echo "target_sdk=35"
             echo "signing_cert_sha256=$APK_CERT"
-            cat app-release.apk.sha256
+            echo "apk_sha256=$APK_SHA256"
           } > app-release-provenance.txt
+          python - <<'PY'
+          import json, os
+          manifest = {
+              "schema_version": 1,
+              "git_sha": os.environ["GITHUB_SHA"],
+              "package": "ir.nv.navigation",
+              "version_code": 18,
+              "version_name": "0.17.0",
+              "min_sdk": 29,
+              "target_sdk": 35,
+              "signed": True,
+              "signing_cert_sha256": os.environ["NV_EXPECTED_CERT_SHA256"],
+          }
+          with open("app-release.apk.sha256", encoding="utf-8") as f:
+              manifest["apk_sha256"] = f.read().split()[0]
+          with open("app-release-manifest.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2, sort_keys=True)
+              f.write("\n")
+          PY
+          python - <<'PY'
+          import hashlib, json, os
+          apk = "app/build/outputs/apk/release/app-release.apk"
+          with open("app-release-manifest.json", encoding="utf-8") as f:
+              m = json.load(f)
+          with open(apk, "rb") as f:
+              digest = hashlib.sha256(f.read()).hexdigest()
+          assert m["schema_version"] == 1
+          assert m["git_sha"] == os.environ["GITHUB_SHA"]
+          assert m["package"] == "ir.nv.navigation"
+          assert m["version_code"] == 18
+          assert m["version_name"] == "0.17.0"
+          assert m["min_sdk"] == 29
+          assert m["target_sdk"] == 35
+          assert m["signed"] is True
+          assert m["signing_cert_sha256"] == os.environ["NV_EXPECTED_CERT_SHA256"]
+          assert m["apk_sha256"] == digest
+          PY
 
       - name: Install and verify signed release on Android 10
         uses: reactivecircus/android-emulator-runner@v2
@@ -161,7 +199,7 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: bash .github/scripts/verify-nv-launch-android15.sh
+          script: bash .github/scripts/verify-nv-launch-modern.sh
 
       - name: Upload signed Android 15 diagnostics
         if: always()
@@ -169,21 +207,23 @@ jobs:
         with:
           name: NV-signed-release-diagnostics-android15
           path: |
-            nv-android15-screen.png
-            nv-android15-window-state.txt
-            nv-android15-activity-state.txt
-            nv-android15-logcat.txt
-            nv-android15-app-logcat.txt
+            nv-modern-launch-screen.png
+            nv-modern-window-state.txt
+            nv-modern-activity-state.txt
+            nv-modern-logcat.txt
+            nv-modern-app-logcat.txt
           if-no-files-found: warn
 
       - name: Upload signed release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: NV-signed-release-apk
+          name: NV-signed-release-apk-${{ github.sha }}
+          retention-days: 30
           path: |
             app/build/outputs/apk/release/app-release.apk
             app-release.apk.sha256
             app-release-signature.txt
             app-release-badging.txt
             app-release-provenance.txt
+            app-release-manifest.json
           if-no-files-found: error
