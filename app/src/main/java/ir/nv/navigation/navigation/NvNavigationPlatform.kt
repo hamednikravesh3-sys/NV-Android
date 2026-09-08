@@ -1,6 +1,10 @@
 package ir.nv.navigation.navigation
 
+import ir.nv.navigation.ai.AdaptiveEtaPredictor
+import ir.nv.navigation.ai.HistoricalTrafficPredictor
+import ir.nv.navigation.ai.NvRoutePredictionEngine
 import ir.nv.navigation.ai.route.NvAdaptiveRouteRanker
+import ir.nv.navigation.ai.route.NvPredictiveRouteOptimizer
 import ir.nv.navigation.navigation.guidance.GuidanceEngine
 import ir.nv.navigation.navigation.mapmatching.MapMatchingEngine
 import ir.nv.navigation.navigation.mapmatching.PassThroughMapMatchingEngine
@@ -17,13 +21,18 @@ class NvNavigationPlatform(
     val mapMatchingEngine: MapMatchingEngine = PassThroughMapMatchingEngine()
 ) {
     private val trafficProvider = LiveTrafficProviderAdapter(liveTrafficService)
+    val predictionEngine = NvRoutePredictionEngine(
+        etaPredictor = AdaptiveEtaPredictor(),
+        trafficPredictor = HistoricalTrafficPredictor(emptyList())
+    )
 
     val routeCoordinator = HybridRouteCoordinator(
         onlineProvider = OnlineRouteProviderAdapter(onlineService),
         offlineProvider = OfflineRouteProviderAdapter(routerProvider),
         trafficProvider = trafficProvider,
         ranker = NvAdaptiveRouteRanker(),
-        signalProvider = WeatherRouteSignalProvider()
+        signalProvider = WeatherRouteSignalProvider(),
+        predictiveOptimizer = NvPredictiveRouteOptimizer(predictionEngine)
     )
 
     val reroutePolicy = ContinuousReroutePolicy()
