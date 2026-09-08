@@ -7,30 +7,27 @@ import android.os.Environment
 import ir.nv.navigation.BuildConfig
 import java.io.File
 
-/**
- * Download coordinator for province-level offline packs.
- *
- * Each province keeps an independent DownloadManager id so downloads can be resumed by Android,
- * cancelled separately and recovered after process restarts. Package installation/validation is
- * intentionally kept separate from transport so Batch 26 can own the generic install/update flow.
- */
+/** Download + recovery coordinator for province-level offline packs. */
 class ProvincePackDownloadManager(private val context: Context) {
     sealed interface Status {
         data object NotStarted : Status
         data class Downloading(val bytes: Long, val totalBytes: Long) : Status
         data object Downloaded : Status
+        data object Ready : Status
         data class Failed(val reason: String) : Status
     }
 
     private val downloads = context.getSystemService(DownloadManager::class.java)
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val installer = OfflineRegionPackInstaller(context.applicationContext)
 
     fun start(pack: OfflineRegionPack): Long {
         require(pack.id != OfflinePackCatalog.iran.id) { "برای بسته کل ایران از IranPackManager استفاده کنید" }
-        require(OfflinePackCatalog.provinces.any { it.id == pack.id }) { "استان ناشناخته است: ${pack.id}" }
+        require(OfflinePackCatalog.provinceById(pack.id) != null) { "استان ناشناخته است: ${pack.id}" }
+        if (installer.installed(pack) != null) return READY_DOWNLOAD_ID
 
         val existing = downloadId(pack.id)
-        if (existing != NO_DOWNLOAD_ID) {
+        if (existing != NO_DOWNLOAD_ID && existing != READY_DOWNLOAD_ID) {
             when (downloadManagerStatus(existing)) {
                 DownloadManager.STATUS_PENDING,
                 DownloadManager.STATUS_RUNNING,
@@ -51,11 +48,7 @@ class ProvincePackDownloadManager(private val context: Context) {
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)
-            .setDestinationInExternalFilesDir(
-                context,
-                Environment.DIRECTORY_DOWNLOADS,
-                fileName(pack)
-            )
+            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, fileName(pack))
 
         return downloads.enqueue(request).also { id ->
             prefs.edit().putLong(key(pack.id), id).apply()
@@ -63,15 +56,17 @@ class ProvincePackDownloadManager(private val context: Context) {
     }
 
     fun status(pack: OfflineRegionPack): Status {
+        if (installer.installed(pack) != null) return Status.Ready
         val id = downloadId(pack.id)
-        if (id == NO_DOWNLOAD_ID) {
+        if (id == NO_DOWNLOAD_ID || id == READY_DOWNLOAD_ID) {
             return if (downloadedFile(pack).isFile) Status.Downloaded else Status.NotStarted
         }
 
         downloads.query(DownloadManager.Query().setFilterById(id))?.use { cursor ->
             if (!cursor.moveToFirst()) {
                 clearDownloadId(pack.id)
-                return Status.Failed("دانلود استان در سیستم پیدا نشد؛ دوباره تلاش کنید")
+                return if (downloadedFile(pack).isFile) Status.Downloaded
+                else Status.Failed("دانلود استان در سیستم پیدا نشد؛ دوباره تلاش کنید")
             }
             return when (cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))) {
                 DownloadManager.STATUS_SUCCESSFUL -> Status.Downloaded
@@ -89,11 +84,26 @@ class ProvincePackDownloadManager(private val context: Context) {
         return Status.Failed("وضعیت دانلود استان قابل خواندن نیست")
     }
 
+    suspend fun installDownloaded(pack: OfflineRegionPack): Result<OfflineRegionPackInstaller.InstalledFiles> {
+        val file = downloadedFile(pack)
+        return installer.install(pack, file).onSuccess {
+            file.delete()
+            val id = downloadId(pack.id)
+            if (id != NO_DOWNLOAD_ID && id != READY_DOWNLOAD_ID) runCatching { downloads.remove(id) }
+            prefs.edit().putLong(key(pack.id), READY_DOWNLOAD_ID).apply()
+        }
+    }
+
     fun cancel(pack: OfflineRegionPack) {
         val id = downloadId(pack.id)
-        if (id != NO_DOWNLOAD_ID) runCatching { downloads.remove(id) }
+        if (id != NO_DOWNLOAD_ID && id != READY_DOWNLOAD_ID) runCatching { downloads.remove(id) }
         clearDownloadId(pack.id)
         downloadedFile(pack).delete()
+    }
+
+    fun deleteInstalled(pack: OfflineRegionPack) {
+        cancel(pack)
+        installer.delete(pack)
     }
 
     fun downloadedFile(pack: OfflineRegionPack): File =
@@ -130,5 +140,6 @@ class ProvincePackDownloadManager(private val context: Context) {
     private companion object {
         const val PREFS_NAME = "province_pack_downloads"
         const val NO_DOWNLOAD_ID = -1L
+        const val READY_DOWNLOAD_ID = -2L
     }
 }
