@@ -63,6 +63,7 @@ jobs:
           echo "$BADGING" | grep -q "sdkVersion:'29'"
           echo "$BADGING" | grep -q "targetSdkVersion:'35'"
           shasum -a 256 "$RELEASE_APK" > nv-release-sha256.txt
+          APK_SHA256="$(awk '{print $1}' nv-release-sha256.txt)"
           {
             echo "git_sha=$GITHUB_SHA"
             echo "package=ir.nv.navigation"
@@ -72,6 +73,47 @@ jobs:
             echo "target_sdk=35"
             cat nv-release-sha256.txt
           } > nv-release-provenance.txt
+          APK_SHA256="$APK_SHA256" python - <<'PY'
+          import json, os
+          manifest = {
+              "schema_version": 1,
+              "artifact_kind": "unsigned-release-validation",
+              "package": "ir.nv.navigation",
+              "version_code": 18,
+              "version_name": "0.17.0",
+              "min_sdk": 29,
+              "target_sdk": 35,
+              "git_sha": os.environ["GITHUB_SHA"],
+              "apk_sha256": os.environ["APK_SHA256"],
+              "signing_cert_sha256": None,
+          }
+          with open("nv-release-manifest.json", "w", encoding="utf-8") as handle:
+              json.dump(manifest, handle, ensure_ascii=False, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          APK_SHA256="$APK_SHA256" python - <<'PY'
+          import json, os, re
+          with open("nv-release-manifest.json", encoding="utf-8") as handle:
+              data = json.load(handle)
+          expected = {
+              "schema_version": 1,
+              "artifact_kind": "unsigned-release-validation",
+              "package": "ir.nv.navigation",
+              "version_code": 18,
+              "version_name": "0.17.0",
+              "min_sdk": 29,
+              "target_sdk": 35,
+              "git_sha": os.environ["GITHUB_SHA"],
+              "apk_sha256": os.environ["APK_SHA256"],
+              "signing_cert_sha256": None,
+          }
+          if data != expected:
+              raise SystemExit("release manifest does not match verified APK metadata")
+          if not re.fullmatch(r"[0-9a-f]{64}", data["apk_sha256"]):
+              raise SystemExit("invalid APK SHA-256 in release manifest")
+          if not re.fullmatch(r"[0-9a-f]{40}", data["git_sha"]):
+              raise SystemExit("invalid git SHA in release manifest")
+          PY
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -87,6 +129,7 @@ jobs:
             nv-release-badging.txt
             nv-release-sha256.txt
             nv-release-provenance.txt
+            nv-release-manifest.json
           if-no-files-found: error
       - name: Install and verify NV launch on Android 10
         uses: reactivecircus/android-emulator-runner@v2
