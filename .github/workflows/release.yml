@@ -61,7 +61,7 @@ jobs:
           python -m unittest discover -s tools -p "test_*.py"
           gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease
 
-      - name: Verify APK signature and identity
+      - name: Verify APK signature, identity and provenance
         shell: bash
         run: |
           set -euo pipefail
@@ -72,7 +72,20 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee app-release-signature.txt
           "$AAPT" dump badging "$APK" | tee app-release-badging.txt
           grep -q "package: name='ir.nv.navigation'" app-release-badging.txt
+          grep -q "versionCode='18'" app-release-badging.txt
+          grep -q "versionName='0.17.0'" app-release-badging.txt
+          grep -q "sdkVersion:'29'" app-release-badging.txt
+          grep -q "targetSdkVersion:'35'" app-release-badging.txt
           sha256sum "$APK" | tee app-release.apk.sha256
+          {
+            echo "git_sha=$GITHUB_SHA"
+            echo "package=ir.nv.navigation"
+            echo "version_code=18"
+            echo "version_name=0.17.0"
+            echo "min_sdk=29"
+            echo "target_sdk=35"
+            cat app-release.apk.sha256
+          } > app-release-provenance.txt
 
       - name: Install and verify signed release on Android 10
         uses: reactivecircus/android-emulator-runner@v2
@@ -112,4 +125,5 @@ jobs:
             app-release.apk.sha256
             app-release-signature.txt
             app-release-badging.txt
+            app-release-provenance.txt
           if-no-files-found: error
