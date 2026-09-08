@@ -37,6 +37,11 @@ android {
             "PROVINCE_PACK_BASE_URL",
             "\"https://github.com/hamednikravesh3-sys/NV-Android/releases/download/map-v1\""
         )
+        buildConfigField(
+            "String",
+            "PROVINCE_PACK_RELEASE_API_URL",
+            "\"https://api.github.com/repos/hamednikravesh3-sys/NV-Android/releases/tags/map-v1\""
+        )
         buildConfigField("String", "CLOUD_API_URL", "\"$cloudApiUrl\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
         buildConfigField(
