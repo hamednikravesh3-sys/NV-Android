@@ -100,7 +100,7 @@ class ProvincePackDownloadManager(private val context: Context) {
         File(requireNotNull(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)), fileName(pack))
 
     internal fun downloadUrl(pack: OfflineRegionPack): String =
-        BuildConfig.PROVINCE_PACK_BASE_URL.trimEnd('/') + "/${pack.id}.nvpack"
+        BuildConfig.PROVINCE_PACK_BASE_URL.trimEnd('/') + "/${fileName(pack)}"
 
     private fun downloadId(packId: String): Long = prefs.getLong(key(packId), NO_DOWNLOAD_ID)
 
