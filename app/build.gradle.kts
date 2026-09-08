@@ -17,6 +17,9 @@ android {
         val cloudApiUrl = System.getenv("NV_CLOUD_API_URL").orEmpty()
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
+        val nvCodeRegistryUrl = System.getenv("NV_CODE_REGISTRY_URL").orEmpty()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
@@ -43,6 +46,7 @@ android {
             "\"https://api.github.com/repos/hamednikravesh3-sys/NV-Android/releases/tags/map-v1\""
         )
         buildConfigField("String", "CLOUD_API_URL", "\"$cloudApiUrl\"")
+        buildConfigField("String", "NV_CODE_REGISTRY_URL", "\"$nvCodeRegistryUrl\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
         buildConfigField(
             "String",
@@ -169,9 +173,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
-    // Android's org.json classes are compile-time stubs in local JVM tests and throw at runtime.
-    // Use the real JVM implementation so cloud/release JSON parsers are tested without Robolectric.
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20250517")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
