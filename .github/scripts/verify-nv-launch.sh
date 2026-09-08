@@ -17,7 +17,19 @@ adb shell am force-stop "$PACKAGE"
 adb shell am start -W -n "$PACKAGE/$ACTIVITY" || adb shell am start -n "$PACKAGE/$ACTIVITY"
 
 function dump_ui_raw() {
-  adb shell uiautomator dump /sdcard/nv-ui.xml >/dev/null 2>&1 || true
+  python - <<'PY'
+import subprocess
+try:
+    subprocess.run(
+        ["adb", "shell", "uiautomator", "dump", "/sdcard/nv-ui.xml"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=8,
+        check=False,
+    )
+except (subprocess.TimeoutExpired, OSError):
+    pass
+PY
   adb shell cat /sdcard/nv-ui.xml > nv-ui.xml 2>/dev/null || true
 }
 
@@ -72,11 +84,20 @@ for _ in $(seq 1 30); do
 done
 
 first_frame=0
-for _ in $(seq 1 60); do
+for _ in $(seq 1 30); do
   clear_emulator_dialogs
   ensure_app_foreground
-  if adb logcat -d | grep -F "Displayed $PACKAGE/$ACTIVITY" >/dev/null; then first_frame=1; break; fi
-  if ! adb shell pidof "$PACKAGE" >/dev/null 2>&1; then break; fi
+  if adb logcat -d | grep -F "Displayed $PACKAGE/$ACTIVITY" >/dev/null; then
+    first_frame=1
+    break
+  fi
+  resumed="$(adb shell dumpsys activity activities 2>/dev/null | grep -m1 'ResumedActivity' || true)"
+  APP_PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
+  if [[ "$resumed" == *"$PACKAGE/$ACTIVITY"* && -n "$APP_PID" ]]; then
+    first_frame=1
+    break
+  fi
+  if [[ -z "$APP_PID" ]]; then break; fi
   sleep 2
 done
 
