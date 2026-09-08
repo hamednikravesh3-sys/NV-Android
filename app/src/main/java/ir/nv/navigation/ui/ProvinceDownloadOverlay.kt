@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +44,7 @@ fun ProvinceDownloadOverlay(modifier: Modifier = Modifier) {
     val manager = remember { ProvincePackDownloadManager(context.applicationContext) }
     val availabilityService = remember { ProvincePackAvailabilityService() }
     val statuses = remember { mutableStateMapOf<String, ProvincePackDownloadManager.Status>() }
+    val installFailures = remember { mutableStateMapOf<String, String>() }
     var open by remember { mutableStateOf(false) }
     var publishedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var availabilityLoaded by remember { mutableStateOf(false) }
@@ -69,7 +69,25 @@ fun ProvinceDownloadOverlay(modifier: Modifier = Modifier) {
     LaunchedEffect(open) {
         if (!open) return@LaunchedEffect
         while (true) {
-            OfflinePackCatalog.provinces.forEach { pack -> statuses[pack.id] = manager.status(pack) }
+            OfflinePackCatalog.provinces.forEach { pack ->
+                if (pack.id in installFailures) return@forEach
+                when (val status = manager.status(pack)) {
+                    ProvincePackDownloadManager.Status.Downloaded -> {
+                        statuses[pack.id] = status
+                        manager.installDownloaded(pack)
+                            .onSuccess {
+                                installFailures.remove(pack.id)
+                                statuses[pack.id] = ProvincePackDownloadManager.Status.Ready
+                            }
+                            .onFailure {
+                                val message = it.message ?: "نصب بسته استان ناموفق بود"
+                                installFailures[pack.id] = message
+                                statuses[pack.id] = ProvincePackDownloadManager.Status.Failed(message)
+                            }
+                    }
+                    else -> statuses[pack.id] = status
+                }
+            }
             delay(1_000)
         }
     }
@@ -89,7 +107,7 @@ fun ProvinceDownloadOverlay(modifier: Modifier = Modifier) {
                     Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("۳۱ استان به‌صورت مستقل مدیریت می‌شوند. دانلود فقط برای بسته‌ای فعال است که واقعاً روی سرور منتشر شده باشد.")
+                    Text("۳۱ استان به‌صورت مستقل مدیریت می‌شوند. هر بسته بعد از دانلود، قبل از نصب از نظر شناسه استان، نسخه و SHA-256 بررسی می‌شود.")
                     if (!availabilityLoaded) LinearProgressIndicator(Modifier.fillMaxWidth())
                     availabilityError?.let {
                         Text("بررسی بسته‌های منتشرشده ناموفق بود؛ برای جلوگیری از دانلود خراب، شروع دانلود موقتاً غیرفعال است. $it")
@@ -100,7 +118,13 @@ fun ProvinceDownloadOverlay(modifier: Modifier = Modifier) {
                             status = statuses[pack.id] ?: manager.status(pack),
                             manager = manager,
                             published = availabilityLoaded && pack.id in publishedIds,
-                            availabilityLoaded = availabilityLoaded
+                            availabilityLoaded = availabilityLoaded,
+                            onRetry = {
+                                installFailures.remove(pack.id)
+                                manager.deleteInstalled(pack)
+                                if (publishedIds.contains(pack.id)) manager.start(pack)
+                                statuses[pack.id] = manager.status(pack)
+                            }
                         ) {
                             statuses[pack.id] = manager.status(pack)
                         }
@@ -120,6 +144,7 @@ private fun ProvincePackRow(
     manager: ProvincePackDownloadManager,
     published: Boolean,
     availabilityLoaded: Boolean,
+    onRetry: () -> Unit,
     refresh: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -143,6 +168,10 @@ private fun ProvincePackRow(
 
                 ProvincePackDownloadManager.Status.Downloaded -> OutlinedButton(
                     onClick = { manager.cancel(pack); refresh() }
+                ) { Text("در حال نصب…") }
+
+                ProvincePackDownloadManager.Status.Ready -> OutlinedButton(
+                    onClick = { manager.deleteInstalled(pack); refresh() }
                 ) {
                     Icon(Icons.Rounded.DeleteOutline, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
@@ -150,7 +179,7 @@ private fun ProvincePackRow(
                 }
 
                 is ProvincePackDownloadManager.Status.Failed -> Button(
-                    onClick = { manager.start(pack); refresh() },
+                    onClick = onRetry,
                     enabled = published
                 ) { Text(if (published) "تلاش دوباره" else "منتظر انتشار") }
             }
@@ -162,7 +191,11 @@ private fun ProvincePackRow(
                 else LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                 Text("${status.bytes / (1024 * 1024)} / ${if (status.totalBytes > 0) status.totalBytes / (1024 * 1024) else 0} MB")
             }
-            ProvincePackDownloadManager.Status.Downloaded -> Text("دانلود کامل شد")
+            ProvincePackDownloadManager.Status.Downloaded -> {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text("در حال اعتبارسنجی و نصب امن بسته استان")
+            }
+            ProvincePackDownloadManager.Status.Ready -> Text("نصب و اعتبارسنجی کامل شد")
             is ProvincePackDownloadManager.Status.Failed -> Text(status.reason)
             ProvincePackDownloadManager.Status.NotStarted -> Unit
         }
