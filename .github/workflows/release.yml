@@ -2,6 +2,11 @@ name: Signed Release APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+    paths:
+      - ".github/release-trigger"
 
 concurrency:
   group: nv-production-signed-release
