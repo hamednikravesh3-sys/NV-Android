@@ -1,0 +1,4 @@
+NV production signed release trigger
+
+This file intentionally triggers the fail-closed Signed Release APK workflow.
+All production signing and service gates remain mandatory.
