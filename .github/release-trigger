@@ -2,3 +2,5 @@ NV production signed release trigger
 
 This file intentionally triggers the fail-closed Signed Release APK workflow.
 All production signing and service gates remain mandatory.
+
+Release attempt 2: production secrets and service deployment setup completed on 2026-09-10.
