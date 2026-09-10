@@ -55,20 +55,41 @@ jobs:
           import pathlib
           import re
 
-          raw = os.environ.get("KEYSTORE_BASE64", "").strip()
-          raw = re.sub(r"^NV_KEYSTORE_BASE64\s*=\s*", "", raw, count=1)
+          raw = os.environ.get("KEYSTORE_BASE64", "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+          # Accept either the raw Base64 value or an accidentally pasted
+          # KEY=value line / multi-line signing file. Only this secret's value
+          # is extracted; all other text is discarded before decoding.
+          labelled = re.search(r"(?m)^\s*NV_KEYSTORE_BASE64\s*=\s*", raw)
+          if labelled:
+              raw = raw[labelled.end():]
+              raw = re.split(r"\n\s*NV_[A-Z0-9_]+\s*=", raw, maxsplit=1)[0].strip()
+          else:
+              raw = re.sub(r"^NV_KEYSTORE_BASE64\s*=\s*", "", raw, count=1)
+
           if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
               raw = raw[1:-1].strip()
+
           compact = "".join(raw.split())
           if not compact:
               raise SystemExit("NV_KEYSTORE_BASE64 is empty after normalization")
+
+          # Standard Base64 padding is terminal. If mobile copy/paste appended
+          # another field after valid padding, keep only the canonical payload.
+          padding = re.search(r"={1,2}", compact)
+          if padding and padding.end() < len(compact):
+              compact = compact[:padding.end()]
+
           compact += "=" * (-len(compact) % 4)
+          if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", compact):
+              raise SystemExit("NV_KEYSTORE_BASE64 contains non-Base64 characters after normalization")
           try:
               decoded = base64.b64decode(compact, validate=True)
           except (binascii.Error, ValueError) as exc:
               raise SystemExit(f"NV_KEYSTORE_BASE64 is not valid Base64: {exc}") from exc
           if len(decoded) < 32:
               raise SystemExit("Decoded keystore is unexpectedly small")
+
           target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "nv-release.jks"
           target.write_bytes(decoded)
           print(f"Decoded keystore bytes: {len(decoded)}")
