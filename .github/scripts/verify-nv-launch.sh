@@ -5,6 +5,9 @@ PACKAGE="${NV_VERIFY_PACKAGE:-ir.nv.navigation.debug}"
 ACTIVITY="${NV_VERIFY_ACTIVITY:-ir.nv.navigation.MainActivity}"
 APK_PATH="${NV_VERIFY_APK:-app/build/outputs/apk/debug/app-debug.apk}"
 MAP_PATH="/sdcard/Android/data/$PACKAGE/files/Download/Iran map.nvpack"
+ACTIVITY_SHORT="${ACTIVITY#${PACKAGE}.}"
+COMPONENT_FULL="$PACKAGE/$ACTIVITY"
+COMPONENT_SHORT="$PACKAGE/.$ACTIVITY_SHORT"
 
 adb wait-for-device
 adb shell settings put global hide_error_dialogs 1 || true
@@ -14,7 +17,7 @@ adb shell pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION
 adb shell pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
 adb logcat -c
 adb shell am force-stop "$PACKAGE"
-adb shell am start -W -n "$PACKAGE/$ACTIVITY" || adb shell am start -n "$PACKAGE/$ACTIVITY"
+adb shell am start -W -n "$COMPONENT_FULL" || adb shell am start -n "$COMPONENT_FULL"
 
 function dump_ui_raw() {
   python - <<'PY'
@@ -62,11 +65,16 @@ function clear_emulator_dialogs() {
   done
 }
 
+function component_seen() {
+  local text="$1"
+  [[ "$text" == *"$COMPONENT_FULL"* || "$text" == *"$COMPONENT_SHORT"* ]]
+}
+
 function ensure_app_foreground() {
   local resumed
   resumed="$(adb shell dumpsys activity activities 2>/dev/null | grep -m1 'ResumedActivity' || true)"
-  if [[ "$resumed" != *"$PACKAGE/$ACTIVITY"* ]]; then
-    adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null 2>&1 || adb shell am start -n "$PACKAGE/$ACTIVITY" >/dev/null 2>&1 || true
+  if ! component_seen "$resumed"; then
+    adb shell am start -W -n "$COMPONENT_FULL" >/dev/null 2>&1 || adb shell am start -n "$COMPONENT_FULL" >/dev/null 2>&1 || true
     sleep 2
   fi
 }
@@ -87,13 +95,13 @@ first_frame=0
 for _ in $(seq 1 30); do
   clear_emulator_dialogs
   ensure_app_foreground
-  if adb logcat -d | grep -F "Displayed $PACKAGE/$ACTIVITY" >/dev/null; then
+  if adb logcat -d | grep -F "Displayed $COMPONENT_FULL" >/dev/null || adb logcat -d | grep -F "Displayed $COMPONENT_SHORT" >/dev/null; then
     first_frame=1
     break
   fi
   resumed="$(adb shell dumpsys activity activities 2>/dev/null | grep -m1 'ResumedActivity' || true)"
   APP_PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
-  if [[ "$resumed" == *"$PACKAGE/$ACTIVITY"* && -n "$APP_PID" ]]; then
+  if component_seen "$resumed" && [[ -n "$APP_PID" ]]; then
     first_frame=1
     break
   fi
@@ -136,7 +144,7 @@ for attempt in $(seq 1 60); do
   fi
   if (( attempt % 10 == 0 )); then
     echo "NV UI not ready after $attempt checks; reasserting foreground activity"
-    adb shell am start -W -n "$PACKAGE/$ACTIVITY" >/dev/null 2>&1 || true
+    adb shell am start -W -n "$COMPONENT_FULL" >/dev/null 2>&1 || true
   fi
   sleep 2
 done
@@ -213,6 +221,9 @@ if [[ "$app_alive" -ne 1 ]]; then echo "NV process did not stay alive after laun
 if [[ "$first_frame" -ne 1 ]]; then echo "NV did not render its first frame before the timeout"; exit 1; fi
 if grep -E 'FATAL EXCEPTION:' nv-app-logcat.txt; then echo "NV fatal exception detected"; exit 1; fi
 if grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-logcat.txt; then echo "NV ANR detected"; exit 1; fi
-if ! grep -q "$PACKAGE/$ACTIVITY" nv-activity-state.txt; then echo "NV MainActivity not present in activity state"; exit 1; fi
+if ! grep -Fq "$COMPONENT_FULL" nv-activity-state.txt && ! grep -Fq "$COMPONENT_SHORT" nv-activity-state.txt; then
+  echo "NV MainActivity not present in activity state"
+  exit 1
+fi
 
 echo "NV launch and core Persian UI verification passed for $PACKAGE"
