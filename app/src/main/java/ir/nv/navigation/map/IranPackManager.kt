@@ -26,7 +26,6 @@ class IranPackManager(private val context: Context) {
 
     private val downloads = context.getSystemService(DownloadManager::class.java)
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val downloadedPack = File(requireNotNull(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)), PACK_FILE_NAME)
     val installDirectory: File = context.filesDir.resolve(INSTALL_DIRECTORY)
     val manifestFile: File get() = installDirectory.resolve(MANIFEST_FILE)
     val mapFile: File get() = installDirectory.resolve(MAP_FILE)
@@ -45,6 +44,7 @@ class IranPackManager(private val context: Context) {
                 else -> { runCatching { downloads.remove(existing) }; prefs.edit().remove(KEY_DOWNLOAD_ID).apply() }
             }
         }
+        val downloadedPack = downloadedPack()
         downloadedPack.parentFile?.mkdirs()
         if (downloadedPack.exists()) downloadedPack.delete()
         val request = DownloadManager.Request(Uri.parse(BuildConfig.IRAN_PACK_URL))
@@ -75,6 +75,7 @@ class IranPackManager(private val context: Context) {
     }
 
     suspend fun installDownloadedPack(): Result<Unit> = withContext(Dispatchers.IO) { runCatching {
+        val downloadedPack = downloadedPack()
         check(downloadedPack.isFile) { "فایل Iran map پیدا نشد" }; verifyChecksum(downloadedPack)
         val staging = context.filesDir.resolve(INSTALL_DIRECTORY + "-staging"); staging.deleteRecursively(); check(staging.mkdirs()) { "ساخت پوشه نصب Iran map ممکن نشد" }; unzipSafely(downloadedPack, staging)
         val required = listOf(MANIFEST_FILE, MAP_FILE, PLACES_FILE, ROUTING_FILE)
@@ -83,8 +84,10 @@ class IranPackManager(private val context: Context) {
     } }
 
     fun retry() { cancelDownload(); startDownload() }
-    fun cancelDownload() { val id = prefs.getLong(KEY_DOWNLOAD_ID, NO_DOWNLOAD_ID); if (id != NO_DOWNLOAD_ID && id != READY_DOWNLOAD_ID) runCatching { downloads.remove(id) }; prefs.edit().remove(KEY_DOWNLOAD_ID).apply(); if (downloadedPack.exists()) downloadedPack.delete() }
+    fun cancelDownload() { val id = prefs.getLong(KEY_DOWNLOAD_ID, NO_DOWNLOAD_ID); if (id != NO_DOWNLOAD_ID && id != READY_DOWNLOAD_ID) runCatching { downloads.remove(id) }; prefs.edit().remove(KEY_DOWNLOAD_ID).apply(); downloadedPackOrNull()?.let { if (it.exists()) it.delete() } }
     fun deleteInstalledPack() { cancelDownload(); installDirectory.deleteRecursively() }
+    private fun downloadedPack(): File = requireNotNull(downloadedPackOrNull()) { "حافظه خارجی دستگاه برای Iran map در دسترس نیست" }
+    private fun downloadedPackOrNull(): File? = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.resolve(PACK_FILE_NAME)
     private fun downloadStatus(id: Long): Int? = runCatching { downloads.query(DownloadManager.Query().setFilterById(id))?.use { if (!it.moveToFirst()) null else it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)) } }.getOrNull()
     private fun downloadErrorMessage(reason: Int): String = when (reason) {
         DownloadManager.ERROR_INSUFFICIENT_SPACE -> "فضای ذخیره‌سازی برای Iran map کافی نیست"; DownloadManager.ERROR_DEVICE_NOT_FOUND -> "حافظه دستگاه برای ذخیره Iran map در دسترس نیست"; DownloadManager.ERROR_CANNOT_RESUME -> "دانلود Iran map قابل ادامه نبود؛ دوباره تلاش کنید"; DownloadManager.ERROR_HTTP_DATA_ERROR -> "ارتباط هنگام دانلود Iran map قطع شد؛ دوباره تلاش کنید"; DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "خطای انتقال لینک دانلود Iran map"; DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "سرور دانلود Iran map پاسخ نامعتبر داد"; DownloadManager.ERROR_FILE_ERROR -> "خطا در ذخیره فایل Iran map"; else -> "دانلود Iran map ناموفق بود (کد $reason)؛ دوباره تلاش کنید"
