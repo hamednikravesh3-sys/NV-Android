@@ -1,0 +1,8 @@
+name = "nv-code-registry"
+main = "worker.js"
+compatibility_date = "2026-09-10"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nv-code-registry"
+database_id = "10d65d5a-f1b4-4801-b2ca-580964b9bec6"
