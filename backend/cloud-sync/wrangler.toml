@@ -1,0 +1,8 @@
+name = "nv-cloud-sync"
+main = "worker.js"
+compatibility_date = "2026-09-10"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nv-cloud-sync"
+database_id = "7000da20-1ed9-4156-a62d-d59385e67a81"
