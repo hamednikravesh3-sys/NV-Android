@@ -4,3 +4,4 @@ This file intentionally triggers the fail-closed Signed Release APK workflow.
 All production signing and service gates remain mandatory.
 
 Release attempt 2: production secrets and service deployment setup completed on 2026-09-10.
+Release attempt 3: retry after hardened NV_KEYSTORE_BASE64 normalization and strict keystore validation on 2026-09-10.
