@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   signed-release:
-    runs-on: ubuntu-latest
+    runs-on: macos-15-intel
     timeout-minutes: 60
     env:
       KEYSTORE_BASE64: ${{ secrets.NV_KEYSTORE_BASE64 }}
@@ -160,7 +160,7 @@ jobs:
           grep -q "versionName='0.17.0'" app-release-badging.txt
           grep -q "sdkVersion:'29'" app-release-badging.txt
           grep -q "targetSdkVersion:'35'" app-release-badging.txt
-          sha256sum "$APK" | tee app-release.apk.sha256
+          shasum -a 256 "$APK" | tee app-release.apk.sha256
           APK_SHA256="$(awk '{print $1}' app-release.apk.sha256)"
           {
             echo "git_sha=$GITHUB_SHA"
