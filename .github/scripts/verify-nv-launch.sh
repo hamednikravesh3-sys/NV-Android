@@ -149,6 +149,13 @@ if [[ "$ui_ready" -ne 1 ]]; then
   exit 1
 fi
 
+# A package-owned UI hierarchy containing the required NV controls is direct
+# evidence that the app rendered a usable frame. Some emulator/system-image
+# combinations omit or delay ActivityTaskManager's "Displayed" log and use
+# activity-state formats that do not expose ResumedActivity consistently.
+# Keep those fast signals above, but accept the stronger UI assertion here.
+first_frame=1
+
 adb exec-out screencap -p > nv-launch-screen.png
 grep -q 'content-desc="اطراف من"' nv-ui.xml
 grep -q 'content-desc="سنجاق NV"' nv-ui.xml
