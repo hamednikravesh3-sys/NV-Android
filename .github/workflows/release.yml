@@ -48,7 +48,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nv-release.jks"
+          python3 - <<'PY'
+          import base64
+          import binascii
+          import os
+          import pathlib
+          import re
+
+          raw = os.environ.get("KEYSTORE_BASE64", "").strip()
+          raw = re.sub(r"^NV_KEYSTORE_BASE64\s*=\s*", "", raw, count=1)
+          if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {"'", '"'}:
+              raw = raw[1:-1].strip()
+          compact = "".join(raw.split())
+          if not compact:
+              raise SystemExit("NV_KEYSTORE_BASE64 is empty after normalization")
+          compact += "=" * (-len(compact) % 4)
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError) as exc:
+              raise SystemExit(f"NV_KEYSTORE_BASE64 is not valid Base64: {exc}") from exc
+          if len(decoded) < 32:
+              raise SystemExit("Decoded keystore is unexpectedly small")
+          target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "nv-release.jks"
+          target.write_bytes(decoded)
+          print(f"Decoded keystore bytes: {len(decoded)}")
+          PY
           test -s "$RUNNER_TEMP/nv-release.jks"
           echo "NV_KEYSTORE_FILE=$RUNNER_TEMP/nv-release.jks" >> "$GITHUB_ENV"
 
