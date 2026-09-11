@@ -1,6 +1,7 @@
 package ir.nv.navigation.data
 
 import ir.nv.navigation.core.Coordinate
+import ir.nv.navigation.core.Place
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -12,6 +13,7 @@ class NvCodeAllocationService(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 ) {
     data class Allocation(
@@ -61,6 +63,39 @@ class NvCodeAllocationService(
                     json.optDouble("latitude", coordinate.latitude),
                     json.optDouble("longitude", coordinate.longitude)
                 )
+            )
+        }
+    }
+
+    /** Resolves an NV code against the central registry so the same code works on every device. */
+    fun resolveOnline(rawCode: String): Result<Place?> = runCatching {
+        val base = NvCodeConfig.REGISTRY_BASE_URL.trimEnd('/')
+        require(base.isNotBlank()) { "سامانه آنلاین کد NV هنوز تنظیم نشده است" }
+        val code = PlaceCodes.publicCode(rawCode) ?: return@runCatching null
+        require(code > 0L) { "کد NV نامعتبر است" }
+
+        val request = Request.Builder()
+            .url("$base/v1/codes/$code")
+            .get()
+            .header("Accept", "application/json")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (response.code == 404) return@use null
+            val raw = response.body?.string().orEmpty()
+            check(response.isSuccessful) {
+                if (response.code in 500..599) "سرور کد NV در دسترس نیست؛ دوباره تلاش کنید"
+                else "خطای سامانه کد NV: ${response.code}"
+            }
+            val json = JSONObject(raw)
+            val latitude = json.getDouble("latitude")
+            val longitude = json.getDouble("longitude")
+            Place(
+                code = json.optLong("code", code),
+                name = json.optString("name", "مکان NV $code").ifBlank { "مکان NV $code" },
+                coordinate = Coordinate(latitude, longitude),
+                category = "nv:registry",
+                personalCode = code.toString()
             )
         }
     }
