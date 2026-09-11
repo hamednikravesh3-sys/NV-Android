@@ -49,9 +49,11 @@ class NvNavigationPlatform(
     val aheadEngine = AheadEngine(maxItems = 16)
 
     companion object {
-        internal fun defaultMapMatchingEngine(): MapMatchingEngine {
-            val endpoint = BuildConfig.VALHALLA_API_URL.trim()
-            return if (endpoint.isNotEmpty()) ValhallaMapMatchingEngine(endpoint)
+        internal fun defaultMapMatchingEngine(
+            endpoint: String = BuildConfig.VALHALLA_API_URL
+        ): MapMatchingEngine {
+            val normalizedEndpoint = endpoint.trim()
+            return if (normalizedEndpoint.isNotEmpty()) ValhallaMapMatchingEngine(normalizedEndpoint)
             else PassThroughMapMatchingEngine()
         }
     }
