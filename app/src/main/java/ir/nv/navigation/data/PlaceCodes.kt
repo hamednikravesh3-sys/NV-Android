@@ -15,6 +15,10 @@ object PlaceCodes {
         }
     }
 
+    fun isExplicitNvCode(value: String): Boolean =
+        Regex("^\\s*NV\\s*[:#-]?\\s*[۰-۹٠-٩0-9]+\\s*$", RegexOption.IGNORE_CASE)
+            .matches(value)
+
     fun publicCode(value: String): Long? {
         val normalized = normalizeDigits(value).trim()
             .replace(Regex("^NV\\s*[:#-]?\\s*", RegexOption.IGNORE_CASE), "")
