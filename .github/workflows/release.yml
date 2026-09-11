@@ -28,6 +28,8 @@ jobs:
       NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
       NV_CLOUD_API_URL: ${{ secrets.NV_CLOUD_API_URL }}
       NV_CODE_REGISTRY_URL: ${{ secrets.NV_CODE_REGISTRY_URL }}
+      NV_GOOGLE_MAPS_API_KEY: ${{ secrets.NV_GOOGLE_MAPS_API_KEY }}
+      NV_VALHALLA_API_URL: ${{ secrets.NV_VALHALLA_API_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,10 +58,6 @@ jobs:
           import re
 
           raw = os.environ.get("KEYSTORE_BASE64", "").replace("\r\n", "\n").replace("\r", "\n").strip()
-
-          # Accept either the raw Base64 value or an accidentally pasted
-          # KEY=value line / multi-line signing file. Only this secret's value
-          # is extracted; all other text is discarded before decoding.
           labelled = re.search(r"(?m)^\s*NV_KEYSTORE_BASE64\s*=\s*", raw)
           if labelled:
               raw = raw[labelled.end():]
@@ -74,8 +72,6 @@ jobs:
           if not compact:
               raise SystemExit("NV_KEYSTORE_BASE64 is empty after normalization")
 
-          # Standard Base64 padding is terminal. If mobile copy/paste appended
-          # another field after valid padding, keep only the canonical payload.
           padding = re.search(r"={1,2}", compact)
           if padding and padding.end() < len(compact):
               compact = compact[:padding.end()]
