@@ -11,3 +11,4 @@ Release attempt 6: retry after deterministic Android 10 UI render verification p
 Release attempt 7: retry after canonical and shorthand MainActivity component matching passed Android CI #360 on 2026-09-10.
 Release attempt 8: retry after Android 15 dumpsys shorthand MainActivity matching passed Android CI #363 on 2026-09-11.
 Release attempt 9: final signed release after Android CI #407 passed build, package verification, Android 10, and Android 15 on 2026-09-11.
+Release attempt 10: OSM-only production release after Android CI #412 passed build, package verification, Android 10, and Android 15 on 2026-09-11.
