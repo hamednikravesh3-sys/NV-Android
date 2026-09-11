@@ -163,10 +163,6 @@ class DeviceLocationProvider(private val context: Context) {
         if (runCatching { manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)) {
             add(LocationManager.NETWORK_PROVIDER)
         }
-        // Some devices expose GPS only after permission state changes. Keep it as a fallback when enabled.
-        if (LocationManager.GPS_PROVIDER !in this &&
-            runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
-        ) add(LocationManager.GPS_PROVIDER)
     }
 
     private fun Location.toCoordinate() = Coordinate(latitude, longitude)
