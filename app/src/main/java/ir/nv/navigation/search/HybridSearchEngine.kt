@@ -41,19 +41,23 @@ class HybridSearchEngine(
             .flatMap { variant -> runCatching { offline.search(variant) }.getOrDefault(emptyList()) }
 
         val publicCode = PlaceCodes.publicCode(query)
-        val centralCode = publicCode != null &&
-            (PlaceCodes.isRegistryCode(publicCode) || PlaceCodes.isExplicitNvCode(query))
+        val explicitNvCode = publicCode != null && PlaceCodes.isExplicitNvCode(query)
+        val centralCode = publicCode != null && (PlaceCodes.isRegistryCode(publicCode) || explicitNvCode)
         if (centralCode) {
-            if (!onlineAvailable || preferOffline) {
-                return HybridSearchResult(rankAndDeduplicate(local, clean, limit), false, false)
-            }
-            val registryResult = if (nvCodeService.isConfigured()) nvCodeService.resolveOnline(query) else Result.success(null)
+            // An explicit NV: code is an instruction to resolve the shared registry identity.
+            // Try it even during the immediate/local phase so legacy low-number codes are not
+            // blocked by the ViewModel's generic online-search gate. Failures remain non-fatal.
+            val mayResolveRegistry = nvCodeService.isConfigured() && (onlineAvailable || explicitNvCode) && !preferOffline
+            val registryResult = if (mayResolveRegistry) nvCodeService.resolveOnline(query) else Result.success(null)
             val registryPlace = registryResult.getOrNull()
-            return HybridSearchResult(
-                items = if (registryPlace != null) listOf(registryPlace) else rankAndDeduplicate(local, clean, limit),
-                onlineAttempted = true,
-                onlineFailed = registryResult.isFailure
-            )
+            if (registryPlace != null || mayResolveRegistry) {
+                return HybridSearchResult(
+                    items = if (registryPlace != null) listOf(registryPlace) else rankAndDeduplicate(local, clean, limit),
+                    onlineAttempted = mayResolveRegistry,
+                    onlineFailed = registryResult.isFailure
+                )
+            }
+            return HybridSearchResult(rankAndDeduplicate(local, clean, limit), false, false)
         }
 
         if (!onlineAvailable || preferOffline) {
