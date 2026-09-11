@@ -9,3 +9,4 @@ Release attempt 4: retry after canonical Base64 recovery hardening passed Androi
 Release attempt 5: retry on macos-15-intel to remove the ubuntu no-KVM emulator bottleneck while preserving all signed release gates on 2026-09-10.
 Release attempt 6: retry after deterministic Android 10 UI render verification passed Android CI #358 on 2026-09-10.
 Release attempt 7: retry after canonical and shorthand MainActivity component matching passed Android CI #360 on 2026-09-10.
+Release attempt 8: retry after Android 15 dumpsys shorthand MainActivity matching passed Android CI #363 on 2026-09-11.
