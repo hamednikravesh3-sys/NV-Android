@@ -11,8 +11,9 @@ import java.util.concurrent.TimeUnit
 
 class NvCodeAllocationService(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .callTimeout(8, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 ) {
