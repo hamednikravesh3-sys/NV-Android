@@ -6,7 +6,6 @@ plugins {
 android {
     namespace = "ir.nv.navigation"
     compileSdk = 35
-
     defaultConfig {
         val trafficApiKey = System.getenv("NV_TRAFFIC_API_KEY").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
         val googleMapsApiKey = System.getenv("NV_GOOGLE_MAPS_API_KEY").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
@@ -39,41 +38,26 @@ android {
         buildConfigField("String", "ROUTING_API_URL", "\"https://router.project-osrm.org\"")
         buildConfigField("String", "ROUTING_FALLBACK_API_URL", "\"https://routing.openstreetmap.de/routed-car\"")
     }
-
     signingConfigs {
         getByName("debug") {
-            storeFile = rootProject.file("keystore/nv-debug.jks")
-            storePassword = "nvdebug"
-            keyAlias = "nvdebug"
-            keyPassword = "nvdebug"
+            storeFile = rootProject.file("keystore/nv-debug.jks"); storePassword = "nvdebug"; keyAlias = "nvdebug"; keyPassword = "nvdebug"
         }
         create("release") {
             val storeFilePath = System.getenv("NV_KEYSTORE_FILE")
             if (!storeFilePath.isNullOrBlank()) {
-                storeFile = file(storeFilePath)
-                storePassword = System.getenv("NV_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("NV_KEY_ALIAS")
-                keyPassword = System.getenv("NV_KEY_PASSWORD")
+                storeFile = file(storeFilePath); storePassword = System.getenv("NV_KEYSTORE_PASSWORD"); keyAlias = System.getenv("NV_KEY_ALIAS"); keyPassword = System.getenv("NV_KEY_PASSWORD")
             }
         }
     }
-
     buildTypes {
-        debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
-        }
+        debug { applicationIdSuffix = ".debug"; versionNameSuffix = "-debug" }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = true; isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (!System.getenv("NV_KEYSTORE_FILE").isNullOrBlank()) signingConfig = signingConfigs.getByName("release")
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true; buildConfig = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }
@@ -83,9 +67,9 @@ android {
 dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:location"))
+    implementation(project(":routing"))
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
+    implementation(composeBom); androidTestImplementation(composeBom)
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
