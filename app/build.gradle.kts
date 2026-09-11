@@ -20,6 +20,9 @@ android {
         val nvCodeRegistryUrl = System.getenv("NV_CODE_REGISTRY_URL").orEmpty()
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
+        val valhallaApiUrl = System.getenv("NV_VALHALLA_API_URL").orEmpty()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
@@ -47,6 +50,7 @@ android {
         )
         buildConfigField("String", "CLOUD_API_URL", "\"$cloudApiUrl\"")
         buildConfigField("String", "NV_CODE_REGISTRY_URL", "\"$nvCodeRegistryUrl\"")
+        buildConfigField("String", "VALHALLA_API_URL", "\"$valhallaApiUrl\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
         buildConfigField(
             "String",
