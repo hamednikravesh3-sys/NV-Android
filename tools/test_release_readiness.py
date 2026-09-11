@@ -1,17 +1,23 @@
 import unittest
 
-from release_readiness import ReleaseConfig, validate_https_service_url, validate_release_config
+from release_readiness import (
+    ReleaseConfig,
+    validate_api_key,
+    validate_https_service_url,
+    validate_release_config,
+)
+
+
+VALID_KEY = "AIzaSyNVProductionKey1234567890"
+VALID_VALHALLA = "https://routing.nv-navigation.ir"
 
 
 class ReleaseReadinessTest(unittest.TestCase):
-    def test_accepts_distinct_https_services(self):
-        errors = validate_release_config(
-            ReleaseConfig(
-                "https://cloud.nv-navigation.ir/api",
-                "https://codes.nv-navigation.ir/api",
-            )
-        )
-        self.assertEqual([], errors)
+    def config(self, cloud="https://cloud.nv-navigation.ir/api", registry="https://codes.nv-navigation.ir/api", key=VALID_KEY, valhalla=VALID_VALHALLA):
+        return ReleaseConfig(cloud, registry, key, valhalla)
+
+    def test_accepts_complete_production_configuration(self):
+        self.assertEqual([], validate_release_config(self.config()))
 
     def test_rejects_http_and_local_hosts(self):
         errors = validate_https_service_url("NV_CLOUD_API_URL", "http://localhost:8787")
@@ -58,9 +64,9 @@ class ReleaseReadinessTest(unittest.TestCase):
 
     def test_rejects_same_service_origin_even_with_different_paths(self):
         errors = validate_release_config(
-            ReleaseConfig(
-                "https://api.nv-navigation.ir/cloud",
-                "https://api.nv-navigation.ir/codes",
+            self.config(
+                cloud="https://api.nv-navigation.ir/cloud",
+                registry="https://api.nv-navigation.ir/codes",
             )
         )
         self.assertIn(
@@ -68,10 +74,23 @@ class ReleaseReadinessTest(unittest.TestCase):
             errors,
         )
 
-    def test_requires_both_services(self):
-        errors = validate_release_config(ReleaseConfig("", ""))
+    def test_requires_all_production_services(self):
+        errors = validate_release_config(ReleaseConfig("", "", "", ""))
         self.assertIn("NV_CLOUD_API_URL is required", errors)
         self.assertIn("NV_CODE_REGISTRY_URL is required", errors)
+        self.assertIn("NV_GOOGLE_MAPS_API_KEY is required", errors)
+        self.assertIn("NV_VALHALLA_API_URL is required", errors)
+
+    def test_rejects_truncated_google_key(self):
+        self.assertIn(
+            "NV_GOOGLE_MAPS_API_KEY looks invalid or truncated",
+            validate_api_key("NV_GOOGLE_MAPS_API_KEY", "short"),
+        )
+
+    def test_rejects_local_valhalla(self):
+        errors = validate_release_config(self.config(valhalla="http://localhost:8002"))
+        self.assertIn("NV_VALHALLA_API_URL must use HTTPS", errors)
+        self.assertIn("NV_VALHALLA_API_URL must not point to a local-only host", errors)
 
 
 if __name__ == "__main__":
