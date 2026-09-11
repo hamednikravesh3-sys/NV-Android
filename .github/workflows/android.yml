@@ -176,3 +176,56 @@ jobs:
             nv-modern-logcat.txt
             nv-modern-app-logcat.txt
           if-no-files-found: warn
+
+  compatibility:
+    name: Android ${{ matrix.android }} compatibility
+    needs: build
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 30
+            android: "11"
+          - api: 31
+            android: "12"
+          - api: 32
+            android: "12L"
+          - api: 33
+            android: "13"
+          - api: 34
+            android: "14"
+          - api: 36
+            android: "16"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - name: Download tested debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: NV-debug-apk
+          path: app/build/outputs/apk/debug
+      - name: Install and verify NV launch on Android ${{ matrix.android }}
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          NV_VERIFY_APK: app/build/outputs/apk/debug/app-debug.apk
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: bash .github/scripts/verify-nv-launch-modern.sh
+      - name: Upload Android ${{ matrix.android }} diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-launch-diagnostics-android${{ matrix.android }}
+          path: |
+            nv-modern-launch-screen.png
+            nv-modern-window-state.txt
+            nv-modern-activity-state.txt
+            nv-modern-logcat.txt
+            nv-modern-app-logcat.txt
+          if-no-files-found: warn
