@@ -14,6 +14,8 @@ from urllib.parse import urlparse
 class ReleaseConfig:
     cloud_api_url: str
     nv_code_registry_url: str
+    google_maps_api_key: str = ""
+    valhalla_api_url: str = ""
 
 
 _RESERVED_SUFFIXES = (
@@ -60,6 +62,17 @@ def validate_https_service_url(name: str, value: str) -> list[str]:
     return errors
 
 
+def validate_api_key(name: str, value: str) -> list[str]:
+    raw = value.strip()
+    if not raw:
+        return [f"{name} is required"]
+    if len(raw) < 20:
+        return [f"{name} looks invalid or truncated"]
+    if any(character.isspace() for character in raw):
+        return [f"{name} must not contain whitespace"]
+    return []
+
+
 def _normalized_service_origin(value: str) -> tuple[str, str, int | None] | None:
     raw = value.strip()
     if not raw:
@@ -78,6 +91,8 @@ def validate_release_config(config: ReleaseConfig) -> list[str]:
     errors: list[str] = []
     errors.extend(validate_https_service_url("NV_CLOUD_API_URL", config.cloud_api_url))
     errors.extend(validate_https_service_url("NV_CODE_REGISTRY_URL", config.nv_code_registry_url))
+    errors.extend(validate_api_key("NV_GOOGLE_MAPS_API_KEY", config.google_maps_api_key))
+    errors.extend(validate_https_service_url("NV_VALHALLA_API_URL", config.valhalla_api_url))
 
     cloud_origin = _normalized_service_origin(config.cloud_api_url)
     registry_origin = _normalized_service_origin(config.nv_code_registry_url)
@@ -90,9 +105,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate NV production release endpoints")
     parser.add_argument("--cloud-url", default=os.getenv("NV_CLOUD_API_URL", ""))
     parser.add_argument("--registry-url", default=os.getenv("NV_CODE_REGISTRY_URL", ""))
+    parser.add_argument("--google-maps-api-key", default=os.getenv("NV_GOOGLE_MAPS_API_KEY", ""))
+    parser.add_argument("--valhalla-url", default=os.getenv("NV_VALHALLA_API_URL", ""))
     args = parser.parse_args()
 
-    config = ReleaseConfig(args.cloud_url, args.registry_url)
+    config = ReleaseConfig(
+        args.cloud_url,
+        args.registry_url,
+        args.google_maps_api_key,
+        args.valhalla_url,
+    )
     errors = validate_release_config(config)
     if errors:
         for error in errors:
