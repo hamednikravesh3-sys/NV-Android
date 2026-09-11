@@ -23,15 +23,36 @@ data class RoadEdge(
     val toNode: Long,
     val distanceMeters: Double,
     val travelSeconds: Double,
-    val roadName: String?
-)
+    val roadName: String?,
+    val speedLimitKmh: Int? = null,
+    val highwayClass: String? = null,
+    val toll: Boolean = false,
+    val ferry: Boolean = false,
+    val surface: String? = null,
+    val laneCount: Int? = null
+) {
+    val isHighway: Boolean get() = highwayClass in setOf("motorway", "motorway_link", "trunk", "trunk_link")
+    val roadQualityScore: Double get() = when (surface?.lowercase()) {
+        "asphalt", "concrete", "concrete:plates", "paved" -> 1.0
+        "paving_stones", "sett", "compacted" -> 0.75
+        "fine_gravel", "gravel" -> 0.55
+        "dirt", "earth", "ground", "sand", "mud" -> 0.30
+        else -> 0.70
+    }
+}
 
 data class Route(
     val points: List<Coordinate>,
     val edgeIds: List<Long>,
     val distanceMeters: Double,
     val travelSeconds: Double,
-    val maneuvers: List<RouteManeuver> = emptyList()
+    val maneuvers: List<RouteManeuver> = emptyList(),
+    val estimatedEnergyIndex: Double? = null,
+    val usesToll: Boolean = false,
+    val usesHighway: Boolean = false,
+    val usesFerry: Boolean = false,
+    val roadQualityScore: Double? = null,
+    val speedLimitsKmh: List<Int> = emptyList()
 )
 
 enum class RouteSource { NONE, ONLINE, OFFLINE }
@@ -42,7 +63,10 @@ data class RouteManeuver(
     val distanceMeters: Double,
     val direction: Direction,
     val coordinate: Coordinate? = null,
-    val lanes: List<Lane> = emptyList()
+    val lanes: List<Lane> = emptyList(),
+    val exitNumber: String? = null,
+    val junctionName: String? = null,
+    val speedLimitKmh: Int? = null
 ) {
     data class Lane(val direction: Direction, val recommended: Boolean)
 
