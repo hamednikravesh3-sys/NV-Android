@@ -1,12 +1,17 @@
 package ir.nv.navigation
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -23,7 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
+import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.navigation.service.NvNavigationService
 import ir.nv.navigation.ui.NvQrScannerOverlay
 import ir.nv.navigation.ui.NvReferenceV13
@@ -61,6 +68,11 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(AppThemeMode.restore(preferences.getString("theme_mode", null), legacy))
             }
             var automaticNight by remember { mutableStateOf(isNightNow()) }
+            var lastHazardFingerprint by remember { mutableStateOf<String?>(null) }
+            val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { }
+
             LaunchedEffect(Unit) {
                 while (true) {
                     automaticNight = isNightNow()
@@ -76,6 +88,11 @@ class MainActivity : ComponentActivity() {
 
             LaunchedEffect(navigationState.navigationActive) {
                 if (navigationState.navigationActive) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
                     NvNavigationService.start(
                         context = this@MainActivity,
                         destination = navigationState.destination?.name,
@@ -83,7 +100,25 @@ class MainActivity : ComponentActivity() {
                             ?.let { "${(it / 60.0).toInt()} دقیقه تا مقصد" }
                     )
                 } else {
+                    lastHazardFingerprint = null
                     NvNavigationService.stop(this@MainActivity)
+                }
+            }
+
+            LaunchedEffect(navigationState.navigationActive, navigationState.routeNotices) {
+                if (!navigationState.navigationActive) return@LaunchedEffect
+                val hazard = navigationState.routeNotices.firstOrNull {
+                    it.kind == RouteNotice.Kind.WEATHER && it.title.startsWith("هشدار")
+                } ?: return@LaunchedEffect
+                val fingerprint = "${hazard.title}|${hazard.detail}|${(hazard.distanceAheadMeters / 1000.0).toInt()}"
+                if (fingerprint != lastHazardFingerprint) {
+                    lastHazardFingerprint = fingerprint
+                    NvNavigationService.notifyHazard(
+                        context = this@MainActivity,
+                        title = hazard.title,
+                        detail = hazard.detail,
+                        stableKey = fingerprint
+                    )
                 }
             }
 
