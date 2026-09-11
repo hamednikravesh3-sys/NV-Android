@@ -17,7 +17,7 @@ class NvAdaptiveRouteRanker : RouteRanker {
             val delay = candidate.traffic?.delaySeconds?.coerceAtLeast(0.0) ?: 0.0
             val effectiveTime = route.travelSeconds.coerceAtLeast(0.0) + delay
             val distance = route.distanceMeters.coerceAtLeast(0.0)
-            val energy = energyIndex(distance, effectiveTime)
+            val energy = route.estimatedEnergyIndex ?: energyIndex(distance, effectiveTime)
             Raw(candidate, effectiveTime, delay, distance, energy)
         }
 
@@ -46,6 +46,7 @@ class NvAdaptiveRouteRanker : RouteRanker {
             addSignal(signals.accidentRiskPenalty, ACCIDENT_RISK_WEIGHT)
             addSignal(signals.weatherPenalty, WEATHER_WEIGHT)
             addSignal(signals.restrictionPenalty, RESTRICTION_WEIGHT)
+            row.candidate.route.roadQualityScore?.let { addSignal(1.0 - it.coerceIn(0.0, 1.0), ROAD_QUALITY_WEIGHT) }
 
             row.candidate.copy(score = score / activeWeight.coerceAtLeast(1e-9))
         }.sortedBy { it.score }
@@ -60,6 +61,8 @@ class NvAdaptiveRouteRanker : RouteRanker {
             RouteProfile.SCENIC -> Weights(0.30, 0.10, 0.25, 0.35)
             RouteProfile.AVOID_TOLL,
             RouteProfile.AVOID_HIGHWAY,
+            RouteProfile.AVOID_FERRY,
+            RouteProfile.CUSTOM,
             RouteProfile.SMART -> Weights(0.45, 0.25, 0.15, 0.15)
         }
 
