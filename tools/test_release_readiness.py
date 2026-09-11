@@ -22,6 +22,12 @@ class ReleaseReadinessTest(unittest.TestCase):
     def test_accepts_osm_only_production_configuration(self):
         self.assertEqual([], validate_release_config(self.config(key="")))
 
+    def test_accepts_local_map_matching_fallback_without_valhalla(self):
+        self.assertEqual([], validate_release_config(self.config(valhalla="")))
+
+    def test_accepts_osm_and_local_map_matching_fallback(self):
+        self.assertEqual([], validate_release_config(self.config(key="", valhalla="")))
+
     def test_rejects_http_and_local_hosts(self):
         errors = validate_https_service_url("NV_CLOUD_API_URL", "http://localhost:8787")
         self.assertIn("NV_CLOUD_API_URL must use HTTPS", errors)
@@ -82,7 +88,7 @@ class ReleaseReadinessTest(unittest.TestCase):
         self.assertIn("NV_CLOUD_API_URL is required", errors)
         self.assertIn("NV_CODE_REGISTRY_URL is required", errors)
         self.assertNotIn("NV_GOOGLE_MAPS_API_KEY is required", errors)
-        self.assertIn("NV_VALHALLA_API_URL is required", errors)
+        self.assertNotIn("NV_VALHALLA_API_URL is required", errors)
 
     def test_rejects_truncated_google_key_when_configured(self):
         errors = validate_release_config(self.config(key="short"))
@@ -92,7 +98,7 @@ class ReleaseReadinessTest(unittest.TestCase):
             validate_api_key("NV_GOOGLE_MAPS_API_KEY", "short"),
         )
 
-    def test_rejects_local_valhalla(self):
+    def test_rejects_local_valhalla_when_configured(self):
         errors = validate_release_config(self.config(valhalla="http://localhost:8002"))
         self.assertIn("NV_VALHALLA_API_URL must use HTTPS", errors)
         self.assertIn("NV_VALHALLA_API_URL must not point to a local-only host", errors)
