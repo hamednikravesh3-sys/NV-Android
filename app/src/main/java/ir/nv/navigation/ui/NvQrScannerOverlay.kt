@@ -28,6 +28,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import ir.nv.navigation.core.Place
+import ir.nv.navigation.data.NvCodeAllocationService
 import ir.nv.navigation.data.NvQrScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -48,9 +50,10 @@ fun NvQrScannerOverlay(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var dialogOpen by androidx.compose.runtime.remember { mutableStateOf(false) }
-    var busy by androidx.compose.runtime.remember { mutableStateOf(false) }
-    var message by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
+    val registry = remember { NvCodeAllocationService() }
+    var dialogOpen by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
 
     fun applyScan(bitmap: Bitmap?) {
         if (bitmap == null) {
@@ -62,19 +65,39 @@ fun NvQrScannerOverlay(
             val result = withContext(Dispatchers.Default) { NvQrScanner.decode(bitmap) }
             result.onSuccess { scan ->
                 val stored = viewModel.state.value.personalPlaces.firstOrNull { it.personalCode == scan.code }
-                val coordinate = scan.coordinate ?: stored?.coordinate
-                if (coordinate == null) {
-                    message = "کد NV ${scan.code} خوانده شد، اما این QR مختصات ندارد و کد در دستگاه ذخیره نشده است"
-                } else {
-                    val place = stored ?: Place(
+                val embeddedCoordinate = scan.coordinate ?: stored?.coordinate
+                val resolved = if (embeddedCoordinate == null && registry.isConfigured()) {
+                    withContext(Dispatchers.IO) {
+                        registry.resolveOnline("NV:${scan.code}").getOrNull()
+                    }
+                } else null
+
+                val place = when {
+                    stored != null -> stored
+                    embeddedCoordinate != null -> Place(
                         code = -8_400_000_000L,
                         name = scan.name?.takeIf { it.isNotBlank() } ?: "مکان NV ${scan.code}",
-                        coordinate = coordinate,
+                        coordinate = embeddedCoordinate,
                         category = "nv:qr",
                         personalCode = scan.code
                     )
+                    resolved != null -> resolved
+                    else -> null
+                }
+
+                if (place == null) {
+                    message = if (registry.isConfigured()) {
+                        "کد NV ${scan.code} خوانده شد، اما در سامانه مرکزی پیدا نشد"
+                    } else {
+                        "کد NV ${scan.code} خوانده شد، اما سامانه مرکزی کد NV در این نسخه تنظیم نشده است"
+                    }
+                } else {
                     viewModel.selectDestination(place)
-                    message = "مقصد از QR تنظیم شد: ${place.name}"
+                    message = if (resolved != null) {
+                        "مقصد از سامانه مرکزی NV پیدا شد: ${place.name}"
+                    } else {
+                        "مقصد از QR تنظیم شد: ${place.name}"
+                    }
                     dialogOpen = false
                 }
             }.onFailure {
