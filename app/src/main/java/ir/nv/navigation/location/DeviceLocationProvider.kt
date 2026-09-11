@@ -4,6 +4,10 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -16,6 +20,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class DeviceLocationProvider(private val context: Context) {
     private val manager = context.getSystemService(LocationManager::class.java)
@@ -90,6 +99,7 @@ class DeviceLocationProvider(private val context: Context) {
             close(SecurityException("مجوز موقعیت مکانی داده نشده است"))
             return@callbackFlow
         }
+        val sensorFusion = NavigationSensorFusion(context.applicationContext).also { it.start() }
         var bestRecentAccuracy = Float.POSITIVE_INFINITY
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
@@ -97,7 +107,7 @@ class DeviceLocationProvider(private val context: Context) {
                 val accuracy = if (location.hasAccuracy()) location.accuracy else Float.POSITIVE_INFINITY
                 if (accuracy > MAX_NAVIGATION_ACCURACY_METERS && bestRecentAccuracy <= GOOD_NAVIGATION_ACCURACY_METERS) return
                 bestRecentAccuracy = minOf(bestRecentAccuracy * 1.08f, accuracy)
-                trySend(location.toNavigationFix())
+                trySend(location.toNavigationFix(sensorFusion.snapshot()))
             }
         }
         bestLastKnown()
@@ -105,12 +115,15 @@ class DeviceLocationProvider(private val context: Context) {
             ?.takeIf(::isUsable)
             ?.let {
                 bestRecentAccuracy = if (it.hasAccuracy()) it.accuracy else Float.POSITIVE_INFINITY
-                trySend(it.toNavigationFix())
+                trySend(it.toNavigationFix(sensorFusion.snapshot()))
             }
         activeProviders().forEach {
             manager.requestLocationUpdates(it, 1_000L, 1f, listener, Looper.getMainLooper())
         }
-        awaitClose { manager.removeUpdates(listener) }
+        awaitClose {
+            manager.removeUpdates(listener)
+            sensorFusion.close()
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -143,13 +156,44 @@ class DeviceLocationProvider(private val context: Context) {
 
     private fun Location.toCoordinate() = Coordinate(latitude, longitude)
 
-    private fun Location.toNavigationFix() = NavigationFix(
+    private fun Location.toNavigationFix(sensor: SensorFusionSnapshot) = NavigationFix(
         coordinate = toCoordinate(),
-        speedKmh = if (hasSpeed()) (speed * 3.6f).coerceAtLeast(0f) else 0f,
-        bearingDegrees = if (hasBearing()) bearing else 0f,
+        altitudeMeters = if (hasAltitude()) altitude else null,
+        speedKmh = if (hasSpeed()) (speed * 3.6f).coerceAtLeast(0f) else sensor.estimatedSpeedKmh,
+        bearingDegrees = fusedBearing(this, sensor),
         accuracyMeters = if (hasAccuracy()) accuracy else Float.POSITIVE_INFINITY,
-        timestampMillis = time.takeIf { it > 0L } ?: System.currentTimeMillis()
+        timestampMillis = time.takeIf { it > 0L } ?: System.currentTimeMillis(),
+        sensorFusionActive = sensor.active,
+        linearAccelerationMps2 = sensor.linearAccelerationMps2,
+        yawRateDegreesPerSecond = sensor.yawRateDegreesPerSecond
     )
+
+    private fun fusedBearing(location: Location, sensor: SensorFusionSnapshot): Float {
+        val gpsBearing = location.bearing.takeIf { location.hasBearing() && it.isFinite() }
+        val sensorBearing = sensor.bearingDegrees.takeIf { it.isFinite() }
+        if (gpsBearing == null) return sensorBearing ?: 0f
+        if (sensorBearing == null || !sensor.active) return normalizeBearing(gpsBearing)
+
+        val speedMps = if (location.hasSpeed()) location.speed.coerceAtLeast(0f) else 0f
+        val gpsWeight = when {
+            speedMps >= 8f -> 0.88
+            speedMps >= 3f -> 0.72
+            speedMps >= 1f -> 0.52
+            else -> 0.20
+        }
+        return circularBlend(gpsBearing, sensorBearing, gpsWeight)
+    }
+
+    private fun circularBlend(a: Float, b: Float, aWeight: Float): Float {
+        val weight = aWeight.coerceIn(0f, 1f).toDouble()
+        val ar = Math.toRadians(a.toDouble())
+        val br = Math.toRadians(b.toDouble())
+        val x = cos(ar) * weight + cos(br) * (1.0 - weight)
+        val y = sin(ar) * weight + sin(br) * (1.0 - weight)
+        return normalizeBearing(Math.toDegrees(atan2(y, x)).toFloat())
+    }
+
+    private fun normalizeBearing(value: Float): Float = ((value % 360f) + 360f) % 360f
 
     private companion object {
         const val LOCATION_COLLECTION_WINDOW_MS = 6_000L
@@ -168,8 +212,126 @@ class DeviceLocationProvider(private val context: Context) {
 
 data class NavigationFix(
     val coordinate: Coordinate,
+    val altitudeMeters: Double? = null,
     val speedKmh: Float,
     val bearingDegrees: Float,
     val accuracyMeters: Float,
-    val timestampMillis: Long = System.currentTimeMillis()
+    val timestampMillis: Long = System.currentTimeMillis(),
+    val sensorFusionActive: Boolean = false,
+    val linearAccelerationMps2: Float = 0f,
+    val yawRateDegreesPerSecond: Float = 0f
 )
+
+private data class SensorFusionSnapshot(
+    val active: Boolean = false,
+    val bearingDegrees: Float = Float.NaN,
+    val estimatedSpeedKmh: Float = 0f,
+    val linearAccelerationMps2: Float = 0f,
+    val yawRateDegreesPerSecond: Float = 0f
+)
+
+/**
+ * Lightweight on-device sensor fusion used to stabilize heading at low vehicle speeds.
+ * Rotation-vector is preferred because Android already fuses accelerometer, gyroscope and
+ * magnetometer data. Raw accelerometer/gyroscope/magnetic sensors are also registered so the
+ * navigation engine keeps useful motion signals on devices without a rotation-vector sensor.
+ */
+private class NavigationSensorFusion(context: Context) : SensorEventListener, AutoCloseable {
+    private val manager = context.getSystemService(SensorManager::class.java)
+    private val rotation = FloatArray(9)
+    private val orientation = FloatArray(3)
+    private val gravity = FloatArray(3)
+    private var haveGravity = false
+    private var magnetic = FloatArray(3)
+    private var haveMagnetic = false
+    private var bearing = Float.NaN
+    private var linearAcceleration = 0f
+    private var yawRate = 0f
+    private var estimatedSpeedMps = 0f
+    private var lastAccelerationTimestampNs = 0L
+    private var lastSensorAtMs = 0L
+    private var started = false
+
+    fun start() {
+        if (started) return
+        started = true
+        listOf(
+            Sensor.TYPE_ROTATION_VECTOR,
+            Sensor.TYPE_ACCELEROMETER,
+            Sensor.TYPE_GYROSCOPE,
+            Sensor.TYPE_MAGNETIC_FIELD
+        ).mapNotNull(manager::getDefaultSensor)
+            .distinctBy { it.type }
+            .forEach { manager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+    }
+
+    fun snapshot(): SensorFusionSnapshot = SensorFusionSnapshot(
+        active = started && System.currentTimeMillis() - lastSensorAtMs <= SENSOR_STALE_MS,
+        bearingDegrees = bearing,
+        estimatedSpeedKmh = (estimatedSpeedMps * 3.6f).coerceIn(0f, 220f),
+        linearAccelerationMps2 = linearAcceleration,
+        yawRateDegreesPerSecond = yawRate
+    )
+
+    override fun onSensorChanged(event: SensorEvent) {
+        lastSensorAtMs = System.currentTimeMillis()
+        when (event.sensor.type) {
+            Sensor.TYPE_ROTATION_VECTOR -> {
+                SensorManager.getRotationMatrixFromVector(rotation, event.values)
+                SensorManager.getOrientation(rotation, orientation)
+                bearing = normalize(Math.toDegrees(orientation[0].toDouble()).toFloat())
+            }
+            Sensor.TYPE_ACCELEROMETER -> {
+                if (!haveGravity) {
+                    event.values.copyInto(gravity, endIndex = minOf(3, event.values.size))
+                    haveGravity = true
+                } else {
+                    for (i in 0..2) gravity[i] = LOW_PASS_ALPHA * gravity[i] + (1f - LOW_PASS_ALPHA) * event.values[i]
+                }
+                val lx = event.values[0] - gravity[0]
+                val ly = event.values[1] - gravity[1]
+                val lz = event.values[2] - gravity[2]
+                linearAcceleration = sqrt(lx * lx + ly * ly + lz * lz)
+                if (lastAccelerationTimestampNs > 0L) {
+                    val dt = ((event.timestamp - lastAccelerationTimestampNs) / 1_000_000_000.0).coerceIn(0.0, 0.25)
+                    val longitudinalEstimate = (linearAcceleration - MOTION_NOISE_FLOOR).coerceAtLeast(0f)
+                    estimatedSpeedMps = (estimatedSpeedMps + longitudinalEstimate * dt.toFloat()) * SPEED_DECAY
+                }
+                lastAccelerationTimestampNs = event.timestamp
+                updateFallbackOrientation()
+            }
+            Sensor.TYPE_GYROSCOPE -> {
+                yawRate = Math.toDegrees(event.values[2].toDouble()).toFloat()
+            }
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                event.values.copyInto(magnetic, endIndex = minOf(3, event.values.size))
+                haveMagnetic = true
+                updateFallbackOrientation()
+            }
+        }
+    }
+
+    private fun updateFallbackOrientation() {
+        if (!bearing.isNaN() || !haveGravity || !haveMagnetic) return
+        if (SensorManager.getRotationMatrix(rotation, null, gravity, magnetic)) {
+            SensorManager.getOrientation(rotation, orientation)
+            bearing = normalize(Math.toDegrees(orientation[0].toDouble()).toFloat())
+        }
+    }
+
+    private fun normalize(value: Float): Float = ((value % 360f) + 360f) % 360f
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+    override fun close() {
+        manager.unregisterListener(this)
+        started = false
+    }
+
+    private companion object {
+        const val LOW_PASS_ALPHA = 0.82f
+        const val MOTION_NOISE_FLOOR = 0.18f
+        const val SPEED_DECAY = 0.985f
+        const val SENSOR_STALE_MS = 2_500L
+    }
+}
