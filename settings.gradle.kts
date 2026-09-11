@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "NV-Android"
 include(":app")
+include(":core:common")
+include(":core:location")
