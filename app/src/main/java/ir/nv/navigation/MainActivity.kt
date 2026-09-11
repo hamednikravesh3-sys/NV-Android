@@ -72,8 +72,28 @@ class MainActivity : ComponentActivity() {
             val notificationPermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { }
+            val locationPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestMultiplePermissions()
+            ) { permissions ->
+                if (permissions.values.any { it }) {
+                    navigationViewModel.useCurrentLocationAsOrigin()
+                }
+            }
 
             LaunchedEffect(Unit) {
+                val hasLocationPermission =
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                if (hasLocationPermission) {
+                    navigationViewModel.useCurrentLocationAsOrigin()
+                } else {
+                    locationPermissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
+                }
                 while (true) {
                     automaticNight = isNightNow()
                     delay(60_000)
@@ -143,6 +163,10 @@ class MainActivity : ComponentActivity() {
                         )
                         if (!navigationState.navigationActive) {
                             ProvinceDownloadOverlay(
+                                iranPackStatus = navigationState.packStatus,
+                                onStartIranDownload = navigationViewModel::startMapDownload,
+                                onRetryIranDownload = navigationViewModel::retryDownload,
+                                onCancelIranDownload = navigationViewModel::cancelDownload,
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .navigationBarsPadding()
