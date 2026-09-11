@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
-import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -43,10 +42,15 @@ class DeviceLocationProvider(private val context: Context) {
     suspend fun currentLocation(): Coordinate? {
         if (!hasPermission()) return null
 
+        // Never present an unknown-accuracy or stale cached coordinate as the user's exact position.
         val recent = bestLastKnown()
+            ?.takeIf { it.hasAccuracy() }
             ?.takeIf { System.currentTimeMillis() - it.time <= MAX_LAST_KNOWN_AGE_MS }
-            ?.takeIf { !it.hasAccuracy() || it.accuracy <= ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS }
-        if (recent != null && recent.hasAccuracy() && recent.accuracy <= EXCELLENT_ACCURACY_METERS) {
+            ?.takeIf { it.accuracy <= ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS }
+        if (recent != null &&
+            recent.accuracy <= EXCELLENT_ACCURACY_METERS &&
+            System.currentTimeMillis() - recent.time <= FRESH_SAMPLE_AGE_MS
+        ) {
             return recent.toCoordinate()
         }
 
@@ -61,17 +65,21 @@ class DeviceLocationProvider(private val context: Context) {
                 completed = true
                 manager.removeUpdates(listener)
                 handler.removeCallbacksAndMessages(null)
-                if (continuation.isActive) continuation.resume(location?.toCoordinate())
+                val accepted = location
+                    ?.takeIf { it.hasAccuracy() }
+                    ?.takeIf { System.currentTimeMillis() - it.time <= MAX_CURRENT_FIX_AGE_MS }
+                    ?.takeIf { it.accuracy <= MAX_CURRENT_LOCATION_ACCURACY_METERS }
+                if (continuation.isActive) continuation.resume(accepted?.toCoordinate())
             }
 
             listener = object : LocationListener {
                 override fun onLocationChanged(location: Location) {
-                    if (!isUsable(location)) return
+                    if (!isUsable(location) || !location.hasAccuracy()) return
+                    val age = System.currentTimeMillis() - location.time
+                    if (age > MAX_CURRENT_FIX_AGE_MS) return
                     val current = best
                     if (current == null || locationScore(location) < locationScore(current)) best = location
-                    if (location.hasAccuracy() && location.accuracy <= TARGET_ACCURACY_METERS &&
-                        System.currentTimeMillis() - location.time <= FRESH_SAMPLE_AGE_MS
-                    ) {
+                    if (location.accuracy <= TARGET_ACCURACY_METERS && age <= FRESH_SAMPLE_AGE_MS) {
                         finish(location)
                     }
                 }
@@ -79,7 +87,7 @@ class DeviceLocationProvider(private val context: Context) {
 
             val providers = activeProviders()
             if (providers.isEmpty()) {
-                continuation.resume(recent?.toCoordinate())
+                continuation.resume(recent?.takeIf { it.accuracy <= MAX_CURRENT_LOCATION_ACCURACY_METERS }?.toCoordinate())
                 return@suspendCancellableCoroutine
             }
             providers.forEach { provider ->
@@ -103,8 +111,8 @@ class DeviceLocationProvider(private val context: Context) {
         var bestRecentAccuracy = Float.POSITIVE_INFINITY
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                if (!isUsable(location)) return
-                val accuracy = if (location.hasAccuracy()) location.accuracy else Float.POSITIVE_INFINITY
+                if (!isUsable(location) || !location.hasAccuracy()) return
+                val accuracy = location.accuracy
                 if (accuracy > MAX_NAVIGATION_ACCURACY_METERS && bestRecentAccuracy <= GOOD_NAVIGATION_ACCURACY_METERS) return
                 bestRecentAccuracy = minOf(bestRecentAccuracy * 1.08f, accuracy)
                 trySend(location.toNavigationFix(sensorFusion.snapshot()))
@@ -112,9 +120,10 @@ class DeviceLocationProvider(private val context: Context) {
         }
         bestLastKnown()
             ?.takeIf { System.currentTimeMillis() - it.time <= RECENT_LOCATION_MS }
+            ?.takeIf { it.hasAccuracy() && it.accuracy <= MAX_NAVIGATION_ACCURACY_METERS }
             ?.takeIf(::isUsable)
             ?.let {
-                bestRecentAccuracy = if (it.hasAccuracy()) it.accuracy else Float.POSITIVE_INFINITY
+                bestRecentAccuracy = it.accuracy
                 trySend(it.toNavigationFix(sensorFusion.snapshot()))
             }
         activeProviders().forEach {
@@ -133,25 +142,31 @@ class DeviceLocationProvider(private val context: Context) {
         .minByOrNull(::locationScore)
 
     private fun locationScore(location: Location): Double {
-        val accuracyPenalty = if (location.hasAccuracy()) location.accuracy.toDouble() else 500.0
+        val accuracyPenalty = if (location.hasAccuracy()) location.accuracy.toDouble() else 1_000.0
         val ageSeconds = ((System.currentTimeMillis() - location.time).coerceAtLeast(0L) / 1000.0)
-        val gpsBonus = if (location.provider == LocationManager.GPS_PROVIDER) -12.0 else 0.0
-        return accuracyPenalty + ageSeconds * 0.35 + gpsBonus
+        val gpsBonus = if (location.provider == LocationManager.GPS_PROVIDER && hasFinePermission()) -25.0 else 0.0
+        return accuracyPenalty + ageSeconds * 0.5 + gpsBonus
     }
 
     private fun isUsable(location: Location): Boolean {
         if (!location.latitude.isFinite() || !location.longitude.isFinite()) return false
         if (location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0) return false
         val age = System.currentTimeMillis() - location.time
-        if (age > MAX_SAMPLE_AGE_MS) return false
+        if (age < -FUTURE_TIMESTAMP_TOLERANCE_MS || age > MAX_SAMPLE_AGE_MS) return false
         return !location.hasAccuracy() || location.accuracy <= ABSOLUTE_MAX_ACCURACY_METERS
     }
 
-    private fun activeProviders(): List<String> = listOf(
-        LocationManager.GPS_PROVIDER,
-        LocationManager.NETWORK_PROVIDER
-    ).filter { provider ->
-        runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false)
+    private fun activeProviders(): List<String> = buildList {
+        if (hasFinePermission() && runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)) {
+            add(LocationManager.GPS_PROVIDER)
+        }
+        if (runCatching { manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)) {
+            add(LocationManager.NETWORK_PROVIDER)
+        }
+        // Some devices expose GPS only after permission state changes. Keep it as a fallback when enabled.
+        if (LocationManager.GPS_PROVIDER !in this &&
+            runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)
+        ) add(LocationManager.GPS_PROVIDER)
     }
 
     private fun Location.toCoordinate() = Coordinate(latitude, longitude)
@@ -196,17 +211,20 @@ class DeviceLocationProvider(private val context: Context) {
     private fun normalizeBearing(value: Float): Float = ((value % 360f) + 360f) % 360f
 
     private companion object {
-        const val LOCATION_COLLECTION_WINDOW_MS = 6_000L
-        const val TARGET_ACCURACY_METERS = 20f
-        const val EXCELLENT_ACCURACY_METERS = 12f
+        const val LOCATION_COLLECTION_WINDOW_MS = 8_000L
+        const val TARGET_ACCURACY_METERS = 18f
+        const val EXCELLENT_ACCURACY_METERS = 10f
         const val ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS = 35f
+        const val MAX_CURRENT_LOCATION_ACCURACY_METERS = 55f
         const val GOOD_NAVIGATION_ACCURACY_METERS = 35f
         const val MAX_NAVIGATION_ACCURACY_METERS = 90f
         const val ABSOLUTE_MAX_ACCURACY_METERS = 250f
-        const val FRESH_SAMPLE_AGE_MS = 10_000L
-        const val MAX_LAST_KNOWN_AGE_MS = 30_000L
+        const val FRESH_SAMPLE_AGE_MS = 8_000L
+        const val MAX_CURRENT_FIX_AGE_MS = 15_000L
+        const val MAX_LAST_KNOWN_AGE_MS = 20_000L
         const val MAX_SAMPLE_AGE_MS = 2 * 60 * 1_000L
-        const val RECENT_LOCATION_MS = 30_000L
+        const val RECENT_LOCATION_MS = 20_000L
+        const val FUTURE_TIMESTAMP_TOLERANCE_MS = 2_000L
     }
 }
 
