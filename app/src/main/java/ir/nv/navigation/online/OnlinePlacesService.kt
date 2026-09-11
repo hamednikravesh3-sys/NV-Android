@@ -14,6 +14,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /** Online POIs for route notices and nearby discovery. Google Places is preferred when configured; OSM remains the resilient fallback. */
@@ -25,28 +26,59 @@ class OnlinePlacesService(
         .retryOnConnectionFailure(true)
         .build()
 ) {
+    private data class CacheEntry(val createdAt: Long, val places: List<Place>)
+    private val nearbyCache = ConcurrentHashMap<String, CacheEntry>()
+
     fun googleConfigured(): Boolean = BuildConfig.GOOGLE_MAPS_API_KEY.isNotBlank()
 
-    fun searchNearby(center: Coordinate, query: String, radiusMeters: Int = 18000, limit: Int = 40): List<Place> {
-        val google = if (googleConfigured()) {
-            runCatching { requestGoogleNearby(center, query, radiusMeters, limit) }.getOrDefault(emptyList())
-        } else emptyList()
+    fun searchNearby(center: Coordinate, query: String, radiusMeters: Int = 100000, limit: Int = 40): List<Place> {
+        val requestedRadius = radiusMeters.coerceIn(1_000, 100_000)
+        val cacheKey = buildCacheKey(center, query, requestedRadius, limit)
+        nearbyCache[cacheKey]?.takeIf { System.currentTimeMillis() - it.createdAt <= CACHE_TTL_MS }?.let { return it.places }
 
-        val osm = runCatching { requestOsmNearby(center, query, radiusMeters, limit) }.getOrDefault(emptyList())
-        val merged = (google + osm)
-            .distinctBy { Triple(normalizeName(it.name), (it.coordinate.latitude * 10000).toInt(), (it.coordinate.longitude * 10000).toInt()) }
-            .sortedBy { distanceSquared(center, it.coordinate) }
-            .take(limit)
+        val progressiveRadii = buildList {
+            add(minOf(18_000, requestedRadius))
+            if (requestedRadius > 18_000) add(minOf(50_000, requestedRadius))
+            if (requestedRadius > 50_000) add(requestedRadius)
+        }.distinct()
 
-        if (merged.isNotEmpty()) return merged
-        if (googleConfigured()) throw IllegalStateException("Google Places و سرویس پشتیبان OSM فعلاً نتیجه‌ای برنگرداندند")
-        throw IllegalStateException("سرویس مکان‌های اطراف فعلاً نتیجه‌ای برنگرداند؛ برای Google Places کلید API لازم است")
+        var lastGoogleFailure: Throwable? = null
+        var lastOsmFailure: Throwable? = null
+        for (radius in progressiveRadii) {
+            val google = if (googleConfigured()) {
+                runCatching { requestGoogleNearby(center, query, radius, limit) }
+                    .onFailure { lastGoogleFailure = it }
+                    .getOrDefault(emptyList())
+            } else emptyList()
+
+            val osm = runCatching { requestOsmNearby(center, query, radius, limit) }
+                .onFailure { lastOsmFailure = it }
+                .getOrDefault(emptyList())
+
+            val merged = mergeNearby(center, google + osm, limit)
+            if (merged.isNotEmpty()) {
+                nearbyCache[cacheKey] = CacheEntry(System.currentTimeMillis(), merged)
+                trimCache()
+                return merged
+            }
+        }
+
+        val reason = listOfNotNull(lastGoogleFailure?.message, lastOsmFailure?.message).distinct().joinToString("؛ ")
+        if (googleConfigured()) {
+            throw IllegalStateException(if (reason.isBlank()) "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد" else "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد ($reason)")
+        }
+        throw IllegalStateException(if (reason.isBlank()) "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد؛ Google Places تنظیم نشده است" else "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد ($reason)")
     }
+
+    private fun mergeNearby(center: Coordinate, values: List<Place>, limit: Int): List<Place> = values
+        .distinctBy { Triple(normalizeName(it.name), (it.coordinate.latitude * 10000).toInt(), (it.coordinate.longitude * 10000).toInt()) }
+        .sortedBy { distanceSquared(center, it.coordinate) }
+        .take(limit)
 
     private fun requestOsmNearby(center: Coordinate, query: String, radiusMeters: Int, limit: Int): List<Place> {
         val selectors = nearbySelectors(query)
         if (selectors.isEmpty()) return emptyList()
-        val radius = radiusMeters.coerceIn(1000, 50000)
+        val radius = radiusMeters.coerceIn(1000, 100000)
         val overpass = buildString {
             append("[out:json][timeout:18];(")
             selectors.forEach { selector ->
@@ -114,10 +146,10 @@ class OnlinePlacesService(
         }
     }
 
-    fun searchNamedNearby(center: Coordinate, query: String, radiusMeters: Int = 30000, limit: Int = 30): List<Place> {
+    fun searchNamedNearby(center: Coordinate, query: String, radiusMeters: Int = 100000, limit: Int = 30): List<Place> {
         val clean = query.trim().replace("\"", "").take(80)
         if (clean.length < 2) return emptyList()
-        val radius = radiusMeters.coerceIn(3000, 50000)
+        val radius = radiusMeters.coerceIn(3000, 100000)
         val escaped = clean.replace("\\", "\\\\").replace("'", "\\'")
         val words = escaped.split(Regex("\\s+")).filter { it.length >= 2 }.take(4)
         val regex = words.joinToString(".*") { Regex.escape(it) }.ifBlank { Regex.escape(escaped) }
@@ -307,13 +339,26 @@ class OnlinePlacesService(
     private fun normalizeName(value: String): String = value.lowercase().replace('ي', 'ی').replace('ك', 'ک').replace("‌", " ").trim()
 
     private fun distanceSquared(a: Coordinate, b: Coordinate): Double {
-        val dx = a.longitude - b.longitude
+        val dx = (a.longitude - b.longitude) * kotlin.math.cos(Math.toRadians((a.latitude + b.latitude) / 2.0))
         val dy = a.latitude - b.latitude
         return dx * dx + dy * dy
+    }
+
+    private fun buildCacheKey(center: Coordinate, query: String, radiusMeters: Int, limit: Int): String =
+        "%.2f:%.2f:%s:%d:%d".format(center.latitude, center.longitude, normalizeName(query), radiusMeters, limit)
+
+    private fun trimCache() {
+        val now = System.currentTimeMillis()
+        nearbyCache.entries.removeIf { now - it.value.createdAt > CACHE_TTL_MS }
+        if (nearbyCache.size > MAX_CACHE_ENTRIES) {
+            nearbyCache.entries.sortedBy { it.value.createdAt }.take(nearbyCache.size - MAX_CACHE_ENTRIES).forEach { nearbyCache.remove(it.key) }
+        }
     }
 
     private companion object {
         val SAMPLE_DISTANCES = listOf(1_000.0, 4_000.0, 7_000.0, 10_000.0)
         const val MAX_AHEAD_METERS = 10_000.0
+        const val CACHE_TTL_MS = 120_000L
+        const val MAX_CACHE_ENTRIES = 32
     }
 }
