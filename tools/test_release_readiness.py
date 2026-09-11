@@ -19,6 +19,9 @@ class ReleaseReadinessTest(unittest.TestCase):
     def test_accepts_complete_production_configuration(self):
         self.assertEqual([], validate_release_config(self.config()))
 
+    def test_accepts_osm_only_production_configuration(self):
+        self.assertEqual([], validate_release_config(self.config(key="")))
+
     def test_rejects_http_and_local_hosts(self):
         errors = validate_https_service_url("NV_CLOUD_API_URL", "http://localhost:8787")
         self.assertIn("NV_CLOUD_API_URL must use HTTPS", errors)
@@ -74,14 +77,16 @@ class ReleaseReadinessTest(unittest.TestCase):
             errors,
         )
 
-    def test_requires_all_production_services(self):
+    def test_requires_essential_production_services(self):
         errors = validate_release_config(ReleaseConfig("", "", "", ""))
         self.assertIn("NV_CLOUD_API_URL is required", errors)
         self.assertIn("NV_CODE_REGISTRY_URL is required", errors)
-        self.assertIn("NV_GOOGLE_MAPS_API_KEY is required", errors)
+        self.assertNotIn("NV_GOOGLE_MAPS_API_KEY is required", errors)
         self.assertIn("NV_VALHALLA_API_URL is required", errors)
 
-    def test_rejects_truncated_google_key(self):
+    def test_rejects_truncated_google_key_when_configured(self):
+        errors = validate_release_config(self.config(key="short"))
+        self.assertIn("NV_GOOGLE_MAPS_API_KEY looks invalid or truncated", errors)
         self.assertIn(
             "NV_GOOGLE_MAPS_API_KEY looks invalid or truncated",
             validate_api_key("NV_GOOGLE_MAPS_API_KEY", "short"),
