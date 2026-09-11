@@ -19,4 +19,12 @@ class NvRegistryCodeRangeTest {
         val identity = PlaceCodes.onlineIdentity(5_000_000_000_123L)
         assertTrue(identity != null && identity.osmType == "nv" && identity.osmId == 5_000_000_000_123L)
     }
+
+    @Test
+    fun explicitNvPrefixPreservesLegacyServerLookupIntent() {
+        assertTrue(PlaceCodes.isExplicitNvCode("NV:1234"))
+        assertTrue(PlaceCodes.isExplicitNvCode(" nv-۱۲۳۴ "))
+        assertFalse(PlaceCodes.isExplicitNvCode("1234"))
+        assertFalse(PlaceCodes.isExplicitNvCode("NV:abc"))
+    }
 }
