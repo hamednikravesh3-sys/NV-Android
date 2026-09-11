@@ -108,8 +108,8 @@ fun NvReferenceV8(
 @Composable private fun V8Map(state: NvUiState, vm: NvViewModel, darkMode: Boolean) {
     val context = LocalContext.current; val routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) }; val coded = (state.personalPlaces + state.recentPlaces + listOfNotNull(state.origin, state.destination)).distinctBy { it.personalCode ?: it.code.toString() }
     when (NavigationModeResolver.preferredSource(state.onlineAvailable, state.offlineReady, state.preferOffline)) {
-        RouteSource.OFFLINE -> OfflineIranMap(context, vm.mapFile(), routes, state.selectedRouteIndex, state.traffic, state.trafficSegments, state.currentLocation, state.navigationActive && state.followNavigation, state.navigationActive, state.navigationZoomLevel, state.navigationRecenterToken, state.bearingDegrees, vm::pauseNavigationFollow, darkMode, Modifier.fillMaxSize())
-        RouteSource.ONLINE -> OnlineIranMap(context, routes, state.selectedRouteIndex, state.traffic, state.trafficSegments, coded, state.currentLocation, state.navigationActive && state.followNavigation, state.navigationActive, state.navigationZoomLevel, state.navigationRecenterToken, state.bearingDegrees, vm::pauseNavigationFollow, darkMode, false, Modifier.fillMaxSize())
+        RouteSource.OFFLINE -> OfflineIranMap(context, vm.mapFile(), routes, state.selectedRouteIndex, state.traffic, state.trafficSegments, state.currentLocation, state.followNavigation, state.navigationActive, state.navigationZoomLevel, state.navigationRecenterToken, state.bearingDegrees, vm::pauseNavigationFollow, darkMode, Modifier.fillMaxSize())
+        RouteSource.ONLINE -> OnlineIranMap(context, routes, state.selectedRouteIndex, state.traffic, state.trafficSegments, coded, state.currentLocation, state.followNavigation, state.navigationActive, state.navigationZoomLevel, state.navigationRecenterToken, state.bearingDegrees, vm::pauseNavigationFollow, darkMode, false, Modifier.fillMaxSize())
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("نقشه در دسترس نیست", color = V8Muted) }
     }
 }
