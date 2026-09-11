@@ -4,6 +4,10 @@ const JSON_HEADERS = {
   'x-content-type-options': 'nosniff'
 };
 
+const REGISTRY_CODE_BASE = 5_000_000_000_000n;
+const REGISTRY_CODE_SPAN = 1_000_000_000_000n;
+const ALLOCATION_ATTEMPTS = 8;
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -35,21 +39,23 @@ export default {
       const locationKey = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
 
       try {
-        const existing = await env.DB.prepare(
-          'SELECT code,name,latitude,longitude,created_at FROM nv_codes WHERE location_key=?1'
-        ).bind(locationKey).first();
+        const existing = await findByLocation(env.DB, locationKey);
         if (existing) return json({ status: 'existing', ...existing }, 200);
 
-        await env.DB.prepare(
-          'INSERT OR IGNORE INTO nv_codes(location_key,name,latitude,longitude,created_at) VALUES(?1,?2,?3,?4,unixepoch())'
-        ).bind(locationKey, name || 'NV Place', latitude, longitude).run();
+        // Allocate explicitly in the 5T..6T namespace. This remains correct even if a
+        // deployment has not yet applied the sqlite_sequence migration, and the PK +
+        // location_key UNIQUE constraints make collisions safe to retry.
+        for (let attempt = 0; attempt < ALLOCATION_ATTEMPTS; attempt += 1) {
+          const code = newRegistryCode();
+          await env.DB.prepare(
+            'INSERT OR IGNORE INTO nv_codes(code,location_key,name,latitude,longitude,created_at) VALUES(?1,?2,?3,?4,?5,unixepoch())'
+          ).bind(code, locationKey, name || 'NV Place', latitude, longitude).run();
 
-        const row = await env.DB.prepare(
-          'SELECT code,name,latitude,longitude,created_at FROM nv_codes WHERE location_key=?1'
-        ).bind(locationKey).first();
+          const row = await findByLocation(env.DB, locationKey);
+          if (row) return json({ status: 'allocated', ...row }, 201);
+        }
 
-        if (!row) return json({ error: 'allocation_failed' }, 500);
-        return json({ status: 'allocated', ...row }, 201);
+        return json({ error: 'allocation_failed' }, 503);
       } catch (e) {
         console.error('NV Code allocation failed', e);
         return json({ error: 'server_error' }, 500);
@@ -80,6 +86,19 @@ export default {
     return json({ error: 'not_found' }, 404);
   }
 };
+
+async function findByLocation(db, locationKey) {
+  return db.prepare(
+    'SELECT code,name,latitude,longitude,created_at FROM nv_codes WHERE location_key=?1'
+  ).bind(locationKey).first();
+}
+
+function newRegistryCode() {
+  const values = new Uint32Array(2);
+  crypto.getRandomValues(values);
+  const random64 = (BigInt(values[0]) << 32n) | BigInt(values[1]);
+  return Number(REGISTRY_CODE_BASE + (random64 % REGISTRY_CODE_SPAN));
+}
 
 function json(value, status, headers = {}) {
   return new Response(JSON.stringify(value), {
