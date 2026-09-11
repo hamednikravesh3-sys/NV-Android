@@ -12,6 +12,36 @@ data class DownloadPreferences(
     val downloadOvernight: Boolean = false
 )
 
+/** Persistent user policy for all offline-pack downloads. */
+class DownloadPreferencesStore(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun load(): DownloadPreferences = DownloadPreferences(
+        wifiOnly = prefs.getBoolean(KEY_WIFI_ONLY, true),
+        autoUpdate = prefs.getBoolean(KEY_AUTO_UPDATE, true),
+        downloadOvernight = prefs.getBoolean(KEY_DOWNLOAD_OVERNIGHT, false)
+    )
+
+    fun save(value: DownloadPreferences) {
+        prefs.edit()
+            .putBoolean(KEY_WIFI_ONLY, value.wifiOnly)
+            .putBoolean(KEY_AUTO_UPDATE, value.autoUpdate)
+            .putBoolean(KEY_DOWNLOAD_OVERNIGHT, value.downloadOvernight)
+            .apply()
+    }
+
+    fun setWifiOnly(enabled: Boolean) = save(load().copy(wifiOnly = enabled))
+    fun setAutoUpdate(enabled: Boolean) = save(load().copy(autoUpdate = enabled))
+    fun setDownloadOvernight(enabled: Boolean) = save(load().copy(downloadOvernight = enabled))
+
+    private companion object {
+        const val PREFS_NAME = "offline_download_preferences"
+        const val KEY_WIFI_ONLY = "wifi_only"
+        const val KEY_AUTO_UPDATE = "auto_update"
+        const val KEY_DOWNLOAD_OVERNIGHT = "download_overnight"
+    }
+}
+
 data class DownloadPreflight(
     val downloadSizeBytes: Long,
     val availableStorageBytes: Long,
@@ -54,7 +84,7 @@ class OfflineDownloadPolicy(private val context: Context) {
         )
     }
 
-    private fun wifiConnected(): Boolean {
+    fun wifiConnected(): Boolean {
         val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
         val network = manager.activeNetwork ?: return false
         val caps = manager.getNetworkCapabilities(network) ?: return false
