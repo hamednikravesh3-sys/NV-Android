@@ -20,6 +20,8 @@ class ProvincePackDownloadManager(private val context: Context) {
     private val downloads = context.getSystemService(DownloadManager::class.java)
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val installer = OfflineRegionPackInstaller(context.applicationContext)
+    private val preferenceStore = DownloadPreferencesStore(context.applicationContext)
+    private val downloadPolicy = OfflineDownloadPolicy(context.applicationContext)
 
     fun start(pack: OfflineRegionPack): Long {
         require(pack.id != OfflinePackCatalog.iran.id) { "برای بسته کل ایران از IranPackManager استفاده کنید" }
@@ -39,6 +41,16 @@ class ProvincePackDownloadManager(private val context: Context) {
 
         val target = downloadedFile(pack)
         target.parentFile?.mkdirs()
+        val preferences = preferenceStore.load()
+        val preflight = downloadPolicy.preflight(
+            target = target,
+            sizeBytes = pack.estimatedSizeMb.toLong() * 1024L * 1024L,
+            version = 0L,
+            lastUpdateEpochSeconds = null,
+            type = "province",
+            preferences = preferences
+        )
+        check(preflight.allowed) { preflight.reason ?: "دانلود استان با تنظیمات فعلی مجاز نیست" }
         if (target.exists()) target.delete()
 
         val request = DownloadManager.Request(Uri.parse(downloadUrl(pack)))
@@ -46,7 +58,7 @@ class ProvincePackDownloadManager(private val context: Context) {
             .setDescription("دانلود نقشه، جستجو و داده مسیریابی استان ${pack.title}")
             .setMimeType("application/octet-stream")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setAllowedOverMetered(true)
+            .setAllowedOverMetered(!preferences.wifiOnly)
             .setAllowedOverRoaming(false)
             .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_DOWNLOADS, fileName(pack))
 
