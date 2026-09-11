@@ -4,7 +4,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "backend" / "nv-code-registry" / "migrations" / "0002_location_key_uniqueness.sql"
+MIGRATION_V2 = ROOT / "backend" / "nv-code-registry" / "migrations" / "0002_location_key_uniqueness.sql"
+MIGRATION_V3 = ROOT / "backend" / "nv-code-registry" / "migrations" / "0003_reserve_registry_code_range.sql"
 
 
 LEGACY_SCHEMA = """
@@ -27,7 +28,10 @@ class NvCodeRegistryMigrationTest(unittest.TestCase):
         self.db.close()
 
     def run_migration(self):
-        self.db.executescript(MIGRATION.read_text(encoding="utf-8"))
+        self.db.executescript(MIGRATION_V2.read_text(encoding="utf-8"))
+
+    def run_registry_range_migration(self):
+        self.db.executescript(MIGRATION_V3.read_text(encoding="utf-8"))
 
     def test_migration_keeps_oldest_code_and_enforces_location_uniqueness(self):
         rows = [
@@ -70,6 +74,27 @@ class NvCodeRegistryMigrationTest(unittest.TestCase):
             ("29.591768,52.583698", "کد بعدی", 29.591768, 52.583698, 2000),
         )
         self.assertGreater(cursor.lastrowid, 987654)
+
+    def test_registry_range_migration_moves_future_codes_to_reserved_namespace(self):
+        self.run_migration()
+        self.run_registry_range_migration()
+
+        cursor = self.db.execute(
+            "INSERT INTO nv_codes(location_key, name, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?)",
+            ("35.700000,51.400000", "کد مرکزی", 35.7, 51.4, 3000),
+        )
+        self.assertGreaterEqual(cursor.lastrowid, 5_000_000_000_000)
+        self.assertLess(cursor.lastrowid, 6_000_000_000_000)
+
+    def test_registry_range_migration_preserves_existing_codes(self):
+        self.db.execute(
+            "INSERT INTO nv_codes(code, name, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?)",
+            (1234, "کد قدیمی", 35.6892, 51.3890, 1000),
+        )
+        self.run_migration()
+        self.run_registry_range_migration()
+        code = self.db.execute("SELECT code FROM nv_codes WHERE name='کد قدیمی'").fetchone()[0]
+        self.assertEqual(code, 1234)
 
     def test_expected_indexes_exist_after_migration(self):
         self.run_migration()
