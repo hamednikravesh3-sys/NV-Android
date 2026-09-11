@@ -13,7 +13,30 @@ enum class RouteProfile {
     SCENIC,
     AVOID_TOLL,
     AVOID_HIGHWAY,
+    AVOID_FERRY,
+    CUSTOM,
     SMART
+}
+
+data class CustomRoutePreferences(
+    val avoidToll: Boolean = false,
+    val avoidHighway: Boolean = false,
+    val avoidFerry: Boolean = false,
+    val timeWeight: Double = 0.55,
+    val distanceWeight: Double = 0.20,
+    val energyWeight: Double = 0.15,
+    val roadQualityWeight: Double = 0.10
+) {
+    fun normalized(): CustomRoutePreferences {
+        val values = listOf(timeWeight, distanceWeight, energyWeight, roadQualityWeight).map { it.coerceAtLeast(0.0) }
+        val sum = values.sum().takeIf { it > 0.0 } ?: 1.0
+        return copy(
+            timeWeight = values[0] / sum,
+            distanceWeight = values[1] / sum,
+            energyWeight = values[2] / sum,
+            roadQualityWeight = values[3] / sum
+        )
+    }
 }
 
 data class RouteRequest(
@@ -22,7 +45,8 @@ data class RouteRequest(
     val profile: RouteProfile = RouteProfile.SMART,
     val preferOffline: Boolean = false,
     val onlineAvailable: Boolean = false,
-    val offlineAvailable: Boolean = false
+    val offlineAvailable: Boolean = false,
+    val custom: CustomRoutePreferences = CustomRoutePreferences()
 )
 
 data class RouteSignals(
