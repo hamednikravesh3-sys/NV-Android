@@ -1,7 +1,9 @@
 package ir.nv.navigation.search
 
 import ir.nv.navigation.core.Place
+import ir.nv.navigation.data.NvCodeAllocationService
 import ir.nv.navigation.data.PersianText
+import ir.nv.navigation.data.PlaceCodes
 
 fun interface PlaceSearchProvider {
     suspend fun search(query: String): List<Place>
@@ -15,7 +17,8 @@ data class HybridSearchResult(
 
 class HybridSearchEngine(
     private val offline: PlaceSearchProvider,
-    private val online: PlaceSearchProvider
+    private val online: PlaceSearchProvider,
+    private val nvCodeService: NvCodeAllocationService = NvCodeAllocationService()
 ) {
     suspend fun search(
         query: String,
@@ -36,6 +39,20 @@ class HybridSearchEngine(
         val variants = expandQuery(clean)
         val local = variants
             .flatMap { variant -> runCatching { offline.search(variant) }.getOrDefault(emptyList()) }
+
+        val publicCode = PlaceCodes.publicCode(query)
+        if (publicCode != null && PlaceCodes.isRegistryCode(publicCode)) {
+            if (!onlineAvailable || preferOffline) {
+                return HybridSearchResult(rankAndDeduplicate(local, clean, limit), false, false)
+            }
+            val registryResult = if (nvCodeService.isConfigured()) nvCodeService.resolveOnline(query) else Result.success(null)
+            val registryPlace = registryResult.getOrNull()
+            return HybridSearchResult(
+                items = if (registryPlace != null) listOf(registryPlace) else rankAndDeduplicate(local, clean, limit),
+                onlineAttempted = true,
+                onlineFailed = registryResult.isFailure
+            )
+        }
 
         if (!onlineAvailable || preferOffline) {
             return HybridSearchResult(rankAndDeduplicate(local, clean, limit), false, false)
