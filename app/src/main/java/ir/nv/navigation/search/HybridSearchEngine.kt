@@ -47,7 +47,9 @@ class HybridSearchEngine(
             // An explicit NV: code is an instruction to resolve the shared registry identity.
             // Try it even during the immediate/local phase so legacy low-number codes are not
             // blocked by the ViewModel's generic online-search gate. Failures remain non-fatal.
-            val mayResolveRegistry = nvCodeService.isConfigured() && (onlineAvailable || explicitNvCode) && !preferOffline
+            val mayResolveRegistry = nvCodeService.isConfigured() &&
+                (onlineAvailable || explicitNvCode) &&
+                (!preferOffline || explicitNvCode)
             val registryResult = if (mayResolveRegistry) nvCodeService.resolveOnline(query) else Result.success(null)
             val registryPlace = registryResult.getOrNull()
             if (registryPlace != null || mayResolveRegistry) {
