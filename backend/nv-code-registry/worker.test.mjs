@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from './worker.js';
 
+const REGISTRY_BASE = 5_000_000_000_000;
+const REGISTRY_LIMIT = 6_000_000_000_000;
+
 class FakeDb {
   constructor() {
     this.byLocation = new Map();
     this.byCode = new Map();
-    this.nextCode = 1;
   }
 
   prepare(sql) {
@@ -21,10 +23,10 @@ class FakeDb {
           },
           async run() {
             if (!sql.includes('INSERT OR IGNORE INTO nv_codes')) throw new Error(`Unexpected write: ${sql}`);
-            const [locationKey, name, latitude, longitude] = args;
-            if (!db.byLocation.has(locationKey)) {
+            const [code, locationKey, name, latitude, longitude] = args;
+            if (!db.byLocation.has(locationKey) && !db.byCode.has(Number(code))) {
               const row = {
-                code: db.nextCode++,
+                code: Number(code),
                 name,
                 latitude,
                 longitude,
@@ -72,7 +74,7 @@ test('allocation rejects malformed JSON and wrong methods', async () => {
   assert.equal(wrongMethod.headers.get('allow'), 'POST');
 });
 
-test('allocation is idempotent at six-decimal coordinate precision', async () => {
+test('allocation is idempotent and uses the central reserved range', async () => {
   const dbEnv = env();
   const allocate = (latitude, longitude, name) => worker.fetch(new Request('https://registry.example/v1/codes/allocate', {
     method: 'POST',
@@ -84,7 +86,7 @@ test('allocation is idempotent at six-decimal coordinate precision', async () =>
   assert.equal(first.status, 201);
   const firstBody = await json(first);
   assert.equal(firstBody.status, 'allocated');
-  assert.equal(firstBody.code, 1);
+  assert.ok(firstBody.code >= REGISTRY_BASE && firstBody.code < REGISTRY_LIMIT);
 
   const second = await allocate(35.68919849, 51.38897359, 'نام دیگر');
   assert.equal(second.status, 200);
@@ -96,19 +98,35 @@ test('allocation is idempotent at six-decimal coordinate precision', async () =>
 
 test('lookup validates codes and returns allocated rows', async () => {
   const dbEnv = env();
-  await worker.fetch(new Request('https://registry.example/v1/codes/allocate', {
+  const allocated = await worker.fetch(new Request('https://registry.example/v1/codes/allocate', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ latitude: 36.260462, longitude: 59.616755, name: 'مشهد' })
   }), dbEnv);
+  const allocation = await json(allocated);
 
-  const found = await worker.fetch(new Request('https://registry.example/v1/codes/1'), dbEnv);
+  const found = await worker.fetch(new Request(`https://registry.example/v1/codes/${allocation.code}`), dbEnv);
   assert.equal(found.status, 200);
   assert.equal((await json(found)).name, 'مشهد');
 
   const invalid = await worker.fetch(new Request('https://registry.example/v1/codes/1abc'), dbEnv);
   assert.equal(invalid.status, 400);
 
-  const missing = await worker.fetch(new Request('https://registry.example/v1/codes/999'), dbEnv);
+  const missing = await worker.fetch(new Request('https://registry.example/v1/codes/5999999999999'), dbEnv);
   assert.equal(missing.status, 404);
+});
+
+test('separate locations receive separate registry codes', async () => {
+  const dbEnv = env();
+  const responseA = await worker.fetch(new Request('https://registry.example/v1/codes/allocate', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ latitude: 35.7, longitude: 51.4, name: 'A' })
+  }), dbEnv);
+  const responseB = await worker.fetch(new Request('https://registry.example/v1/codes/allocate', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ latitude: 36.3, longitude: 59.6, name: 'B' })
+  }), dbEnv);
+  const a = await json(responseA);
+  const b = await json(responseB);
+  assert.notEqual(a.code, b.code);
 });
