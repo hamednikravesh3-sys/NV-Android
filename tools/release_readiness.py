@@ -91,7 +91,8 @@ def validate_release_config(config: ReleaseConfig) -> list[str]:
     errors: list[str] = []
     errors.extend(validate_https_service_url("NV_CLOUD_API_URL", config.cloud_api_url))
     errors.extend(validate_https_service_url("NV_CODE_REGISTRY_URL", config.nv_code_registry_url))
-    errors.extend(validate_api_key("NV_GOOGLE_MAPS_API_KEY", config.google_maps_api_key))
+    if config.google_maps_api_key.strip():
+        errors.extend(validate_api_key("NV_GOOGLE_MAPS_API_KEY", config.google_maps_api_key))
     errors.extend(validate_https_service_url("NV_VALHALLA_API_URL", config.valhalla_api_url))
 
     cloud_origin = _normalized_service_origin(config.cloud_api_url)
