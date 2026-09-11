@@ -16,6 +16,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.math.pow
 
 class ValhallaRouteProvider(
     endpoint: String,
@@ -115,7 +116,8 @@ class ValhallaRouteProvider(
             }
         }
         if (points.size < 2) throw IOException("Valhalla returned invalid route geometry")
-        val energy = (distanceMeters / 1_000.0) * (1.0 + 0.35 * kotlin.math.pow((distanceMeters / travelSeconds.coerceAtLeast(1.0)) / 13.89, 2.0))
+        val speedRatio = ((distanceMeters / travelSeconds.coerceAtLeast(1.0)) / 13.89)
+        val energy = (distanceMeters / 1_000.0) * (1.0 + 0.35 * speedRatio.pow(2.0))
         return Route(points, emptyList(), distanceMeters, travelSeconds, maneuvers, estimatedEnergyIndex = energy, speedLimitsKmh = speedLimits.distinct())
     }
 
