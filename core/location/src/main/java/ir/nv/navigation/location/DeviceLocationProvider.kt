@@ -176,10 +176,10 @@ class DeviceLocationProvider(private val context: Context) {
 
         val speedMps = if (location.hasSpeed()) location.speed.coerceAtLeast(0f) else 0f
         val gpsWeight = when {
-            speedMps >= 8f -> 0.88
-            speedMps >= 3f -> 0.72
-            speedMps >= 1f -> 0.52
-            else -> 0.20
+            speedMps >= 8f -> 0.88f
+            speedMps >= 3f -> 0.72f
+            speedMps >= 1f -> 0.52f
+            else -> 0.20f
         }
         return circularBlend(gpsBearing, sensorBearing, gpsWeight)
     }
