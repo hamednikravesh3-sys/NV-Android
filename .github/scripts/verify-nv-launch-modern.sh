@@ -4,6 +4,13 @@ set -euo pipefail
 PACKAGE="${NV_VERIFY_PACKAGE:-ir.nv.navigation.debug}"
 ACTIVITY="${NV_VERIFY_ACTIVITY:-ir.nv.navigation.MainActivity}"
 APK_PATH="${NV_VERIFY_APK:-app/build/outputs/apk/debug/app-debug.apk}"
+ACTIVITY_COMPONENT="$PACKAGE/$ACTIVITY"
+ACTIVITY_DUMPSYS_COMPONENT="$PACKAGE/${ACTIVITY#"$PACKAGE"}"
+
+activity_state_has_main_activity() {
+  local state="$1"
+  [[ "$state" == *"$ACTIVITY_COMPONENT"* || "$state" == *"$ACTIVITY_DUMPSYS_COMPONENT"* ]]
+}
 
 rm -f nv-modern-*.txt nv-modern-*.png
 adb wait-for-device
@@ -13,19 +20,19 @@ adb shell pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION || true
 adb shell pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
 adb logcat -c
 adb shell am force-stop "$PACKAGE"
-adb shell am start -n "$PACKAGE/$ACTIVITY"
+adb shell am start -n "$ACTIVITY_COMPONENT"
 
 PID=""
 RESUMED=0
 for attempt in $(seq 1 60); do
   PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
   ACTIVITY_STATE="$(adb shell dumpsys activity activities 2>/dev/null || true)"
-  if [[ -n "$PID" && "$ACTIVITY_STATE" == *"ResumedActivity"* && "$ACTIVITY_STATE" == *"$PACKAGE/$ACTIVITY"* ]]; then
+  if [[ -n "$PID" && "$ACTIVITY_STATE" == *"ResumedActivity"* ]] && activity_state_has_main_activity "$ACTIVITY_STATE"; then
     RESUMED=1
     break
   fi
   if (( attempt % 15 == 0 )); then
-    adb shell am start -n "$PACKAGE/$ACTIVITY" >/dev/null 2>&1 || true
+    adb shell am start -n "$ACTIVITY_COMPONENT" >/dev/null 2>&1 || true
   fi
   sleep 2
 done
@@ -49,7 +56,8 @@ if [[ "$RESUMED" -ne 1 ]]; then
   echo "NV MainActivity did not reach resumed state on modern Android"
   exit 1
 fi
-if ! grep -q "$PACKAGE/$ACTIVITY" nv-modern-activity-state.txt; then
+ACTIVITY_STATE_FINAL="$(cat nv-modern-activity-state.txt)"
+if ! activity_state_has_main_activity "$ACTIVITY_STATE_FINAL"; then
   echo "NV MainActivity is missing from activity state"
   exit 1
 fi
