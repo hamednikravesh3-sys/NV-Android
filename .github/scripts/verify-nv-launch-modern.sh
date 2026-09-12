@@ -148,6 +148,28 @@ for attempt in $(seq 1 60); do
 done
 [[ "$ROUTE_READY" -eq 1 ]] || { echo "NV Android 16 did not produce a route card from Tehran to Karaj"; exit 1; }
 
+# Screen 10: route comparison must be reachable from real alternatives and allow selection.
+COMPARISON_BUTTON=0
+for _ in $(seq 1 10); do
+  if dump_ui nv-modern-route-ui.xml && ui_has 'مقایسه مسیرها' nv-modern-route-ui.xml; then COMPARISON_BUTTON=1; break; fi
+  sleep 1
+done
+[[ "$COMPARISON_BUTTON" -eq 1 ]] || { echo "NV route alternatives did not expose the Rahnama comparison action"; exit 1; }
+tap_text 'مقایسه مسیرها' || { echo "NV could not open route comparison"; exit 1; }
+COMPARISON_READY=0
+for _ in $(seq 1 15); do
+  if dump_ui nv-modern-comparison-ui.xml && \
+     ui_has 'مقایسه مسیرها' nv-modern-comparison-ui.xml && \
+     ui_has 'پیشنهاد راهنما' nv-modern-comparison-ui.xml && \
+     ui_has 'تأیید مسیر انتخاب‌شده' nv-modern-comparison-ui.xml; then
+    COMPARISON_READY=1; break
+  fi
+  sleep 1
+done
+[[ "$COMPARISON_READY" -eq 1 ]] || { echo "NV Android 16 route comparison sheet did not render expected decision data"; exit 1; }
+tap_text 'تأیید مسیر انتخاب‌شده' || adb_shell input keyevent 4 >/dev/null 2>&1 || true
+sleep 1
+
 collect_diag
 PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
 [[ -n "$PID" ]] || { echo "NV process died during Android 16 verification"; exit 1; }
@@ -156,4 +178,4 @@ grep -q "$PACKAGE" nv-modern-activity-state.txt || { echo "NV MainActivity missi
 ! grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-modern-logcat.txt || { echo "NV ANR detected"; exit 1; }
 
 trap - EXIT
-echo "NV Android 16 GPS, Nearby, search, and route verification passed for $PACKAGE (pid=$PID)"
+echo "NV Android 16 GPS, Nearby, search, route, and comparison verification passed for $PACKAGE (pid=$PID)"
