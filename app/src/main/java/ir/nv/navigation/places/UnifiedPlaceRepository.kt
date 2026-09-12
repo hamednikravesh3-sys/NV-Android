@@ -136,7 +136,6 @@ class UnifiedPlaceRepository internal constructor(
         .asSequence()
         .filter(::isValid)
         .map { place -> place.copy(confidence = place.confidence.coerceIn(0.0, 1.0)) }
-        .distinctBy(::identity)
         .sortedWith(
             compareByDescending<Place> { it.isOpen == true }
                 .thenByDescending { it.confidence }
@@ -144,6 +143,7 @@ class UnifiedPlaceRepository internal constructor(
                 .thenBy { it.distance ?: Double.MAX_VALUE }
                 .thenBy { normalize(it.name) }
         )
+        .distinctBy(::identity)
         .take(limit.coerceIn(1, 100))
         .toList()
 
