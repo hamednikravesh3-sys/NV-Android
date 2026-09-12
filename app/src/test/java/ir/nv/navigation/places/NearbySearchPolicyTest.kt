@@ -38,7 +38,7 @@ class NearbySearchPolicyTest {
         val far = Place(2, "far", Coordinate(35.10, 51.0), "amenity:pharmacy")
         val result = NearbySearchPolicy.filterWithinRadius(center, listOf(near, far), 5_000)
         assertEquals(listOf(1L), result.map { it.code })
-        assertTrue(result.first().distance in 2_000.0..3_000.0)
+        assertTrue((result.first().distance ?: Double.MAX_VALUE) in 2_000.0..3_000.0)
     }
 
     @Test
