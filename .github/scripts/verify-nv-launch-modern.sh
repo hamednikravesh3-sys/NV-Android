@@ -12,6 +12,17 @@ activity_state_has_main_activity() {
   [[ "$state" == *"$ACTIVITY_COMPONENT"* || "$state" == *"$ACTIVITY_DUMPSYS_COMPONENT"* ]]
 }
 
+window_state_has_drawn_main_activity() {
+  local state="$1"
+  [[ "$state" == *"$ACTIVITY_COMPONENT"* || "$state" == *"$ACTIVITY_DUMPSYS_COMPONENT"* ]] && \
+    [[ "$state" != *"Splash Screen $PACKAGE"* ]]
+}
+
+window_state_has_anr_dialog() {
+  local state="$1"
+  [[ "$state" == *"Application Not Responding:"* ]]
+}
+
 recover_adb() {
   adb kill-server >/dev/null 2>&1 || true
   adb start-server >/dev/null
@@ -33,24 +44,62 @@ adb_shell_retry() {
 
 rm -f nv-modern-*.txt nv-modern-*.png
 adb wait-for-device
+
+BOOTED=0
+for attempt in $(seq 1 90); do
+  if [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)" == "1" ]]; then
+    BOOTED=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$BOOTED" -ne 1 ]]; then
+  echo "Android did not report boot completion"
+  exit 1
+fi
+
+# CI emulators can surface unrelated platform ANR dialogs while boot services settle.
+# Suppress those dialogs, then require a clean window state before validating NV.
+adb_shell_retry settings put global hide_error_dialogs 1 || true
+adb_shell_retry settings put global window_animation_scale 0 || true
+adb_shell_retry settings put global transition_animation_scale 0 || true
+adb_shell_retry settings put global animator_duration_scale 0 || true
+sleep 5
+
 test -s "$APK_PATH"
 adb install -r "$APK_PATH"
 adb_shell_retry pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION || true
 adb_shell_retry pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
 adb logcat -c || recover_adb
 adb_shell_retry am force-stop "$PACKAGE"
-adb_shell_retry am start -n "$ACTIVITY_COMPONENT"
+adb_shell_retry am start -W -n "$ACTIVITY_COMPONENT" || adb_shell_retry am start -n "$ACTIVITY_COMPONENT"
 
 PID=""
 RESUMED=0
-for attempt in $(seq 1 60); do
+FIRST_DRAW=0
+CLEAN_WINDOW=0
+for attempt in $(seq 1 90); do
   PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
   ACTIVITY_STATE="$(adb shell dumpsys activity activities 2>/dev/null || true)"
+  WINDOW_STATE="$(adb shell dumpsys window windows 2>/dev/null || true)"
+
   if [[ -n "$PID" && "$ACTIVITY_STATE" == *"ResumedActivity"* ]] && activity_state_has_main_activity "$ACTIVITY_STATE"; then
     RESUMED=1
+  fi
+  if window_state_has_drawn_main_activity "$WINDOW_STATE"; then
+    FIRST_DRAW=1
+  fi
+  if ! window_state_has_anr_dialog "$WINDOW_STATE"; then
+    CLEAN_WINDOW=1
+  else
+    CLEAN_WINDOW=0
+  fi
+
+  if [[ "$RESUMED" -eq 1 && "$FIRST_DRAW" -eq 1 && "$CLEAN_WINDOW" -eq 1 ]]; then
     break
   fi
-  if (( attempt % 15 == 0 )); then
+
+  if (( attempt % 20 == 0 )); then
     adb_shell_retry am start -n "$ACTIVITY_COMPONENT" >/dev/null 2>&1 || true
   fi
   sleep 2
@@ -75,9 +124,27 @@ if [[ "$RESUMED" -ne 1 ]]; then
   echo "NV MainActivity did not reach resumed state on modern Android"
   exit 1
 fi
+if [[ "$FIRST_DRAW" -ne 1 ]]; then
+  echo "NV MainActivity never replaced the splash screen with a drawn app window"
+  exit 1
+fi
+if [[ "$CLEAN_WINDOW" -ne 1 ]]; then
+  echo "An Android system ANR dialog is obscuring the app window"
+  exit 1
+fi
+
 ACTIVITY_STATE_FINAL="$(cat nv-modern-activity-state.txt)"
+WINDOW_STATE_FINAL="$(cat nv-modern-window-state.txt)"
 if ! activity_state_has_main_activity "$ACTIVITY_STATE_FINAL"; then
   echo "NV MainActivity is missing from activity state"
+  exit 1
+fi
+if ! window_state_has_drawn_main_activity "$WINDOW_STATE_FINAL"; then
+  echo "NV MainActivity is not the drawn window after launch"
+  exit 1
+fi
+if window_state_has_anr_dialog "$WINDOW_STATE_FINAL"; then
+  echo "ANR dialog detected in final Android window state"
   exit 1
 fi
 if grep -E 'FATAL EXCEPTION:' nv-modern-app-logcat.txt; then
@@ -89,4 +156,4 @@ if grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-modern-logcat.txt; then
   exit 1
 fi
 
-echo "NV modern Android launch verification passed for $PACKAGE (pid=$PID)"
+echo "NV modern Android first-draw verification passed for $PACKAGE (pid=$PID)"
