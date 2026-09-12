@@ -169,11 +169,16 @@ jobs:
   android16:
     name: Android 16 compatibility
     needs: build
-    runs-on: macos-15-intel
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: android-actions/setup-android@v3
+      - name: Enable KVM acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - name: Download minified Android 16 test APK
         uses: actions/download-artifact@v4
         with:
@@ -190,8 +195,10 @@ jobs:
           target: default
           arch: x86_64
           profile: pixel_2
+          cores: 2
           disable-animations: true
           emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           script: bash .github/scripts/verify-nv-launch-modern.sh
       - name: Upload Android 16 diagnostics
         if: always()
