@@ -192,6 +192,26 @@ done
 tap_text 'تأیید مسیر انتخاب‌شده' || { echo "NV could not confirm the selected route comparison result"; exit 1; }
 sleep 1
 
+# Screen 12: SOS/emergency entry must be reachable without a network request and expose
+# the configured Iran emergency services plus the nearby-center action.
+tap_text 'SOS و خدمات اضطراری' || { echo "NV Android 16 could not open SOS and emergency services"; exit 1; }
+EMERGENCY_READY=0
+for _ in $(seq 1 15); do
+  if dump_ui nv-modern-emergency-ui.xml && \
+     ui_has 'SOS و خدمات اضطراری' nv-modern-emergency-ui.xml && \
+     ui_has 'اورژانس پزشکی' nv-modern-emergency-ui.xml && ui_has '115' nv-modern-emergency-ui.xml && \
+     ui_has 'پلیس' nv-modern-emergency-ui.xml && ui_has '110' nv-modern-emergency-ui.xml && \
+     ui_has 'آتش‌نشانی' nv-modern-emergency-ui.xml && ui_has '125' nv-modern-emergency-ui.xml && \
+     ui_has 'امداد و نجات' nv-modern-emergency-ui.xml && ui_has '112' nv-modern-emergency-ui.xml && \
+     ui_has 'یافتن نزدیک‌ترین اورژانس پزشکی' nv-modern-emergency-ui.xml; then
+    EMERGENCY_READY=1; break
+  fi
+  sleep 1
+done
+[[ "$EMERGENCY_READY" -eq 1 ]] || { echo "NV Android 16 emergency overlay did not expose expected SOS services"; exit 1; }
+tap_text 'بستن' || adb_shell input keyevent 4 >/dev/null 2>&1 || true
+sleep 1
+
 collect_diag
 PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
 [[ -n "$PID" ]] || { echo "NV process died during Android 16 verification"; exit 1; }
@@ -200,4 +220,4 @@ grep -q "$PACKAGE" nv-modern-activity-state.txt || { echo "NV MainActivity missi
 ! grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-modern-logcat.txt || { echo "NV ANR detected"; exit 1; }
 
 trap - EXIT
-echo "NV Android 16 GPS, Nearby, search, route, and comparison verification passed for $PACKAGE (pid=$PID)"
+echo "NV Android 16 GPS, Nearby, search, route, comparison, and SOS verification passed for $PACKAGE (pid=$PID)"
