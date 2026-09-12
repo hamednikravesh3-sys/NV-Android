@@ -115,8 +115,9 @@ private fun RahnamaNearbyDialog(
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    fun search(category: NearbyCategory = selectedCategory ?: return) {
-        selectedCategory = category
+    fun search(category: NearbyCategory? = selectedCategory) {
+        val resolvedCategory = category ?: return
+        selectedCategory = resolvedCategory
         results = emptyList()
         error = null
 
@@ -154,7 +155,7 @@ private fun RahnamaNearbyDialog(
             val value = runCatching {
                 repository.nearby(
                     NearbySearchRequest(
-                        category = category,
+                        category = resolvedCategory,
                         scope = nearbyScope,
                         radiusMeters = radiusKm * 1_000,
                         limit = 40
@@ -294,7 +295,7 @@ private fun RahnamaPlaceDetailsDialog(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(place.name, color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                place.category?.takeIf(String::isNotBlank)?.let {
+                place.category.takeIf(String::isNotBlank)?.let {
                     Text(it, color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall)
                 }
             }
@@ -315,7 +316,7 @@ private fun RahnamaPlaceDetailsDialog(
                     else -> null
                 }
                 openText?.let { PlaceDetailRow(Icons.Rounded.Schedule, "وضعیت", it) }
-                PlaceDetailRow(Icons.Rounded.Database, "منبع", place.source.ifBlank { "نامشخص" })
+                PlaceDetailRow(Icons.Rounded.Info, "منبع", place.source.ifBlank { "نامشخص" })
             }
         },
         confirmButton = {
