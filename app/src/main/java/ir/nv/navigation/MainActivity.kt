@@ -14,8 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,8 +35,6 @@ import ir.nv.navigation.navigation.service.NvNavigationService
 import ir.nv.navigation.ui.NvQrScannerOverlay
 import ir.nv.navigation.ui.NvReferenceV14
 import ir.nv.navigation.ui.NvViewModel
-import ir.nv.navigation.ui.OfflineMapDiagnosticsButton
-import ir.nv.navigation.ui.ProvinceDownloadOverlay
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
 import kotlinx.coroutines.delay
@@ -153,30 +151,14 @@ class MainActivity : ComponentActivity() {
                             },
                             viewModel = navigationViewModel
                         )
-                        OfflineMapDiagnosticsButton(
-                            offlineReady = navigationState.offlineReady,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .navigationBarsPadding()
-                                .padding(start = 12.dp, bottom = 92.dp)
-                        )
                         if (!navigationState.navigationActive) {
-                            ProvinceDownloadOverlay(
-                                iranPackStatus = navigationState.packStatus,
-                                onStartIranDownload = navigationViewModel::startMapDownload,
-                                onRetryIranDownload = navigationViewModel::retryDownload,
-                                onCancelIranDownload = navigationViewModel::cancelDownload,
-                                modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .navigationBarsPadding()
-                                    .padding(bottom = 92.dp)
-                            )
                             NvQrScannerOverlay(
                                 viewModel = navigationViewModel,
+                                compact = true,
                                 modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .navigationBarsPadding()
-                                    .padding(end = 12.dp, bottom = 92.dp)
+                                    .align(Alignment.TopEnd)
+                                    .statusBarsPadding()
+                                    .padding(top = 118.dp, end = 16.dp)
                             )
                         }
                     }
