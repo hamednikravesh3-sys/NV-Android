@@ -75,16 +75,15 @@ class MainActivity : ComponentActivity() {
             val locationPermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { permissions ->
-                if (permissions.values.any { it }) {
+                if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
                     navigationViewModel.useCurrentLocationAsOrigin()
                 }
             }
 
             LaunchedEffect(Unit) {
-                val hasLocationPermission =
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                if (hasLocationPermission) {
+                val hasPreciseLocationPermission =
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                if (hasPreciseLocationPermission) {
                     navigationViewModel.useCurrentLocationAsOrigin()
                 } else {
                     locationPermissionLauncher.launch(
