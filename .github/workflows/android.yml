@@ -38,11 +38,12 @@ jobs:
           gradle-version: "8.9"
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Android unit tests and debug/release APKs
+      - name: Android lint, unit tests and debug/release APKs
         env:
           NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
         run: |
           gradle --no-daemon \
+            :app:lintDebug \
             :app:testDebugUnitTest \
             :app:assembleDebug \
             :app:testReleaseUnitTest \
