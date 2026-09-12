@@ -183,7 +183,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: NV-android16-apk
-          path: app/build/outputs/apk/release
+          path: .
       - name: Install and verify NV first draw on Android 16
         uses: reactivecircus/android-emulator-runner@v2
         env:
