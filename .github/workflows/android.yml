@@ -216,6 +216,7 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
+          emulator-boot-timeout: 900
           script: bash .github/scripts/verify-nv-launch-modern.sh
       - name: Upload Android ${{ matrix.android }} diagnostics
         if: always()
