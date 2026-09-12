@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -16,7 +17,6 @@ import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.AltRoute
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Navigation
-import androidx.compose.material3.BorderStroke as M3BorderStroke
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -98,10 +98,7 @@ fun RahnamaRouteComparisonFeature(
                 )
             }
 
-            Button(
-                onClick = { open = false },
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Button(onClick = { open = false }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Rounded.Navigation, contentDescription = null)
                 Spacer(Modifier.width(NvSpacing.Sm))
                 Text("تأیید مسیر انتخاب‌شده")
