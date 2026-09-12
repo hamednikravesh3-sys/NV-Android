@@ -32,6 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,7 +62,7 @@ fun RahnamaRouteComparisonFeature(
 
     ExtendedFloatingActionButton(
         onClick = { open = true },
-        modifier = modifier,
+        modifier = modifier.semantics { contentDescription = "مقایسه مسیرها" },
         containerColor = NvColors.Navy900,
         contentColor = NvColors.RouteBlue,
         icon = { Icon(Icons.Rounded.AltRoute, contentDescription = null) },
