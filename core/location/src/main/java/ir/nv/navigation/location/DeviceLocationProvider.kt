@@ -38,17 +38,18 @@ class DeviceLocationProvider(private val context: Context) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
+    fun isLocationEnabled(): Boolean = runCatching { manager.isLocationEnabled }.getOrDefault(false)
+
     @SuppressLint("MissingPermission")
     suspend fun currentLocation(): Coordinate? {
         if (!hasPermission()) return null
 
-        // Never present an unknown-accuracy or stale cached coordinate as the user's exact position.
         val recent = bestLastKnown()
             ?.takeIf { it.hasAccuracy() }
             ?.takeIf { System.currentTimeMillis() - it.time <= MAX_LAST_KNOWN_AGE_MS }
-            ?.takeIf { it.accuracy <= ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS }
+            ?.takeIf { it.accuracy <= lastKnownAccuracyLimit() }
         if (recent != null &&
-            recent.accuracy <= EXCELLENT_ACCURACY_METERS &&
+            recent.accuracy <= excellentAccuracyLimit() &&
             System.currentTimeMillis() - recent.time <= FRESH_SAMPLE_AGE_MS
         ) {
             return recent.toCoordinate()
@@ -68,7 +69,7 @@ class DeviceLocationProvider(private val context: Context) {
                 val accepted = location
                     ?.takeIf { it.hasAccuracy() }
                     ?.takeIf { System.currentTimeMillis() - it.time <= MAX_CURRENT_FIX_AGE_MS }
-                    ?.takeIf { it.accuracy <= MAX_CURRENT_LOCATION_ACCURACY_METERS }
+                    ?.takeIf { it.accuracy <= currentAccuracyLimit() }
                 if (continuation.isActive) continuation.resume(accepted?.toCoordinate())
             }
 
@@ -79,7 +80,7 @@ class DeviceLocationProvider(private val context: Context) {
                     if (age > MAX_CURRENT_FIX_AGE_MS) return
                     val current = best
                     if (current == null || locationScore(location) < locationScore(current)) best = location
-                    if (location.accuracy <= TARGET_ACCURACY_METERS && age <= FRESH_SAMPLE_AGE_MS) {
+                    if (location.accuracy <= targetAccuracyLimit() && age <= FRESH_SAMPLE_AGE_MS) {
                         finish(location)
                     }
                 }
@@ -87,11 +88,13 @@ class DeviceLocationProvider(private val context: Context) {
 
             val providers = activeProviders()
             if (providers.isEmpty()) {
-                continuation.resume(recent?.takeIf { it.accuracy <= MAX_CURRENT_LOCATION_ACCURACY_METERS }?.toCoordinate())
+                continuation.resume(recent?.takeIf { it.accuracy <= currentAccuracyLimit() }?.toCoordinate())
                 return@suspendCancellableCoroutine
             }
             providers.forEach { provider ->
-                manager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper())
+                runCatching {
+                    manager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper())
+                }
             }
             handler.postDelayed({ finish(best) }, LOCATION_COLLECTION_WINDOW_MS)
             continuation.invokeOnCancellation {
@@ -113,21 +116,24 @@ class DeviceLocationProvider(private val context: Context) {
             override fun onLocationChanged(location: Location) {
                 if (!isUsable(location) || !location.hasAccuracy()) return
                 val accuracy = location.accuracy
-                if (accuracy > MAX_NAVIGATION_ACCURACY_METERS && bestRecentAccuracy <= GOOD_NAVIGATION_ACCURACY_METERS) return
+                val navigationAccuracyLimit = if (hasFinePermission()) MAX_NAVIGATION_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
+                if (accuracy > navigationAccuracyLimit && bestRecentAccuracy <= GOOD_NAVIGATION_ACCURACY_METERS) return
                 bestRecentAccuracy = minOf(bestRecentAccuracy * 1.08f, accuracy)
                 trySend(location.toNavigationFix(sensorFusion.snapshot()))
             }
         }
         bestLastKnown()
             ?.takeIf { System.currentTimeMillis() - it.time <= RECENT_LOCATION_MS }
-            ?.takeIf { it.hasAccuracy() && it.accuracy <= MAX_NAVIGATION_ACCURACY_METERS }
+            ?.takeIf { it.hasAccuracy() && it.accuracy <= currentAccuracyLimit() }
             ?.takeIf(::isUsable)
             ?.let {
                 bestRecentAccuracy = it.accuracy
                 trySend(it.toNavigationFix(sensorFusion.snapshot()))
             }
-        activeProviders().forEach {
-            manager.requestLocationUpdates(it, 1_000L, 1f, listener, Looper.getMainLooper())
+        activeProviders().forEach { provider ->
+            runCatching {
+                manager.requestLocationUpdates(provider, 1_000L, 1f, listener, Looper.getMainLooper())
+            }
         }
         awaitClose {
             manager.removeUpdates(listener)
@@ -153,17 +159,31 @@ class DeviceLocationProvider(private val context: Context) {
         if (location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0) return false
         val age = System.currentTimeMillis() - location.time
         if (age < -FUTURE_TIMESTAMP_TOLERANCE_MS || age > MAX_SAMPLE_AGE_MS) return false
-        return !location.hasAccuracy() || location.accuracy <= ABSOLUTE_MAX_ACCURACY_METERS
+        val absoluteAccuracyLimit = if (hasFinePermission()) ABSOLUTE_MAX_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
+        return !location.hasAccuracy() || location.accuracy <= absoluteAccuracyLimit
     }
 
-    private fun activeProviders(): List<String> = buildList {
-        if (hasFinePermission() && runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false)) {
-            add(LocationManager.GPS_PROVIDER)
-        }
-        if (runCatching { manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) }.getOrDefault(false)) {
-            add(LocationManager.NETWORK_PROVIDER)
-        }
+    private fun activeProviders(): List<String> {
+        val enabled = runCatching { manager.getProviders(true) }.getOrDefault(emptyList())
+        return buildList {
+            if (hasFinePermission() && LocationManager.GPS_PROVIDER in enabled) add(LocationManager.GPS_PROVIDER)
+            if (LocationManager.NETWORK_PROVIDER in enabled) add(LocationManager.NETWORK_PROVIDER)
+            if (FUSED_PROVIDER_NAME in enabled) add(FUSED_PROVIDER_NAME)
+            if (LocationManager.PASSIVE_PROVIDER in enabled) add(LocationManager.PASSIVE_PROVIDER)
+        }.distinct()
     }
+
+    private fun targetAccuracyLimit(): Float =
+        if (hasFinePermission()) TARGET_ACCURACY_METERS else COARSE_TARGET_ACCURACY_METERS
+
+    private fun excellentAccuracyLimit(): Float =
+        if (hasFinePermission()) EXCELLENT_ACCURACY_METERS else COARSE_EXCELLENT_ACCURACY_METERS
+
+    private fun lastKnownAccuracyLimit(): Float =
+        if (hasFinePermission()) ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
+
+    private fun currentAccuracyLimit(): Float =
+        if (hasFinePermission()) MAX_CURRENT_LOCATION_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
 
     private fun Location.toCoordinate() = Coordinate(latitude, longitude)
 
@@ -215,12 +235,16 @@ class DeviceLocationProvider(private val context: Context) {
         const val GOOD_NAVIGATION_ACCURACY_METERS = 35f
         const val MAX_NAVIGATION_ACCURACY_METERS = 90f
         const val ABSOLUTE_MAX_ACCURACY_METERS = 250f
+        const val COARSE_TARGET_ACCURACY_METERS = 1_500f
+        const val COARSE_EXCELLENT_ACCURACY_METERS = 800f
+        const val MAX_COARSE_LOCATION_ACCURACY_METERS = 5_000f
         const val FRESH_SAMPLE_AGE_MS = 8_000L
         const val MAX_CURRENT_FIX_AGE_MS = 15_000L
         const val MAX_LAST_KNOWN_AGE_MS = 20_000L
         const val MAX_SAMPLE_AGE_MS = 2 * 60 * 1_000L
         const val RECENT_LOCATION_MS = 20_000L
         const val FUTURE_TIMESTAMP_TOLERANCE_MS = 2_000L
+        const val FUSED_PROVIDER_NAME = "fused"
     }
 }
 
@@ -244,12 +268,6 @@ private data class SensorFusionSnapshot(
     val yawRateDegreesPerSecond: Float = 0f
 )
 
-/**
- * Lightweight on-device sensor fusion used to stabilize heading at low vehicle speeds.
- * Rotation-vector is preferred because Android already fuses accelerometer, gyroscope and
- * magnetometer data. Raw accelerometer/gyroscope/magnetic sensors are also registered so the
- * navigation engine keeps useful motion signals on devices without a rotation-vector sensor.
- */
 private class NavigationSensorFusion(context: Context) : SensorEventListener, AutoCloseable {
     private val manager = context.getSystemService(SensorManager::class.java)
     private val rotation = FloatArray(9)
