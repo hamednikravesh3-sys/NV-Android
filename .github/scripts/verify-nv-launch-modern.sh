@@ -12,15 +12,34 @@ activity_state_has_main_activity() {
   [[ "$state" == *"$ACTIVITY_COMPONENT"* || "$state" == *"$ACTIVITY_DUMPSYS_COMPONENT"* ]]
 }
 
+recover_adb() {
+  adb kill-server >/dev/null 2>&1 || true
+  adb start-server >/dev/null
+  adb wait-for-device
+}
+
+adb_shell_retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if adb shell "$@"; then
+      return 0
+    fi
+    echo "adb shell failed (attempt $attempt/3); restarting adb"
+    recover_adb
+    sleep 2
+  done
+  return 1
+}
+
 rm -f nv-modern-*.txt nv-modern-*.png
 adb wait-for-device
 test -s "$APK_PATH"
 adb install -r "$APK_PATH"
-adb shell pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION || true
-adb shell pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
-adb logcat -c
-adb shell am force-stop "$PACKAGE"
-adb shell am start -n "$ACTIVITY_COMPONENT"
+adb_shell_retry pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION || true
+adb_shell_retry pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
+adb logcat -c || recover_adb
+adb_shell_retry am force-stop "$PACKAGE"
+adb_shell_retry am start -n "$ACTIVITY_COMPONENT"
 
 PID=""
 RESUMED=0
@@ -32,7 +51,7 @@ for attempt in $(seq 1 60); do
     break
   fi
   if (( attempt % 15 == 0 )); then
-    adb shell am start -n "$ACTIVITY_COMPONENT" >/dev/null 2>&1 || true
+    adb_shell_retry am start -n "$ACTIVITY_COMPONENT" >/dev/null 2>&1 || true
   fi
   sleep 2
 done
