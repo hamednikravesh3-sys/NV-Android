@@ -59,6 +59,14 @@ tap_search() {
   adb_shell input tap "$((w/2))" "$((h/10))" >/dev/null
 }
 
+swipe_up() {
+  local size w h
+  size="$(adb shell wm size 2>/dev/null | tail -1 | grep -Eo '[0-9]+x[0-9]+' || true)"
+  w="${size%x*}"; h="${size#*x}"
+  [[ -n "$w" && -n "$h" && "$w" != "$size" ]] || { w=1080; h=1920; }
+  adb_shell input swipe "$((w/2))" "$((h*4/5))" "$((w/2))" "$((h*2/5))" 450 >/dev/null
+}
+
 collect_diag() {
   adb shell dumpsys activity activities > nv-modern-activity-state.txt 2>/dev/null || true
   adb shell dumpsys window windows > nv-modern-window-state.txt 2>/dev/null || true
@@ -148,7 +156,8 @@ for attempt in $(seq 1 60); do
 done
 [[ "$ROUTE_READY" -eq 1 ]] || { echo "NV Android 16 did not produce a route card from Tehran to Karaj"; exit 1; }
 
-# Screen 10: route comparison must be reachable from real alternatives and allow selection.
+# Screen 10: route comparison must be reachable from real alternatives and expose
+# decision data in the sheet. The confirmation control may be below the fold.
 COMPARISON_BUTTON=0
 for _ in $(seq 1 10); do
   if dump_ui nv-modern-route-ui.xml && ui_has 'مقایسه مسیرها' nv-modern-route-ui.xml; then COMPARISON_BUTTON=1; break; fi
@@ -161,13 +170,26 @@ for _ in $(seq 1 15); do
   if dump_ui nv-modern-comparison-ui.xml && \
      ui_has 'مقایسه مسیرها' nv-modern-comparison-ui.xml && \
      ui_has 'پیشنهاد راهنما' nv-modern-comparison-ui.xml && \
-     ui_has 'تأیید مسیر انتخاب‌شده' nv-modern-comparison-ui.xml; then
+     ui_has 'زمان' nv-modern-comparison-ui.xml && \
+     ui_has 'فاصله' nv-modern-comparison-ui.xml && \
+     ui_has 'رسیدن' nv-modern-comparison-ui.xml && \
+     ui_has 'مسیر 2' nv-modern-comparison-ui.xml; then
     COMPARISON_READY=1; break
   fi
   sleep 1
 done
 [[ "$COMPARISON_READY" -eq 1 ]] || { echo "NV Android 16 route comparison sheet did not render expected decision data"; exit 1; }
-tap_text 'تأیید مسیر انتخاب‌شده' || adb_shell input keyevent 4 >/dev/null 2>&1 || true
+
+CONFIRM_READY=0
+for _ in $(seq 1 5); do
+  if dump_ui nv-modern-comparison-ui.xml && ui_has 'تأیید مسیر انتخاب‌شده' nv-modern-comparison-ui.xml; then
+    CONFIRM_READY=1; break
+  fi
+  swipe_up || true
+  sleep 1
+done
+[[ "$CONFIRM_READY" -eq 1 ]] || { echo "NV Android 16 route comparison confirmation action is not reachable"; exit 1; }
+tap_text 'تأیید مسیر انتخاب‌شده' || { echo "NV could not confirm the selected route comparison result"; exit 1; }
 sleep 1
 
 collect_diag
