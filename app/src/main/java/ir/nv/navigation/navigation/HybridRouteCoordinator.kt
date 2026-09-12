@@ -1,5 +1,6 @@
 package ir.nv.navigation.navigation
 
+import ir.nv.navigation.ai.route.NvPredictiveRouteOptimizer
 import ir.nv.navigation.core.RouteSource
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -9,7 +10,8 @@ class HybridRouteCoordinator(
     private val offlineProvider: RouteProvider,
     private val trafficProvider: TrafficProvider,
     private val ranker: RouteRanker,
-    private val signalProvider: RouteSignalProvider = RouteSignalProvider { _, _ -> RouteSignals() }
+    private val signalProvider: RouteSignalProvider = RouteSignalProvider { _, _ -> RouteSignals() },
+    private val predictiveOptimizer: NvPredictiveRouteOptimizer? = null
 ) {
     suspend fun plan(
         request: RouteRequest,
@@ -27,7 +29,7 @@ class HybridRouteCoordinator(
                 .getOrDefault(emptyList())
         }
 
-        val routes = when {
+        val resolvedRoutes = when {
             initial.isNotEmpty() -> initial
             !primaryOffline && request.offlineAvailable -> {
                 fallbackUsed = true
@@ -41,6 +43,7 @@ class HybridRouteCoordinator(
             }
             else -> emptyList()
         }
+        val routes = resolvedRoutes.take(MAX_ROUTE_ALTERNATIVES)
 
         val source = when {
             routes.isEmpty() -> RouteSource.NONE
@@ -73,12 +76,17 @@ class HybridRouteCoordinator(
                 signals = enrichment?.second ?: RouteSignals()
             )
         }
-        val ranked = ranker.rank(candidates, context)
+        val adaptiveRanked = ranker.rank(candidates, context)
+        val ranked = predictiveOptimizer?.optimize(adaptiveRanked, context) ?: adaptiveRanked
         return RoutePlan(
             candidates = ranked,
             selectedIndex = if (ranked.isEmpty()) -1 else 0,
             fallbackUsed = fallbackUsed,
             warning = warning
         )
+    }
+
+    private companion object {
+        const val MAX_ROUTE_ALTERNATIVES = 4
     }
 }

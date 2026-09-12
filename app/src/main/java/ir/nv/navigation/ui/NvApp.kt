@@ -6,12 +6,25 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -20,11 +33,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -37,8 +54,13 @@ import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.Place
+import ir.nv.navigation.data.NvCodeAllocationService
+import ir.nv.navigation.data.PersonalCodeRules
 import ir.nv.navigation.data.PlaceCodes
 import ir.nv.navigation.ui.theme.AppThemeMode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,8 +117,13 @@ fun NvApp(
     }
 
     val sharePlace: (Place) -> Unit = { place ->
-        (place.personalCode?.let { "کد شخصی NV: $it" } ?: PlaceCodes.shareCode(place.code))?.let { code ->
-            val message = "${place.name}\n$code"
+        val code = when {
+            PlaceCodes.isRegistryCode(place.code) -> PlaceCodes.shareCode(place.code)
+            !place.personalCode.isNullOrBlank() -> "کد شخصی NV: ${place.personalCode}"
+            else -> PlaceCodes.shareCode(place.code)
+        }
+        code?.let {
+            val message = "${place.name}\n$it"
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, message)
@@ -148,10 +175,11 @@ fun NvApp(
             )
         }
         if (showPlaceCode) {
-            PlaceCodeDialog(
+            SharedPlaceCodeDialog(
                 place = state.destination ?: state.origin,
+                onlineAvailable = state.onlineAvailable,
                 onDismiss = { showPlaceCode = false },
-                onSave = { place, code -> viewModel.savePersonalCode(place, code); showPlaceCode = false },
+                onSavePersonal = { place, code -> viewModel.savePersonalCode(place, code); showPlaceCode = false },
                 onShare = sharePlace
             )
         }
@@ -391,6 +419,123 @@ fun NvApp(
             }
         }
     }
+}
+
+@Composable
+private fun SharedPlaceCodeDialog(
+    place: Place?,
+    onlineAvailable: Boolean,
+    onDismiss: () -> Unit,
+    onSavePersonal: (Place, String) -> Unit,
+    onShare: (Place) -> Unit
+) {
+    val service = remember { NvCodeAllocationService() }
+    val scope = rememberCoroutineScope()
+    var personalCode by remember(place) { mutableStateOf("") }
+    var allocating by remember(place) { mutableStateOf(false) }
+    var allocationError by remember(place) { mutableStateOf<String?>(null) }
+    var sharedPlace by remember(place) {
+        mutableStateOf(place?.takeIf { PlaceCodes.isRegistryCode(it.code) })
+    }
+    var showQr by remember(place) { mutableStateOf(false) }
+    val sharedCode = sharedPlace?.let { PlaceCodes.shareCode(it.code) }
+    val normalizedPersonal = PersonalCodeRules.normalize(personalCode)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("کد مکان NV") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(place?.name ?: "ابتدا یک مکان را انتخاب کنید", fontWeight = FontWeight.Black)
+
+                if (sharedCode != null && sharedPlace != null) {
+                    Text("کد اشتراک آنلاین: $sharedCode", fontWeight = FontWeight.Bold)
+                    Text("این کد از رجیستری مرکزی NV دریافت شده و روی گوشی دیگر نیز قابل جست‌وجو است.")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onShare(sharedPlace!!) }) { Text("اشتراک") }
+                        OutlinedButton(onClick = { showQr = !showQr }) { Text("QR") }
+                    }
+                    if (showQr) {
+                        NvQrCode(sharedCode, Modifier.size(190.dp).align(Alignment.CenterHorizontally))
+                    }
+                } else if (place != null) {
+                    Text("برای استفاده از همین مکان روی گوشی دیگر، یک کد آنلاین یکتا از رجیستری NV بسازید.")
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                allocating = true
+                                allocationError = null
+                                val result = withContext(Dispatchers.IO) {
+                                    service.allocateOnline(place.name, place.coordinate)
+                                }
+                                result.onSuccess { allocation ->
+                                    val code = allocation.code.toLongOrNull()
+                                    if (code == null || !PlaceCodes.isRegistryCode(code)) {
+                                        allocationError = "سرور یک کد خارج از محدوده رجیستری NV برگرداند"
+                                    } else {
+                                        sharedPlace = Place(
+                                            code = code,
+                                            name = allocation.name,
+                                            coordinate = allocation.coordinate,
+                                            category = "nv:registry"
+                                        )
+                                    }
+                                }.onFailure { error ->
+                                    allocationError = error.message ?: "ساخت کد آنلاین ممکن نشد"
+                                }
+                                allocating = false
+                            }
+                        },
+                        enabled = onlineAvailable && !allocating && service.isConfigured(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (allocating) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.height(2.dp))
+                            Text("در حال ساخت کد…")
+                        } else {
+                            Text("ساخت کد اشتراک آنلاین")
+                        }
+                    }
+                    if (!onlineAvailable) {
+                        Text("برای ساخت کد اشتراک آنلاین، اتصال اینترنت لازم است.")
+                    } else if (!service.isConfigured()) {
+                        Text("سامانه مرکزی کد NV در این نسخه تنظیم نشده است.")
+                    }
+                    allocationError?.let { Text(it) }
+                }
+
+                OutlinedTextField(
+                    value = personalCode,
+                    onValueChange = { input ->
+                        personalCode = PlaceCodes.normalizeDigits(input).filter(Char::isDigit).take(9)
+                    },
+                    label = { Text("کد شخصی محلی؛ مثلاً ۱۱") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    enabled = place != null,
+                    supportingText = {
+                        Text(
+                            if (personalCode.isBlank() || normalizedPersonal != null) {
+                                "فقط روی همین گوشی ذخیره می‌شود؛ عدد ۱ تا ۹۹۹٬۹۹۹٬۹۹۹"
+                            } else {
+                                "عدد معتبر وارد کنید"
+                            }
+                        )
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { place?.let { onSavePersonal(it, personalCode) } },
+                enabled = place != null && normalizedPersonal != null
+            ) {
+                Text("ذخیره کد شخصی")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("بستن") } }
+    )
 }
 
 private enum class LocationAction { ORIGIN, NAVIGATE }

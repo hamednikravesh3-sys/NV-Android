@@ -6,134 +6,70 @@ plugins {
 android {
     namespace = "ir.nv.navigation"
     compileSdk = 35
-
     defaultConfig {
-        val trafficApiKey = System.getenv("NV_TRAFFIC_API_KEY").orEmpty()
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-        val googleMapsApiKey = System.getenv("NV_GOOGLE_MAPS_API_KEY").orEmpty()
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
+        val trafficApiKey = System.getenv("NV_TRAFFIC_API_KEY").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
+        val googleMapsApiKey = System.getenv("NV_GOOGLE_MAPS_API_KEY").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
+        val cloudApiUrl = System.getenv("NV_CLOUD_API_URL").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
+        val nvCodeRegistryUrl = System.getenv("NV_CODE_REGISTRY_URL").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
+        val valhallaApiUrl = System.getenv("NV_VALHALLA_API_URL").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 35
         versionCode = 18
         versionName = "0.17.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-
-        buildConfigField(
-            "String",
-            "IRAN_PACK_URL",
-            "\"https://github.com/hamednikravesh3-sys/NV-Android/releases/download/map-v1/iran.nvpack\""
-        )
+        buildConfigField("String", "IRAN_PACK_URL", "\"https://github.com/hamednikravesh3-sys/NV-Android/releases/download/map-v1/iran.nvpack\"")
         buildConfigField("String", "IRAN_PACK_SHA256", "\"999156a4d2e1bb2756bda602d9f00527d0cf77f1c420863baf3483002f252f6d\"")
+        buildConfigField("String", "PROVINCE_PACK_BASE_URL", "\"https://github.com/hamednikravesh3-sys/NV-Android/releases/download/map-v1\"")
+        buildConfigField("String", "PROVINCE_PACK_RELEASE_API_URL", "\"https://api.github.com/repos/hamednikravesh3-sys/NV-Android/releases/tags/map-v1\"")
+        buildConfigField("String", "CLOUD_API_URL", "\"$cloudApiUrl\"")
+        buildConfigField("String", "NV_CODE_REGISTRY_URL", "\"$nvCodeRegistryUrl\"")
+        buildConfigField("String", "VALHALLA_API_URL", "\"$valhallaApiUrl\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
-        buildConfigField(
-            "String",
-            "WEATHER_API_URL",
-            "\"https://api.open-meteo.com/v1/forecast\""
-        )
-        buildConfigField(
-            "String",
-            "PLACES_API_URL",
-            "\"https://overpass-api.de/api/interpreter\""
-        )
+        buildConfigField("String", "WEATHER_API_URL", "\"https://api.open-meteo.com/v1/forecast\"")
+        buildConfigField("String", "PLACES_API_URL", "\"https://overpass-api.de/api/interpreter\"")
         buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$googleMapsApiKey\"")
-        buildConfigField(
-            "String",
-            "GOOGLE_PLACES_API_URL",
-            "\"https://places.googleapis.com/v1/places:searchNearby\""
-        )
+        buildConfigField("String", "GOOGLE_PLACES_API_URL", "\"https://places.googleapis.com/v1/places:searchNearby\"")
         buildConfigField("String", "TRAFFIC_API_KEY", "\"$trafficApiKey\"")
-        buildConfigField(
-            "String",
-            "TRAFFIC_API_URL",
-            "\"https://api.tomtom.com\""
-        )
-        buildConfigField(
-            "String",
-            "GEOCODING_API_URL",
-            "\"https://photon.komoot.io/api\""
-        )
-        buildConfigField(
-            "String",
-            "GEOCODING_FALLBACK_API_URL",
-            "\"https://nominatim.openstreetmap.org\""
-        )
-        buildConfigField(
-            "String",
-            "ROUTING_API_URL",
-            "\"https://router.project-osrm.org\""
-        )
-        buildConfigField(
-            "String",
-            "ROUTING_FALLBACK_API_URL",
-            "\"https://routing.openstreetmap.de/routed-car\""
-        )
+        buildConfigField("String", "TRAFFIC_API_URL", "\"https://api.tomtom.com\"")
+        buildConfigField("String", "GEOCODING_API_URL", "\"https://photon.komoot.io/api\"")
+        buildConfigField("String", "GEOCODING_FALLBACK_API_URL", "\"https://nominatim.openstreetmap.org\"")
+        buildConfigField("String", "ROUTING_API_URL", "\"https://router.project-osrm.org\"")
+        buildConfigField("String", "ROUTING_FALLBACK_API_URL", "\"https://routing.openstreetmap.de/routed-car\"")
     }
-
     signingConfigs {
         getByName("debug") {
-            storeFile = rootProject.file("keystore/nv-debug.jks")
-            storePassword = "nvdebug"
-            keyAlias = "nvdebug"
-            keyPassword = "nvdebug"
+            storeFile = rootProject.file("keystore/nv-debug.jks"); storePassword = "nvdebug"; keyAlias = "nvdebug"; keyPassword = "nvdebug"
         }
         create("release") {
             val storeFilePath = System.getenv("NV_KEYSTORE_FILE")
             if (!storeFilePath.isNullOrBlank()) {
-                storeFile = file(storeFilePath)
-                storePassword = System.getenv("NV_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("NV_KEY_ALIAS")
-                keyPassword = System.getenv("NV_KEY_PASSWORD")
+                storeFile = file(storeFilePath); storePassword = System.getenv("NV_KEYSTORE_PASSWORD"); keyAlias = System.getenv("NV_KEY_ALIAS"); keyPassword = System.getenv("NV_KEY_PASSWORD")
             }
         }
     }
-
     buildTypes {
-        debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
-        }
+        debug { applicationIdSuffix = ".debug"; versionNameSuffix = "-debug" }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            if (!System.getenv("NV_KEYSTORE_FILE").isNullOrBlank()) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            isMinifyEnabled = true; isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (!System.getenv("NV_KEYSTORE_FILE").isNullOrBlank()) signingConfig = signingConfigs.getByName("release")
         }
     }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"
-    }
-    packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
-    }
+    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true; buildConfig = true }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }
+    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
 dependencies {
+    implementation(project(":core:common"))
+    implementation(project(":core:location"))
+    implementation(project(":routing"))
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
-
+    implementation(composeBom); androidTestImplementation(composeBom)
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
@@ -143,7 +79,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
-
     implementation("org.mapsforge:mapsforge-map-android:0.25.0")
     implementation("org.mapsforge:mapsforge-themes:0.25.0")
     implementation("org.maplibre.gl:android-sdk:11.7.1")
@@ -152,9 +87,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.zxing:core:3.5.3")
     implementation("io.coil-kt:coil-compose:2.7.0")
-
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.json:json:20250517")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

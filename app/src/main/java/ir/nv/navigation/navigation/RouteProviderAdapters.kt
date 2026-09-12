@@ -17,7 +17,13 @@ class OfflineRouteProviderAdapter(
     private val routerProvider: () -> AStarRouter?
 ) : RouteProvider {
     override suspend fun routes(request: RouteRequest) = withContext(Dispatchers.Default) {
-        routerProvider()?.routes(request.origin, request.destination).orEmpty()
+        routerProvider()?.routes(
+            origin = request.origin,
+            destination = request.destination,
+            profile = request.profile,
+            custom = request.custom,
+            limit = 4
+        ).orEmpty()
     }
 }
 

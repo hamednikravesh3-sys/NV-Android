@@ -7,61 +7,211 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   build:
     runs-on: macos-15-intel
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Backend and release tooling tests
+        run: |
+          python -m unittest discover -s tools -p "test_*.py"
+          node --test backend/nv-code-registry/worker.test.mjs
+          node --test backend/cloud-sync/worker.test.mjs
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Unit tests and debug APK
+      - name: Android lint, unit tests and debug/release APKs
         env:
           NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
         run: |
-          python -m unittest discover -s tools -p "test_*.py"
-          gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+          gradle --no-daemon \
+            :app:lintDebug \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:testReleaseUnitTest \
+            :app:assembleRelease
+      - name: Verify unsigned release package
+        run: |
+          set -euo pipefail
+          RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          AAPT="$BUILD_TOOLS/aapt"
+          test -f "$RELEASE_APK"
+          test -x "$AAPT"
+          BADGING="$("$AAPT" dump badging "$RELEASE_APK")"
+          echo "$BADGING" > nv-release-badging.txt
+          echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
+          echo "$BADGING" | grep -q "versionCode='18'"
+          echo "$BADGING" | grep -q "versionName='0.17.0'"
+          echo "$BADGING" | grep -q "sdkVersion:'29'"
+          echo "$BADGING" | grep -q "targetSdkVersion:'35'"
+          shasum -a 256 "$RELEASE_APK" > nv-release-sha256.txt
+          APK_SHA256="$(awk '{print $1}' nv-release-sha256.txt)"
+          {
+            echo "git_sha=$GITHUB_SHA"
+            echo "package=ir.nv.navigation"
+            echo "version_code=18"
+            echo "version_name=0.17.0"
+            echo "min_sdk=29"
+            echo "target_sdk=35"
+            cat nv-release-sha256.txt
+          } > nv-release-provenance.txt
+          APK_SHA256="$APK_SHA256" python - <<'PY'
+          import json, os
+          manifest = {
+              "schema_version": 1,
+              "artifact_kind": "unsigned-release-validation",
+              "package": "ir.nv.navigation",
+              "version_code": 18,
+              "version_name": "0.17.0",
+              "min_sdk": 29,
+              "target_sdk": 35,
+              "git_sha": os.environ["GITHUB_SHA"],
+              "apk_sha256": os.environ["APK_SHA256"],
+              "signing_cert_sha256": None,
+          }
+          with open("nv-release-manifest.json", "w", encoding="utf-8") as handle:
+              json.dump(manifest, handle, ensure_ascii=False, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+          APK_SHA256="$APK_SHA256" python - <<'PY'
+          import json, os, re
+          with open("nv-release-manifest.json", encoding="utf-8") as handle:
+              data = json.load(handle)
+          expected = {
+              "schema_version": 1,
+              "artifact_kind": "unsigned-release-validation",
+              "package": "ir.nv.navigation",
+              "version_code": 18,
+              "version_name": "0.17.0",
+              "min_sdk": 29,
+              "target_sdk": 35,
+              "git_sha": os.environ["GITHUB_SHA"],
+              "apk_sha256": os.environ["APK_SHA256"],
+              "signing_cert_sha256": None,
+          }
+          if data != expected:
+              raise SystemExit("release manifest does not match verified APK metadata")
+          if not re.fullmatch(r"[0-9a-f]{64}", data["apk_sha256"]):
+              raise SystemExit("invalid APK SHA-256 in release manifest")
+          if not re.fullmatch(r"[0-9a-f]{40}", data["git_sha"]):
+              raise SystemExit("invalid git SHA in release manifest")
+          PY
+      - name: Sign minified release APK for Android 16 CI
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/35.0.0"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          AAPT="$BUILD_TOOLS/aapt"
+          INPUT_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          OUTPUT_APK="app/build/outputs/apk/release/app-release-android16-test.apk"
+          test -f "$INPUT_APK"
+          test -f "keystore/nv-debug.jks"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" sign \
+            --ks keystore/nv-debug.jks \
+            --ks-pass pass:nvdebug \
+            --ks-key-alias nvdebug \
+            --key-pass pass:nvdebug \
+            --out "$OUTPUT_APK" \
+            "$INPUT_APK"
+          "$APKSIGNER" verify --verbose --print-certs "$OUTPUT_APK" > nv-android16-apksigner.txt
+          BADGING="$("$AAPT" dump badging "$OUTPUT_APK")"
+          echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
+          echo "$BADGING" | grep -q "versionCode='18'"
+          echo "$BADGING" | grep -q "versionName='0.17.0'"
+          shasum -a 256 "$OUTPUT_APK" > nv-android16-apk-sha256.txt
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: NV-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-      - name: Install and verify NV launch
-        uses: reactivecircus/android-emulator-runner@v2
+      - name: Upload Android 16 release-like APK
+        uses: actions/upload-artifact@v4
         with:
-          api-level: 29
+          name: NV-android16-apk
+          path: |
+            app/build/outputs/apk/release/app-release-android16-test.apk
+            nv-android16-apksigner.txt
+            nv-android16-apk-sha256.txt
+          if-no-files-found: error
+      - name: Upload unsigned release validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-unsigned-release-validation
+          path: |
+            app/build/outputs/apk/release/app-release-unsigned.apk
+            nv-release-badging.txt
+            nv-release-sha256.txt
+            nv-release-provenance.txt
+            nv-release-manifest.json
+          if-no-files-found: error
+
+  android16:
+    name: Android 16 compatibility
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - name: Enable KVM acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Download minified Android 16 test APK
+        uses: actions/download-artifact@v4
+        with:
+          name: NV-android16-apk
+          path: .
+      - name: Install and verify NV first draw on Android 16
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          NV_VERIFY_APK: app/build/outputs/apk/release/app-release-android16-test.apk
+          NV_VERIFY_PACKAGE: ir.nv.navigation
+          NV_VERIFY_ACTIVITY: ir.nv.navigation.MainActivity
+        with:
+          api-level: 36
+          target: default
           arch: x86_64
           profile: pixel_2
+          cores: 2
           disable-animations: true
-          script: bash .github/scripts/verify-nv-launch.sh
-      - name: Upload NV launch diagnostics
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
+          script: bash .github/scripts/verify-nv-launch-modern.sh
+      - name: Upload Android 16 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-launch-diagnostics
+          name: NV-launch-diagnostics-android16
           path: |
-            nv-launch-screen.png
-            nv-nearby-screen.png
-            nv-offline-screen.png
-            nv-pin-screen.png
-            nv-code-screen.png
-            nv-ui.xml
-            nv-window-state.txt
-            nv-activity-state.txt
-            nv-logcat.txt
+            nv-modern-launch-screen.png
+            nv-modern-window-state.txt
+            nv-modern-activity-state.txt
+            nv-modern-logcat.txt
+            nv-modern-app-logcat.txt
+            nv-modern-ui.xml
+            nv-modern-search-ui.xml
+            nv-modern-route-ui.xml
           if-no-files-found: warn

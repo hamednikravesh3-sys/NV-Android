@@ -1,0 +1,15 @@
+NV production signed release trigger
+
+This file intentionally triggers the fail-closed Signed Release APK workflow.
+All production signing and service gates remain mandatory.
+
+Release attempt 2: production secrets and service deployment setup completed on 2026-09-10.
+Release attempt 3: retry after hardened NV_KEYSTORE_BASE64 normalization and strict keystore validation on 2026-09-10.
+Release attempt 4: retry after canonical Base64 recovery hardening passed Android CI #354 on 2026-09-10.
+Release attempt 5: retry on macos-15-intel to remove the ubuntu no-KVM emulator bottleneck while preserving all signed release gates on 2026-09-10.
+Release attempt 6: retry after deterministic Android 10 UI render verification passed Android CI #358 on 2026-09-10.
+Release attempt 7: retry after canonical and shorthand MainActivity component matching passed Android CI #360 on 2026-09-10.
+Release attempt 8: retry after Android 15 dumpsys shorthand MainActivity matching passed Android CI #363 on 2026-09-11.
+Release attempt 9: final signed release after Android CI #407 passed build, package verification, Android 10, and Android 15 on 2026-09-11.
+Release attempt 10: OSM-only production release after Android CI #412 passed build, package verification, Android 10, and Android 15 on 2026-09-11.
+Release attempt 11: production fallback release after Android CI #416 passed build, package verification, Android 10, and Android 15 on 2026-09-11.

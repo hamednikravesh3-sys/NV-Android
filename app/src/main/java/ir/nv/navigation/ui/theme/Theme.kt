@@ -10,29 +10,42 @@ import androidx.compose.ui.graphics.Color
 private val LightColors = lightColorScheme(
     primary = Color(0xFF007C98),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFC8F4FF),
-    onPrimaryContainer = Color(0xFF001F26),
+    primaryContainer = NvColors.RouteBlueSoft,
+    onPrimaryContainer = NvColors.LightTextPrimary,
     secondary = Color(0xFF355C64),
+    onSecondary = Color.White,
     tertiary = Color(0xFF006B5E),
     tertiaryContainer = Color(0xFF9EF2DE),
-    background = Color(0xFFF7F9FC),
-    surface = Color(0xFFFDFBFF),
-    surfaceVariant = Color(0xFFE0E5EE),
-    error = Color(0xFFBA1A1A)
+    background = NvColors.LightBackground,
+    onBackground = NvColors.LightTextPrimary,
+    surface = NvColors.LightSurface,
+    onSurface = NvColors.LightTextPrimary,
+    surfaceVariant = NvColors.LightSurfaceVariant,
+    onSurfaceVariant = NvColors.LightTextSecondary,
+    error = Color(0xFFBA1A1A),
+    onError = Color.White,
+    outline = Color(0xFF718493)
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF18D4FF),
-    onPrimary = Color(0xFF031421),
-    primaryContainer = Color(0xFF10344D),
-    onPrimaryContainer = Color(0xFFE8F8FF),
+    primary = NvColors.RouteBlue,
+    onPrimary = NvColors.Navy950,
+    primaryContainer = NvColors.Navy700,
+    onPrimaryContainer = NvColors.TextPrimaryDark,
     secondary = Color(0xFFAACBD1),
-    tertiary = Color(0xFF82D5C2),
+    onSecondary = NvColors.Navy950,
+    tertiary = NvColors.Success,
+    onTertiary = NvColors.Navy950,
     tertiaryContainer = Color(0xFF005047),
-    background = Color(0xFF04101D),
-    surface = Color(0xFF071526),
-    surfaceVariant = Color(0xFF102C45),
-    error = Color(0xFFFFB4AB)
+    background = NvColors.Navy900,
+    onBackground = NvColors.TextPrimaryDark,
+    surface = NvColors.Navy850,
+    onSurface = NvColors.TextPrimaryDark,
+    surfaceVariant = NvColors.Navy700,
+    onSurfaceVariant = NvColors.TextSecondaryDark,
+    error = NvColors.Emergency,
+    onError = Color.White,
+    outline = NvColors.DividerDark
 )
 
 @Composable
@@ -42,7 +55,7 @@ fun NvTheme(
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
-        typography = androidx.compose.material3.Typography(),
+        typography = NvTypography,
         content = content
     )
 }
