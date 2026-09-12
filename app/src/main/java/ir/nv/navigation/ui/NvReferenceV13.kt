@@ -45,6 +45,8 @@ private val V13Cyan = Color(0xFF14D8FF)
 private val V13Gold = Color(0xFFFFB52E)
 private val V13Green = Color(0xFF43E66B)
 
+private enum class V13PickerMode { BOOKMARK, ORIGIN, DESTINATION }
+
 @Composable
 fun NvReferenceV13(
     darkMode: Boolean,
@@ -64,6 +66,7 @@ fun NvReferenceV13(
 
     var bookmark by remember { mutableStateOf(store.load()) }
     var pickerOpen by remember { mutableStateOf(false) }
+    var pickerMode by remember { mutableStateOf(V13PickerMode.BOOKMARK) }
     var pin by remember {
         mutableStateOf<Coordinate?>(
             bookmark?.coordinate ?: state.currentLocation ?: state.destination?.coordinate ?: state.origin?.coordinate
@@ -84,20 +87,48 @@ fun NvReferenceV13(
     var smartLoading by remember { mutableStateOf(false) }
 
     fun openPicker() {
+        pickerMode = V13PickerMode.BOOKMARK
         pin = state.destination?.coordinate ?: state.currentLocation ?: state.origin?.coordinate ?: pin
         error = null
         pickerOpen = true
     }
 
-    fun savePinAndOpenCode() {
-        val coordinate = pin ?: return
-        val place = Place(-8300000000L, "مکان انتخاب‌شده", coordinate, "bookmark:pin")
-        store.save(place)
-        bookmark = place
-        qr = null
+    fun openEndpointPicker(mode: V13PickerMode) {
+        val snapshot = viewModel.state.value
+        pickerMode = mode
+        pin = when (mode) {
+            V13PickerMode.ORIGIN -> snapshot.origin?.coordinate ?: snapshot.currentLocation ?: pin
+            V13PickerMode.DESTINATION -> snapshot.destination?.coordinate ?: pin
+            V13PickerMode.BOOKMARK -> snapshot.destination?.coordinate ?: snapshot.currentLocation ?: snapshot.origin?.coordinate ?: pin
+        }
         error = null
-        pickerOpen = false
-        codeDialogOpen = true
+        pickerOpen = true
+    }
+
+    fun confirmPickerPoint() {
+        val coordinate = pin ?: return
+        val snapshot = viewModel.state.value
+        when (pickerMode) {
+            V13PickerMode.ORIGIN -> {
+                val selected = snapshot.origin ?: return
+                viewModel.selectOrigin(selected.copy(coordinate = coordinate))
+                pickerOpen = false
+            }
+            V13PickerMode.DESTINATION -> {
+                val selected = snapshot.destination ?: return
+                viewModel.selectDestination(selected.copy(coordinate = coordinate))
+                pickerOpen = false
+            }
+            V13PickerMode.BOOKMARK -> {
+                val place = Place(-8300000000L, "مکان انتخاب‌شده", coordinate, "bookmark:pin")
+                store.save(place)
+                bookmark = place
+                qr = null
+                error = null
+                pickerOpen = false
+                codeDialogOpen = true
+            }
+        }
     }
 
     val doubleTapListener = remember {
@@ -114,7 +145,9 @@ fun NvReferenceV13(
     val locationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.values.any { it }) viewModel.useCurrentLocationAsOrigin()
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+            viewModel.useCurrentLocationAsOrigin()
+        }
     }
 
     fun useCurrentPin() {
@@ -123,8 +156,7 @@ fun NvReferenceV13(
             NvMapInteractionBus.recenterOn(it)
             return
         }
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (granted) viewModel.useCurrentLocationAsOrigin()
         else locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
@@ -136,7 +168,7 @@ fun NvReferenceV13(
         val center = state.currentLocation
         if (center == null) {
             useCurrentPin()
-            nearbyError = "در حال دریافت موقعیت شما؛ سپس دوباره جستجو کنید"
+            nearbyError = "در حال دریافت موقعیت دقیق شما؛ سپس دوباره جستجو کنید"
             return
         }
         if (!state.onlineAvailable) {
@@ -154,8 +186,11 @@ fun NvReferenceV13(
         }
     }
 
-    LaunchedEffect(state.currentLocation) {
+    LaunchedEffect(state.currentLocation, pickerOpen, pickerMode) {
         if (state.currentLocation != null && !state.locating && pin == null) pin = state.currentLocation
+        if (pickerOpen && pickerMode == V13PickerMode.ORIGIN && state.currentLocation != null && state.origin?.category == "device-location") {
+            pin = state.currentLocation
+        }
     }
 
     LaunchedEffect(state.destinationQuery, state.currentLocation, state.destinationSuggestions) {
@@ -166,7 +201,7 @@ fun NvReferenceV13(
             smartLoading = false
             return@LaunchedEffect
         }
-        delay(450)
+        delay(220)
         smartLoading = true
         smartResults = withContext(Dispatchers.IO) {
             val named = runCatching { nearbyService.searchNamedNearby(center, query) }.getOrDefault(emptyList())
@@ -186,7 +221,9 @@ fun NvReferenceV13(
             onThemeModeChange = onThemeModeChange,
             viewModel = viewModel,
             onNearby = { nearbyOpen = true },
-            onPin = ::openPicker
+            onPin = ::openPicker,
+            onRefineOrigin = { openEndpointPicker(V13PickerMode.ORIGIN) },
+            onRefineDestination = { openEndpointPicker(V13PickerMode.DESTINATION) }
         )
 
         if (!state.navigationActive && state.destinationQuery.trim().length >= 3 && state.destinationSuggestions.isEmpty() && (smartLoading || smartResults.isNotEmpty())) {
@@ -204,6 +241,7 @@ fun NvReferenceV13(
                             Modifier.fillMaxWidth().clickable {
                                 viewModel.selectDestination(place)
                                 smartResults = emptyList()
+                                openEndpointPicker(V13PickerMode.DESTINATION)
                             }.padding(9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -227,7 +265,7 @@ fun NvReferenceV13(
             title = { Text("اطراف من", color = Color.White, fontWeight = FontWeight.Black) },
             text = {
                 Column(Modifier.fillMaxWidth().heightIn(max = 550.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("مکان‌های نزدیک بر اساس موقعیت واقعی شما", color = Color.LightGray)
+                    Text("مکان‌های نزدیک بر اساس موقعیت دقیق شما", color = Color.LightGray)
                     val categories = listOf(
                         "🚑 اورژانس" to "اورژانس بیمارستان", "🏥 بیمارستان" to "بیمارستان",
                         "💊 داروخانه" to "داروخانه", "🚓 پلیس" to "پلیس",
@@ -251,6 +289,7 @@ fun NvReferenceV13(
                                 if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
                                 viewModel.selectDestination(place)
                                 nearbyOpen = false
+                                openEndpointPicker(V13PickerMode.DESTINATION)
                             },
                             color = Color.Black.copy(alpha = .18f),
                             shape = RoundedCornerShape(14.dp),
@@ -274,10 +313,23 @@ fun NvReferenceV13(
     }
 
     if (pickerOpen) {
+        val pickerTitle = when (pickerMode) {
+            V13PickerMode.ORIGIN -> "تنظیم دقیق مبدأ"
+            V13PickerMode.DESTINATION -> "تنظیم دقیق مقصد"
+            V13PickerMode.BOOKMARK -> "نقطه دقیق را روی نقشه مشخص کنید"
+        }
+        val confirmText = when (pickerMode) {
+            V13PickerMode.ORIGIN -> "ثبت مبدأ"
+            V13PickerMode.DESTINATION -> "ثبت مقصد"
+            V13PickerMode.BOOKMARK -> "تأیید مکان"
+        }
         Dialog(onDismissRequest = { pickerOpen = false }) {
             Surface(Modifier.fillMaxWidth().fillMaxHeight(.82f), color = V13Panel, shape = RoundedCornerShape(24.dp)) {
                 Column {
-                    Text("نقطه دقیق را روی نقشه مشخص کنید", color = Color.White, fontWeight = FontWeight.Black, modifier = Modifier.padding(14.dp))
+                    Text(pickerTitle, color = Color.White, fontWeight = FontWeight.Black, modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp))
+                    if (pickerMode != V13PickerMode.BOOKMARK) {
+                        Text("نقشه را جابه‌جا کنید تا نشانگر قرمز دقیقاً روی مسیر یا ورودی موردنظر قرار بگیرد.", color = Color.LightGray, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp))
+                    }
                     Box(Modifier.weight(1f).fillMaxWidth()) {
                         NvCodePickerMap(context, pin, state.satelliteMode, { pin = it }, Modifier.fillMaxSize())
                     }
@@ -290,10 +342,10 @@ fun NvReferenceV13(
                             Spacer(Modifier.width(4.dp))
                             Text("موقعیت من")
                         }
-                        Button(onClick = ::savePinAndOpenCode, enabled = pin != null, modifier = Modifier.weight(1f)) {
+                        Button(onClick = ::confirmPickerPoint, enabled = pin != null, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Rounded.Place, null)
                             Spacer(Modifier.width(4.dp))
-                            Text("تأیید مکان")
+                            Text(confirmText)
                         }
                     }
                 }
