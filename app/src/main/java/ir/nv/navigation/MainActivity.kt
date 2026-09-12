@@ -33,7 +33,7 @@ import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.navigation.service.NvNavigationService
 import ir.nv.navigation.ui.NvQrScannerOverlay
-import ir.nv.navigation.ui.NvReferenceV15
+import ir.nv.navigation.ui.NvReferenceV16
 import ir.nv.navigation.ui.NvViewModel
 import ir.nv.navigation.ui.RahnamaRouteComparisonFeature
 import ir.nv.navigation.ui.theme.AppThemeMode
@@ -145,7 +145,7 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 NvTheme(darkTheme = darkMode) {
                     Box(Modifier.fillMaxSize()) {
-                        NvReferenceV15(
+                        NvReferenceV16(
                             darkMode = darkMode,
                             themeMode = themeMode,
                             onThemeModeChange = { selected ->
@@ -168,8 +168,6 @@ class MainActivity : ComponentActivity() {
                                 viewModel = navigationViewModel,
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    // Keep the comparison action outside the route card so it never
-                                    // obscures the primary Start control or its accessibility semantics.
                                     .padding(end = 16.dp, bottom = 390.dp)
                             )
                         }
