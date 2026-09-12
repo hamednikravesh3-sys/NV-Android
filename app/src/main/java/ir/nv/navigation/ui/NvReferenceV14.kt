@@ -12,19 +12,22 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.online.OnlinePlacesService
+import ir.nv.navigation.places.NearbyCategory
+import ir.nv.navigation.places.NearbyPlaceProvider
+import ir.nv.navigation.places.NearbyScope
+import ir.nv.navigation.places.NearbySearchRequest
+import ir.nv.navigation.places.PlaceSearchContext
+import ir.nv.navigation.places.UnifiedPlaceRepository
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvColors
 import ir.nv.navigation.ui.theme.NvRadius
 import ir.nv.navigation.ui.theme.NvSpacing
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun NvReferenceV14(
@@ -36,6 +39,7 @@ fun NvReferenceV14(
     val state by viewModel.state.collectAsState()
     var nearbyOpen by remember { mutableStateOf(false) }
     var savedOpen by remember { mutableStateOf(false) }
+    var selectedPlace by remember { mutableStateOf<Place?>(null) }
 
     if (state.navigationActive) {
         NvReferenceV8(
@@ -60,7 +64,21 @@ fun NvReferenceV14(
         RahnamaNearbyDialog(
             state = state,
             viewModel = viewModel,
+            onPlaceSelected = { selectedPlace = it },
             onDismiss = { nearbyOpen = false }
+        )
+    }
+
+    selectedPlace?.let { place ->
+        RahnamaPlaceDetailsDialog(
+            place = place,
+            onRoute = {
+                if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
+                viewModel.selectDestination(place)
+                selectedPlace = null
+                nearbyOpen = false
+            },
+            onDismiss = { selectedPlace = null }
         )
     }
 
@@ -73,70 +91,80 @@ fun NvReferenceV14(
     }
 }
 
-private data class RahnamaNearbyCategory(val title: String, val query: String, val icon: String)
-
 @Composable
 private fun RahnamaNearbyDialog(
     state: NvUiState,
     viewModel: NvViewModel,
+    onPlaceSelected: (Place) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    val service = remember { OnlinePlacesService() }
+    val coroutineScope = rememberCoroutineScope()
+    val onlineService = remember { OnlinePlacesService() }
+    val repository = remember(onlineService) {
+        UnifiedPlaceRepository(
+            textSearch = { _, _, _, _ -> emptyList() },
+            onlineNearby = NearbyPlaceProvider { center, category, radiusMeters, limit ->
+                onlineService.searchNearby(center, category.query, radiusMeters, limit)
+            }
+        )
+    }
     var radiusKm by remember { mutableIntStateOf(5) }
-    var selectedCategory by remember { mutableStateOf<RahnamaNearbyCategory?>(null) }
+    var nearbyScope by remember { mutableStateOf(NearbyScope.AROUND_ME) }
+    var selectedCategory by remember { mutableStateOf<NearbyCategory?>(null) }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val categories = remember {
-        listOf(
-            RahnamaNearbyCategory("اورژانس", "اورژانس بیمارستان", "🚑"),
-            RahnamaNearbyCategory("بیمارستان", "بیمارستان", "🏥"),
-            RahnamaNearbyCategory("داروخانه", "داروخانه", "💊"),
-            RahnamaNearbyCategory("پلیس", "پلیس", "🚓"),
-            RahnamaNearbyCategory("آتش‌نشانی", "آتش نشانی", "🚒"),
-            RahnamaNearbyCategory("امداد", "امداد نجات", "🛟"),
-            RahnamaNearbyCategory("پارکینگ", "پارکینگ", "🅿️"),
-            RahnamaNearbyCategory("سوخت", "پمپ بنزین", "⛽"),
-            RahnamaNearbyCategory("شارژ EV", "شارژ خودرو برقی", "🔌"),
-            RahnamaNearbyCategory("پارک", "پارک", "🌳"),
-            RahnamaNearbyCategory("تفریح", "تفریح", "🎡"),
-            RahnamaNearbyCategory("رستوران", "رستوران", "🍽"),
-            RahnamaNearbyCategory("کافه", "کافه", "☕"),
-            RahnamaNearbyCategory("هتل", "هتل", "🏨"),
-            RahnamaNearbyCategory("خرید", "مرکز خرید", "🛍"),
-            RahnamaNearbyCategory("سینما", "سینما", "🎬"),
-            RahnamaNearbyCategory("دیدنی", "جاذبه گردشگری", "📸"),
-            RahnamaNearbyCategory("تعمیرگاه", "تعمیرگاه خودرو", "🔧"),
-            RahnamaNearbyCategory("بانک", "بانک", "🏦"),
-            RahnamaNearbyCategory("خودپرداز", "خودپرداز", "🏧"),
-            RahnamaNearbyCategory("خدمات", "خدمات", "🧰")
-        )
-    }
-
-    fun search(category: RahnamaNearbyCategory) {
+    fun search(category: NearbyCategory = selectedCategory ?: return) {
         selectedCategory = category
         results = emptyList()
         error = null
-        val center = state.currentLocation ?: state.origin?.coordinate
-        if (center == null) {
-            viewModel.useCurrentLocationAsOrigin()
-            error = "در حال دریافت موقعیت دقیق شما؛ دوباره دسته را انتخاب کنید"
+
+        val context = PlaceSearchContext(
+            currentLocation = state.currentLocation,
+            origin = state.origin?.coordinate,
+            destination = state.destination?.coordinate,
+            route = state.route,
+            onlineAvailable = state.onlineAvailable,
+            preferOffline = state.preferOffline
+        )
+        val missingAnchor = when (nearbyScope) {
+            NearbyScope.AROUND_ME -> context.currentLocation == null
+            NearbyScope.NEAR_ORIGIN -> context.origin == null
+            NearbyScope.NEAR_DESTINATION -> context.destination == null
+            NearbyScope.ALONG_ROUTE -> context.route == null
+        }
+        if (missingAnchor) {
+            if (nearbyScope == NearbyScope.AROUND_ME) viewModel.useCurrentLocationAsOrigin()
+            error = when (nearbyScope) {
+                NearbyScope.AROUND_ME -> "در حال دریافت موقعیت شما؛ چند لحظه دیگر دوباره تلاش کنید"
+                NearbyScope.NEAR_ORIGIN -> "ابتدا مبدأ را مشخص کنید"
+                NearbyScope.NEAR_DESTINATION -> "ابتدا مقصد را مشخص کنید"
+                NearbyScope.ALONG_ROUTE -> "ابتدا یک مسیر محاسبه کنید"
+            }
             return
         }
-        if (!state.onlineAvailable) {
-            error = "برای جستجوی آنلاین اطراف، اتصال اینترنت لازم است"
+        if (!state.onlineAvailable && !state.offlineReady) {
+            error = "اینترنت در دسترس نیست و داده آفلاین مکان‌ها نصب نشده است"
             return
         }
+
         loading = true
-        scope.launch {
-            val value = withContext(Dispatchers.IO) {
-                runCatching { service.searchNearby(center, category.query, radiusKm * 1000, 40) }
+        coroutineScope.launch {
+            val value = runCatching {
+                repository.nearby(
+                    NearbySearchRequest(
+                        category = category,
+                        scope = nearbyScope,
+                        radiusMeters = radiusKm * 1_000,
+                        limit = 40
+                    ),
+                    context
+                )
             }
             value.onSuccess {
                 results = it
-                if (it.isEmpty()) error = "در شعاع $radiusKm کیلومتر نتیجه‌ای پیدا نشد"
+                if (it.isEmpty()) error = "در محدوده انتخاب‌شده نتیجه‌ای پیدا نشد"
             }.onFailure { error = it.message ?: "جستجوی اطراف ناموفق بود" }
             loading = false
         }
@@ -148,14 +176,31 @@ private fun RahnamaNearbyDialog(
         title = {
             Column {
                 Text("اطراف من", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black)
-                Text("دسته‌بندی خدمات و مکان‌های نزدیک", color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.bodySmall)
+                Text("دسته، محدوده و شعاع جستجو را انتخاب کنید", color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.bodySmall)
             }
         },
         text = {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 620.dp).verticalScroll(rememberScrollState()),
+                Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(NvSpacing.Md)
             ) {
+                Text("محدوده جستجو", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Bold)
+                NearbyScope.entries.chunked(2).forEach { rowScopes ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Sm)) {
+                        rowScopes.forEach { item ->
+                            FilterChip(
+                                selected = nearbyScope == item,
+                                onClick = {
+                                    nearbyScope = item
+                                    selectedCategory?.let(::search)
+                                },
+                                label = { Text(item.title) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
                 Text("شعاع جستجو", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
                     listOf(5, 10, 25, 50, 100).forEach { km ->
@@ -165,14 +210,14 @@ private fun RahnamaNearbyDialog(
                                 radiusKm = km
                                 selectedCategory?.let(::search)
                             },
-                            label = { Text("$km km") },
+                            label = { Text("$km") },
                             modifier = Modifier.weight(1f)
                         )
                     }
                 }
 
                 Text("دسته‌ها", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Bold)
-                categories.chunked(3).forEach { rowItems ->
+                NearbyCategory.entries.chunked(3).forEach { rowItems ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Sm)) {
                         rowItems.forEach { category ->
                             val selected = selectedCategory == category
@@ -182,9 +227,10 @@ private fun RahnamaNearbyDialog(
                                 shape = RoundedCornerShape(NvRadius.Medium),
                                 border = BorderStroke(1.dp, if (selected) NvColors.RouteBlue else NvColors.DividerDark)
                             ) {
-                                Column(Modifier.padding(vertical = 10.dp, horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(category.icon, style = MaterialTheme.typography.titleLarge)
-                                    Text(category.title, color = NvColors.TextPrimaryDark, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                Column(Modifier.padding(vertical = 11.dp, horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(categoryIcon(category), contentDescription = category.title, tint = categoryColor(category))
+                                    Spacer(Modifier.height(5.dp))
+                                    Text(category.title, color = NvColors.TextPrimaryDark, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -196,14 +242,10 @@ private fun RahnamaNearbyDialog(
                 error?.let { Text(it, color = NvColors.Warning) }
 
                 if (results.isNotEmpty()) {
-                    Text("نتایج", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Bold)
+                    Text("نتایج ${selectedCategory?.title.orEmpty()}", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Bold)
                     results.take(20).forEach { place ->
                         Surface(
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
-                                viewModel.selectDestination(place)
-                                onDismiss()
-                            },
+                            modifier = Modifier.fillMaxWidth().clickable { onPlaceSelected(place) },
                             color = NvColors.Navy850,
                             shape = RoundedCornerShape(NvRadius.Medium),
                             border = BorderStroke(1.dp, NvColors.DividerDark)
@@ -214,13 +256,13 @@ private fun RahnamaNearbyDialog(
                                 Column(Modifier.weight(1f)) {
                                     Text(place.name, color = NvColors.TextPrimaryDark, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     val detail = buildList {
-                                        place.distance?.let { add(if (it < 1000) "${it.toInt()} متر" else String.format("%.1f km", it / 1000.0)) }
+                                        place.distance?.let { add(formatDistance(it)) }
                                         place.rating?.let { add("★ %.1f".format(it)) }
                                         place.address?.takeIf(String::isNotBlank)?.let { add(it) }
                                     }.joinToString(" • ")
                                     if (detail.isNotBlank()) Text(detail, color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
-                                Icon(Icons.Rounded.Navigation, contentDescription = "مسیریابی", tint = NvColors.RouteBlue)
+                                Icon(Icons.Rounded.ChevronLeft, contentDescription = "جزئیات مکان", tint = NvColors.RouteBlue)
                             }
                         }
                     }
@@ -230,6 +272,109 @@ private fun RahnamaNearbyDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("بستن", color = NvColors.RouteBlue) } }
     )
 }
+
+@Composable
+private fun RahnamaPlaceDetailsDialog(
+    place: Place,
+    onRoute: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = NvColors.Navy900,
+        icon = {
+            Surface(
+                color = NvColors.RouteBlue.copy(alpha = .16f),
+                shape = RoundedCornerShape(NvRadius.Card),
+                border = BorderStroke(1.dp, NvColors.RouteBlue.copy(alpha = .5f))
+            ) {
+                Icon(Icons.Rounded.Place, contentDescription = null, tint = NvColors.RouteBlue, modifier = Modifier.padding(14.dp).size(30.dp))
+            }
+        },
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(place.name, color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                place.category?.takeIf(String::isNotBlank)?.let {
+                    Text(it, color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        },
+        text = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NvSpacing.Md)) {
+                place.address?.takeIf(String::isNotBlank)?.let { PlaceDetailRow(Icons.Rounded.LocationOn, "نشانی", it) }
+                place.phone?.takeIf(String::isNotBlank)?.let { PlaceDetailRow(Icons.Rounded.Call, "تلفن", it) }
+                place.distance?.let { PlaceDetailRow(Icons.Rounded.NearMe, "فاصله", formatDistance(it)) }
+                place.rating?.let { rating ->
+                    val reviews = place.reviewCount?.takeIf { it > 0 }?.let { " • $it نظر" }.orEmpty()
+                    PlaceDetailRow(Icons.Rounded.Star, "امتیاز", "%.1f%s".format(rating, reviews))
+                }
+                val openText = when {
+                    place.open24Hours == true -> "شبانه‌روزی"
+                    place.isOpen == true -> "اکنون باز است"
+                    place.isOpen == false -> "اکنون بسته است"
+                    else -> null
+                }
+                openText?.let { PlaceDetailRow(Icons.Rounded.Schedule, "وضعیت", it) }
+                PlaceDetailRow(Icons.Rounded.Database, "منبع", place.source.ifBlank { "نامشخص" })
+            }
+        },
+        confirmButton = {
+            Button(onClick = onRoute) {
+                Icon(Icons.Rounded.Navigation, contentDescription = null)
+                Spacer(Modifier.width(NvSpacing.Xs))
+                Text("مسیریابی")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("بازگشت") } }
+    )
+}
+
+@Composable
+private fun PlaceDetailRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Icon(icon, contentDescription = null, tint = NvColors.RouteBlue, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(NvSpacing.Sm))
+        Column(Modifier.weight(1f)) {
+            Text(label, color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall)
+            Text(value, color = NvColors.TextPrimaryDark, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+private fun categoryIcon(category: NearbyCategory) = when (category) {
+    NearbyCategory.EMERGENCY -> Icons.Rounded.Emergency
+    NearbyCategory.HOSPITAL -> Icons.Rounded.LocalHospital
+    NearbyCategory.PHARMACY -> Icons.Rounded.LocalPharmacy
+    NearbyCategory.POLICE -> Icons.Rounded.LocalPolice
+    NearbyCategory.FIRE -> Icons.Rounded.LocalFireDepartment
+    NearbyCategory.RESCUE -> Icons.Rounded.HealthAndSafety
+    NearbyCategory.PARKING -> Icons.Rounded.LocalParking
+    NearbyCategory.FUEL -> Icons.Rounded.LocalGasStation
+    NearbyCategory.EV -> Icons.Rounded.EvStation
+    NearbyCategory.PARKS -> Icons.Rounded.Park
+    NearbyCategory.RECREATION -> Icons.Rounded.Attractions
+    NearbyCategory.RESTAURANTS -> Icons.Rounded.Restaurant
+    NearbyCategory.CAFE -> Icons.Rounded.LocalCafe
+    NearbyCategory.HOTEL -> Icons.Rounded.Hotel
+    NearbyCategory.SHOPPING -> Icons.Rounded.ShoppingBag
+    NearbyCategory.CINEMA -> Icons.Rounded.Movie
+    NearbyCategory.ATTRACTIONS -> Icons.Rounded.PhotoCamera
+    NearbyCategory.REPAIR -> Icons.Rounded.CarRepair
+    NearbyCategory.BANK -> Icons.Rounded.AccountBalance
+    NearbyCategory.ATM -> Icons.Rounded.LocalAtm
+    NearbyCategory.SERVICES -> Icons.Rounded.HomeRepairService
+}
+
+private fun categoryColor(category: NearbyCategory) = when (category) {
+    NearbyCategory.EMERGENCY, NearbyCategory.FIRE -> NvColors.Emergency
+    NearbyCategory.HOSPITAL, NearbyCategory.POLICE -> NvColors.Info
+    NearbyCategory.PHARMACY, NearbyCategory.PARKS -> NvColors.Success
+    NearbyCategory.FUEL, NearbyCategory.RESTAURANTS, NearbyCategory.CAFE -> NvColors.Warning
+    else -> NvColors.RouteBlue
+}
+
+private fun formatDistance(distanceMeters: Double): String =
+    if (distanceMeters < 1_000) "${distanceMeters.toInt()} متر" else String.format("%.1f کیلومتر", distanceMeters / 1_000.0)
 
 @Composable
 private fun RahnamaSavedDialog(state: NvUiState, viewModel: NvViewModel, onDismiss: () -> Unit) {
