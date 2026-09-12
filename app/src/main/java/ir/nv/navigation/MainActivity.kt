@@ -33,7 +33,7 @@ import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.navigation.service.NvNavigationService
 import ir.nv.navigation.ui.NvQrScannerOverlay
-import ir.nv.navigation.ui.NvReferenceV13
+import ir.nv.navigation.ui.NvReferenceV14
 import ir.nv.navigation.ui.NvViewModel
 import ir.nv.navigation.ui.OfflineMapDiagnosticsButton
 import ir.nv.navigation.ui.ProvinceDownloadOverlay
@@ -144,7 +144,7 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 NvTheme(darkTheme = darkMode) {
                     Box(Modifier.fillMaxSize()) {
-                        NvReferenceV13(
+                        NvReferenceV14(
                             darkMode = darkMode,
                             themeMode = themeMode,
                             onThemeModeChange = { selected ->
