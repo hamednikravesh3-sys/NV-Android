@@ -146,17 +146,17 @@ jobs:
         with:
           name: NV-debug-apk
           path: app/build/outputs/apk/debug
-      - name: Install and verify NV launch on Android 16
+      - name: Install and verify NV first draw on Android 16
         uses: reactivecircus/android-emulator-runner@v2
         env:
           NV_VERIFY_APK: app/build/outputs/apk/debug/app-debug.apk
         with:
           api-level: 36
-          target: google_apis
+          target: default
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          emulator-boot-timeout: 900
+          emulator-boot-timeout: 600
           script: bash .github/scripts/verify-nv-launch-modern.sh
       - name: Upload Android 16 diagnostics
         if: always()
