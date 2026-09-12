@@ -49,6 +49,57 @@ adb_shell_retry() {
   return 1
 }
 
+dump_ui() {
+  local output="${1:-nv-modern-ui.xml}"
+  adb shell uiautomator dump /sdcard/nv-modern-ui.xml >/dev/null 2>&1 || true
+  adb pull /sdcard/nv-modern-ui.xml "$output" >/dev/null 2>&1 || true
+  [[ -s "$output" ]]
+}
+
+ui_has_text() {
+  local needle="$1"
+  local file="${2:-nv-modern-ui.xml}"
+  [[ -s "$file" ]] && grep -Fq "$needle" "$file"
+}
+
+tap_ui_text() {
+  local text="$1"
+  dump_ui nv-modern-ui.xml || return 1
+  local coordinates
+  coordinates="$(UI_TARGET="$text" python3 - <<'PY'
+import os, re, sys, xml.etree.ElementTree as ET
+path = "nv-modern-ui.xml"
+target = os.environ["UI_TARGET"]
+try:
+    root = ET.parse(path).getroot()
+except Exception:
+    sys.exit(1)
+for node in root.iter("node"):
+    if node.attrib.get("text") == target or node.attrib.get("content-desc") == target:
+        m = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if m:
+            x1, y1, x2, y2 = map(int, m.groups())
+            print(f"{(x1+x2)//2} {(y1+y2)//2}")
+            sys.exit(0)
+sys.exit(1)
+PY
+)" || return 1
+  read -r x y <<<"$coordinates"
+  adb_shell_retry input tap "$x" "$y" >/dev/null
+}
+
+tap_search_field() {
+  local size width height
+  size="$(adb shell wm size 2>/dev/null | tail -1 | grep -Eo '[0-9]+x[0-9]+' || true)"
+  width="${size%x*}"
+  height="${size#*x}"
+  if [[ -z "$width" || -z "$height" || "$width" == "$size" ]]; then
+    width=1080
+    height=1920
+  fi
+  adb_shell_retry input tap "$((width / 2))" "$((height * 10 / 100))" >/dev/null
+}
+
 rm -f nv-modern-*.txt nv-modern-*.png nv-modern-*.xml
 adb wait-for-device
 
@@ -76,7 +127,7 @@ adb install -r "$APK_PATH"
 adb_shell_retry pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION || true
 adb_shell_retry pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
 
-# Seed a deterministic GPS fix before cold start. Emulator command order is longitude, latitude.
+# Seed a deterministic Tehran GPS fix before cold start. Emulator command order is longitude, latitude.
 adb emu geo fix "$TEST_LON" "$TEST_LAT" >/dev/null 2>&1 || true
 sleep 2
 
@@ -106,7 +157,7 @@ for attempt in $(seq 1 90); do
   fi
 
   # Launcher/SystemUI may ANR on constrained API 36 CI runners even while NV is fully drawn.
-  # Dismiss only unrelated platform dialogs; app ANRs remain fatal.
+  # Dismiss unrelated platform dialogs; app ANRs remain fatal.
   if window_state_has_anr_dialog "$WINDOW_STATE"; then
     if [[ "$WINDOW_STATE" == *"Application Not Responding: com.android.launcher3"* ]]; then
       adb_shell_retry am force-stop com.android.launcher3 >/dev/null 2>&1 || true
@@ -118,9 +169,7 @@ for attempt in $(seq 1 90); do
 
   if (( attempt % 3 == 0 )); then
     adb emu geo fix "$TEST_LON" "$TEST_LAT" >/dev/null 2>&1 || true
-    adb shell uiautomator dump /sdcard/nv-modern-ui.xml >/dev/null 2>&1 || true
-    adb pull /sdcard/nv-modern-ui.xml nv-modern-ui.xml >/dev/null 2>&1 || true
-    if [[ -s nv-modern-ui.xml ]] && grep -q 'موقعیت فعال' nv-modern-ui.xml; then
+    if dump_ui nv-modern-ui.xml && ui_has_text 'موقعیت فعال' nv-modern-ui.xml; then
       LOCATION_READY=1
     fi
   fi
@@ -134,19 +183,6 @@ for attempt in $(seq 1 90); do
   fi
   sleep 2
 done
-
-adb shell dumpsys activity activities > nv-modern-activity-state.txt || true
-adb shell dumpsys window windows > nv-modern-window-state.txt || true
-adb logcat -d > nv-modern-logcat.txt || true
-adb exec-out screencap -p > nv-modern-launch-screen.png || true
-adb shell uiautomator dump /sdcard/nv-modern-ui.xml >/dev/null 2>&1 || true
-adb pull /sdcard/nv-modern-ui.xml nv-modern-ui.xml >/dev/null 2>&1 || true
-
-PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
-: > nv-modern-app-logcat.txt
-if [[ -n "$PID" ]]; then
-  adb logcat -d --pid="$PID" > nv-modern-app-logcat.txt 2>/dev/null || true
-fi
 
 if [[ -z "$PID" ]]; then
   echo "NV process is not alive on modern Android"
@@ -162,6 +198,67 @@ if [[ "$FIRST_DRAW" -ne 1 ]]; then
 fi
 if [[ "$LOCATION_READY" -ne 1 ]]; then
   echo "NV did not consume the injected Android 16 GPS fix"
+  exit 1
+fi
+
+# Exercise the actual Home search flow using the built-in IranCityIndex (no online geocoder dependency).
+tap_search_field
+adb_shell_retry input text karaj >/dev/null
+SEARCH_READY=0
+for attempt in $(seq 1 30); do
+  if dump_ui nv-modern-search-ui.xml && ui_has_text 'کرج' nv-modern-search-ui.xml; then
+    SEARCH_READY=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$SEARCH_READY" -ne 1 ]]; then
+  echo "NV Android 16 Home search did not return built-in Karaj result"
+  exit 1
+fi
+
+if ! tap_ui_text 'کرج'; then
+  echo "NV could not select the Karaj search result"
+  exit 1
+fi
+
+# Selecting the destination must trigger the real route coordinator. Keep the GPS origin fresh
+# while waiting for the route card; this intentionally validates online routing availability too.
+ROUTE_READY=0
+for attempt in $(seq 1 60); do
+  if (( attempt % 4 == 0 )); then
+    adb emu geo fix "$TEST_LON" "$TEST_LAT" >/dev/null 2>&1 || true
+  fi
+  if dump_ui nv-modern-route-ui.xml && ui_has_text 'شروع' nv-modern-route-ui.xml; then
+    ROUTE_READY=1
+    break
+  fi
+  WINDOW_STATE="$(adb shell dumpsys window windows 2>/dev/null || true)"
+  if window_state_has_app_anr_dialog "$WINDOW_STATE"; then
+    echo "NV ANR while calculating route"
+    break
+  fi
+  sleep 1
+done
+if [[ "$ROUTE_READY" -ne 1 ]]; then
+  echo "NV Android 16 did not produce a route card from Tehran GPS origin to Karaj"
+  exit 1
+fi
+
+adb shell dumpsys activity activities > nv-modern-activity-state.txt || true
+adb shell dumpsys window windows > nv-modern-window-state.txt || true
+adb logcat -d > nv-modern-logcat.txt || true
+adb exec-out screencap -p > nv-modern-launch-screen.png || true
+dump_ui nv-modern-ui.xml || true
+
+PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
+: > nv-modern-app-logcat.txt
+if [[ -n "$PID" ]]; then
+  adb logcat -d --pid="$PID" > nv-modern-app-logcat.txt 2>/dev/null || true
+fi
+
+if [[ -z "$PID" ]]; then
+  echo "NV process died during Android 16 route verification"
   exit 1
 fi
 
@@ -188,4 +285,4 @@ if grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-modern-logcat.txt; then
   exit 1
 fi
 
-echo "NV Android 16 first-draw and GPS verification passed for $PACKAGE (pid=$PID)"
+echo "NV Android 16 GPS, search, and route verification passed for $PACKAGE (pid=$PID)"
