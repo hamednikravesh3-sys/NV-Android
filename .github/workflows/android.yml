@@ -211,4 +211,7 @@ jobs:
             nv-modern-activity-state.txt
             nv-modern-logcat.txt
             nv-modern-app-logcat.txt
+            nv-modern-ui.xml
+            nv-modern-search-ui.xml
+            nv-modern-route-ui.xml
           if-no-files-found: warn
