@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -39,6 +42,7 @@ import androidx.core.content.ContextCompat
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.data.NvCodeAllocationService
 import ir.nv.navigation.data.NvQrScanner
+import ir.nv.navigation.ui.theme.NvColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,7 +50,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun NvQrScannerOverlay(
     viewModel: NvViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -54,6 +59,11 @@ fun NvQrScannerOverlay(
     var dialogOpen by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+
+    fun openScanner() {
+        message = null
+        dialogOpen = true
+    }
 
     fun applyScan(bitmap: Bitmap?) {
         if (bitmap == null) {
@@ -124,19 +134,31 @@ fun NvQrScannerOverlay(
         else message = "برای اسکن QR با دوربین، دسترسی دوربین لازم است"
     }
 
-    ExtendedFloatingActionButton(
-        onClick = {
-            message = null
-            dialogOpen = true
-        },
-        modifier = modifier,
-        icon = { Icon(Icons.Rounded.QrCode2, contentDescription = null) },
-        text = { Text("اسکن QR") }
-    )
+    if (compact) {
+        FloatingActionButton(
+            onClick = ::openScanner,
+            modifier = modifier,
+            shape = CircleShape,
+            containerColor = NvColors.Navy900,
+            contentColor = NvColors.RouteBlue
+        ) {
+            Icon(Icons.Rounded.QrCode2, contentDescription = "اسکن QR")
+        }
+    } else {
+        ExtendedFloatingActionButton(
+            onClick = ::openScanner,
+            modifier = modifier,
+            icon = { Icon(Icons.Rounded.QrCode2, contentDescription = null) },
+            text = { Text("اسکن QR") }
+        )
+    }
 
     if (dialogOpen) {
         AlertDialog(
             onDismissRequest = { if (!busy) dialogOpen = false },
+            containerColor = NvColors.Navy900,
+            titleContentColor = NvColors.TextPrimaryDark,
+            textContentColor = NvColors.TextPrimaryDark,
             title = { Text("اسکن کد NV", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -158,14 +180,15 @@ fun NvQrScannerOverlay(
                         OutlinedButton(
                             onClick = { galleryLauncher.launch("image/*") },
                             enabled = !busy,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, NvColors.RouteBlue)
                         ) {
                             Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("گالری")
                         }
                     }
-                    if (busy) Text("در حال خواندن QR…", color = MaterialTheme.colorScheme.primary)
+                    if (busy) Text("در حال خواندن QR…", color = NvColors.RouteBlue)
                     message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
