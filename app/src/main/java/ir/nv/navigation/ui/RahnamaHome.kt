@@ -53,10 +53,16 @@ fun RahnamaHomeScreen(
     fun hasFineLocationPermission() =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+    fun hasLocationPermission() =
+        hasFineLocationPermission() ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
     val locationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
             viewModel.useCurrentLocationAsOrigin()
             viewModel.recenterNavigation()
         }
@@ -66,11 +72,13 @@ fun RahnamaHomeScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) viewModel.startNavigation()
+        else if (permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true) viewModel.useCurrentLocationAsOrigin()
     }
 
     fun locateMe() {
-        if (hasFineLocationPermission()) {
-            if (state.currentLocation == null) viewModel.useCurrentLocationAsOrigin() else viewModel.recenterNavigation()
+        if (hasLocationPermission()) {
+            viewModel.useCurrentLocationAsOrigin()
+            viewModel.recenterNavigation()
         } else {
             locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
@@ -130,6 +138,10 @@ fun RahnamaHomeScreen(
                     text = if (state.satelliteMode) "ماهواره‌ای" else "نقشه",
                     accent = NvColors.RouteBlue
                 )
+                when {
+                    state.locating -> RahnamaStatusChip(Icons.Rounded.MyLocation, "در حال یافتن موقعیت", NvColors.Warning)
+                    state.currentLocation != null -> RahnamaStatusChip(Icons.Rounded.MyLocation, "موقعیت فعال", NvColors.Success)
+                }
                 if (state.routing) RahnamaStatusChip(Icons.Rounded.Route, "در حال محاسبه مسیر", NvColors.Warning)
             }
         }
@@ -141,7 +153,7 @@ fun RahnamaHomeScreen(
             verticalArrangement = Arrangement.spacedBy(NvSpacing.Sm)
         ) {
             RahnamaMapButton(Icons.Rounded.Layers, "تغییر نمای نقشه") { viewModel.toggleSatelliteMode() }
-            RahnamaMapButton(Icons.Rounded.MyLocation, "موقعیت من", highlight = true, onClick = ::locateMe)
+            RahnamaMapButton(Icons.Rounded.MyLocation, if (state.locating) "در حال یافتن موقعیت" else "موقعیت من", highlight = true, onClick = ::locateMe)
         }
 
         if (state.routeAlternatives.isEmpty() && !searchExpanded) {
