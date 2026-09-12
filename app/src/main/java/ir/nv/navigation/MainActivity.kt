@@ -168,7 +168,9 @@ class MainActivity : ComponentActivity() {
                                 viewModel = navigationViewModel,
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .padding(end = 16.dp, bottom = 205.dp)
+                                    // Keep the comparison action outside the route card so it never
+                                    // obscures the primary Start control or its accessibility semantics.
+                                    .padding(end = 16.dp, bottom = 390.dp)
                             )
                         }
                     }
