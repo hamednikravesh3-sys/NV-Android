@@ -35,6 +35,7 @@ import ir.nv.navigation.navigation.service.NvNavigationService
 import ir.nv.navigation.ui.NvQrScannerOverlay
 import ir.nv.navigation.ui.NvReferenceV14
 import ir.nv.navigation.ui.NvViewModel
+import ir.nv.navigation.ui.RahnamaRouteComparisonFeature
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvTheme
 import kotlinx.coroutines.delay
@@ -75,9 +76,7 @@ class MainActivity : ComponentActivity() {
             ) { permissions ->
                 val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                     permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-                if (granted) {
-                    navigationViewModel.useCurrentLocationAsOrigin()
-                }
+                if (granted) navigationViewModel.useCurrentLocationAsOrigin()
             }
 
             LaunchedEffect(Unit) {
@@ -99,6 +98,7 @@ class MainActivity : ComponentActivity() {
                     delay(60_000)
                 }
             }
+
             val darkMode = when (themeMode) {
                 AppThemeMode.AUTO -> automaticNight
                 AppThemeMode.DAY -> false
@@ -162,6 +162,13 @@ class MainActivity : ComponentActivity() {
                                     .align(Alignment.TopEnd)
                                     .statusBarsPadding()
                                     .padding(top = 118.dp, end = 16.dp)
+                            )
+                            RahnamaRouteComparisonFeature(
+                                state = navigationState,
+                                viewModel = navigationViewModel,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(end = 16.dp, bottom = 205.dp)
                             )
                         }
                     }
