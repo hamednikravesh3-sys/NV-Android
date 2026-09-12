@@ -100,6 +100,29 @@ tap_search_field() {
   adb_shell_retry input tap "$((width / 2))" "$((height * 10 / 100))" >/dev/null
 }
 
+collect_diagnostics() {
+  adb shell dumpsys activity activities > nv-modern-activity-state.txt 2>/dev/null || true
+  adb shell dumpsys window windows > nv-modern-window-state.txt 2>/dev/null || true
+  adb logcat -d > nv-modern-logcat.txt 2>/dev/null || true
+  adb exec-out screencap -p > nv-modern-launch-screen.png 2>/dev/null || true
+  dump_ui nv-modern-ui.xml || true
+  local diagnostic_pid
+  diagnostic_pid="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
+  : > nv-modern-app-logcat.txt
+  if [[ -n "$diagnostic_pid" ]]; then
+    adb logcat -d --pid="$diagnostic_pid" > nv-modern-app-logcat.txt 2>/dev/null || true
+  fi
+}
+
+on_exit() {
+  local status=$?
+  if [[ "$status" -ne 0 ]]; then
+    collect_diagnostics
+  fi
+  exit "$status"
+}
+trap on_exit EXIT
+
 rm -f nv-modern-*.txt nv-modern-*.png nv-modern-*.xml
 adb wait-for-device
 
@@ -201,6 +224,34 @@ if [[ "$LOCATION_READY" -ne 1 ]]; then
   exit 1
 fi
 
+# Exercise the Rahnama Nearby hub before route planning. This is intentionally deterministic:
+# it validates the new product architecture without depending on third-party POI availability.
+if ! tap_ui_text 'همه اطراف من'; then
+  echo "NV Android 16 could not open the Rahnama Nearby hub"
+  exit 1
+fi
+NEARBY_READY=0
+for attempt in $(seq 1 20); do
+  if dump_ui nv-modern-nearby-ui.xml && \
+     ui_has_text 'محدوده جستجو' nv-modern-nearby-ui.xml && \
+     ui_has_text 'شعاع جستجو' nv-modern-nearby-ui.xml && \
+     ui_has_text 'داروخانه' nv-modern-nearby-ui.xml && \
+     ui_has_text 'پارکینگ' nv-modern-nearby-ui.xml && \
+     ui_has_text 'اورژانس' nv-modern-nearby-ui.xml; then
+    NEARBY_READY=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$NEARBY_READY" -ne 1 ]]; then
+  echo "NV Android 16 Nearby hub did not expose scopes, radius controls and core categories"
+  exit 1
+fi
+if ! tap_ui_text 'بستن'; then
+  adb_shell_retry input keyevent 4 >/dev/null 2>&1 || true
+fi
+sleep 1
+
 # Exercise the actual Home search flow using the built-in IranCityIndex (no online geocoder dependency).
 tap_search_field
 adb_shell_retry input text karaj >/dev/null
@@ -245,17 +296,9 @@ if [[ "$ROUTE_READY" -ne 1 ]]; then
   exit 1
 fi
 
-adb shell dumpsys activity activities > nv-modern-activity-state.txt || true
-adb shell dumpsys window windows > nv-modern-window-state.txt || true
-adb logcat -d > nv-modern-logcat.txt || true
-adb exec-out screencap -p > nv-modern-launch-screen.png || true
-dump_ui nv-modern-ui.xml || true
+collect_diagnostics
 
 PID="$(adb shell pidof "$PACKAGE" 2>/dev/null | tr -d '\r' | awk '{print $1}' || true)"
-: > nv-modern-app-logcat.txt
-if [[ -n "$PID" ]]; then
-  adb logcat -d --pid="$PID" > nv-modern-app-logcat.txt 2>/dev/null || true
-fi
 
 if [[ -z "$PID" ]]; then
   echo "NV process died during Android 16 route verification"
@@ -285,4 +328,5 @@ if grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-modern-logcat.txt; then
   exit 1
 fi
 
-echo "NV Android 16 GPS, search, and route verification passed for $PACKAGE (pid=$PID)"
+trap - EXIT
+echo "NV Android 16 GPS, Nearby, search, and route verification passed for $PACKAGE (pid=$PID)"
