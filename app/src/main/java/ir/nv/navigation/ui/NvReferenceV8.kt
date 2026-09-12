@@ -64,7 +64,9 @@ fun NvReferenceV8(
     onThemeModeChange: (AppThemeMode) -> Unit,
     viewModel: NvViewModel,
     onNearby: (() -> Unit)? = null,
-    onPin: (() -> Unit)? = null
+    onPin: (() -> Unit)? = null,
+    onRefineOrigin: (() -> Unit)? = null,
+    onRefineDestination: (() -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -74,19 +76,105 @@ fun NvReferenceV8(
     var searchTarget by remember { mutableStateOf(V8SearchTarget.ORIGIN) }
     var settingsVisible by remember { mutableStateOf(false) }
     var lastPair by remember { mutableStateOf<String?>(null) }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions -> if (permissions.values.any { it }) viewModel.startNavigation() }
-    fun startDriving() {
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (granted) viewModel.startNavigation() else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    var preciseLocationWarning by remember { mutableStateOf(false) }
+
+    fun hasFineLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    val navigationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+            preciseLocationWarning = false
+            viewModel.startNavigation()
+        } else {
+            preciseLocationWarning = true
+        }
     }
+
+    val currentLocationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+            preciseLocationWarning = false
+            viewModel.useCurrentLocationAsOrigin()
+        } else {
+            preciseLocationWarning = true
+        }
+    }
+
+    fun startDriving() {
+        if (hasFineLocationPermission()) {
+            preciseLocationWarning = false
+            viewModel.startNavigation()
+        } else {
+            navigationPermissionLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+
+    fun useCurrentLocationAsOrigin() {
+        if (hasFineLocationPermission()) {
+            preciseLocationWarning = false
+            viewModel.useCurrentLocationAsOrigin()
+        } else {
+            currentLocationPermissionLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+
+    fun locateMe() {
+        if (!hasFineLocationPermission()) {
+            currentLocationPermissionLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+            return
+        }
+        preciseLocationWarning = false
+        if (state.currentLocation != null) viewModel.recenterNavigation()
+        else viewModel.useCurrentLocationAsOrigin()
+    }
+
     val pairKey = if (state.origin != null && state.destination != null) "${state.origin!!.coordinate.latitude},${state.origin!!.coordinate.longitude}->${state.destination!!.coordinate.latitude},${state.destination!!.coordinate.longitude}" else null
     LaunchedEffect(pairKey) { if (pairKey != null && pairKey != lastPair) { lastPair = pairKey; searchVisible = false; viewModel.clearRoute(); viewModel.calculateRoute() } }
+
     Box(Modifier.fillMaxSize().background(if (darkMode) Color.Black else Color(0xFFEAF2F6))) {
         V8Map(state, viewModel, darkMode)
-        if (!state.navigationActive && (searchVisible || state.routeAlternatives.isEmpty())) V8SearchPanel(state, viewModel, searchTarget, { searchTarget = it }, { if (state.origin != null && state.destination != null) searchVisible = false }, panel, text, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(10.dp))
+        if (!state.navigationActive && (searchVisible || state.routeAlternatives.isEmpty())) {
+            V8SearchPanel(
+                state = state,
+                vm = viewModel,
+                target = searchTarget,
+                onTargetChange = { searchTarget = it },
+                onClose = { if (state.origin != null && state.destination != null) searchVisible = false },
+                onUseCurrentLocation = ::useCurrentLocationAsOrigin,
+                onRefineOrigin = onRefineOrigin,
+                onRefineDestination = onRefineDestination,
+                panel = panel,
+                text = text,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(10.dp)
+            )
+        }
         if (!state.navigationActive && !searchVisible && state.routeAlternatives.isNotEmpty()) V8RouteStrip(state, viewModel, panel, text, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp))
         if (state.navigationActive) V8ManeuverHud(state, panel, text, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp))
         if (state.navigationActive) Surface(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 12.dp, bottom = 100.dp), CircleShape, panel, border = BorderStroke(4.dp, V8Green)) { Box(Modifier.size(78.dp), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(state.speedKmh.toString(), color = text, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black); Text("km/h", color = V8Green, style = MaterialTheme.typography.labelSmall) } } }
+
+        if (!state.navigationActive) {
+            Surface(
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 12.dp),
+                shape = CircleShape,
+                color = panel,
+                border = BorderStroke(1.dp, V8Cyan.copy(alpha = .65f)),
+                shadowElevation = 8.dp
+            ) {
+                IconButton(onClick = ::locateMe, modifier = Modifier.size(52.dp)) {
+                    Icon(Icons.Rounded.MyLocation, "یافتن موقعیت من", tint = V8Cyan, modifier = Modifier.size(29.dp))
+                }
+            }
+        }
+
         V8BottomBar(
             state.navigationActive,
             state.route != null,
@@ -101,12 +189,31 @@ fun NvReferenceV8(
             { settingsVisible = true },
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp)
         )
+
+        if (preciseLocationWarning) {
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 92.dp),
+                containerColor = if (darkMode) Color(0xFF193246) else Color.White,
+                contentColor = text
+            ) {
+                Text("برای مکان دقیق، دسترسی «مکان دقیق / Precise location» را فعال کنید.")
+            }
+        }
+
         if (settingsVisible) ModalBottomSheet(onDismissRequest = { settingsVisible = false }, containerColor = panel, contentColor = text) { Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text("تنظیمات NV", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black); Text("روز / شب", color = V8Muted); Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { AppThemeMode.entries.forEach { mode -> FilterChip(selected = themeMode == mode, onClick = { onThemeModeChange(mode) }, label = { Text(mode.title) }, modifier = Modifier.weight(1f)) } }; Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { Text("نقشه آفلاین ایران"); Switch(checked = state.preferOffline, onCheckedChange = { enabled -> if (enabled && !state.offlineReady) viewModel.startMapDownload() else viewModel.setPreferOffline(enabled) }) }; Text(if (state.offlineReady) "بسته آفلاین ایران نصب است؛ نمایش و مسیریابی می‌تواند بدون اینترنت انجام شود." else "برای استفاده آفلاین، بسته کامل ایران را دانلود کنید.", color = V8Muted, style = MaterialTheme.typography.labelSmall); if (!state.offlineReady) Button(onClick = viewModel::startMapDownload, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Rounded.Download, null); Spacer(Modifier.width(6.dp)); Text("دانلود نقشه آفلاین ایران") }; Spacer(Modifier.height(12.dp)) } }
     }
 }
 
 @Composable private fun V8Map(state: NvUiState, vm: NvViewModel, darkMode: Boolean) {
-    val context = LocalContext.current; val routes = state.routeAlternatives.ifEmpty { listOfNotNull(state.route) }; val coded = (state.personalPlaces + state.recentPlaces + listOfNotNull(state.origin, state.destination)).distinctBy { it.personalCode ?: it.code.toString() }
+    val context = LocalContext.current
+    val routes = remember(state.routeAlternatives, state.route) { state.routeAlternatives.ifEmpty { listOfNotNull(state.route) } }
+    val coded = remember(state.personalPlaces, state.recentPlaces, state.origin, state.destination) {
+        (state.personalPlaces + state.recentPlaces + listOfNotNull(state.origin, state.destination))
+            .distinctBy { it.personalCode ?: it.code.toString() }
+    }
     when (NavigationModeResolver.preferredSource(state.onlineAvailable, state.offlineReady, state.preferOffline)) {
         RouteSource.OFFLINE -> OfflineIranMap(context, vm.mapFile(), routes, state.selectedRouteIndex, state.traffic, state.trafficSegments, state.currentLocation, state.followNavigation, state.navigationActive, state.navigationZoomLevel, state.navigationRecenterToken, state.bearingDegrees, vm::pauseNavigationFollow, darkMode, Modifier.fillMaxSize())
         RouteSource.ONLINE -> OnlineIranMap(context, routes, state.selectedRouteIndex, state.traffic, state.trafficSegments, coded, state.currentLocation, state.followNavigation, state.navigationActive, state.navigationZoomLevel, state.navigationRecenterToken, state.bearingDegrees, vm::pauseNavigationFollow, darkMode, false, Modifier.fillMaxSize())
@@ -114,9 +221,90 @@ fun NvReferenceV8(
     }
 }
 
-@Composable private fun V8SearchPanel(state: NvUiState, vm: NvViewModel, target: V8SearchTarget, onTargetChange: (V8SearchTarget) -> Unit, onClose: () -> Unit, panel: Color, text: Color, modifier: Modifier = Modifier) {
-    val isOrigin = target == V8SearchTarget.ORIGIN; val query = if (isOrigin) state.originQuery else state.destinationQuery; val suggestions = if (isOrigin) state.originSuggestions else state.destinationSuggestions
-    Surface(modifier.fillMaxWidth(), RoundedCornerShape(20.dp), panel, border = BorderStroke(1.dp, V8Cyan.copy(alpha=.6f))) { Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) { FilterChip(isOrigin,{onTargetChange(V8SearchTarget.ORIGIN)},{Text(state.origin?.name?.take(15)?:"مبدأ")},modifier=Modifier.weight(1f)); IconButton(vm::swapEndpoints){Icon(Icons.Rounded.SwapHoriz,null,tint=V8Cyan)}; FilterChip(!isOrigin,{onTargetChange(V8SearchTarget.DESTINATION)},{Text(state.destination?.name?.take(15)?:"مقصد")},modifier=Modifier.weight(1f)) }; OutlinedTextField(query,{if(isOrigin)vm.updateOriginQuery(it) else vm.updateDestinationQuery(it)},Modifier.fillMaxWidth(),singleLine=true,placeholder={Text(if(isOrigin)"جستجوی مبدأ یا کد NV" else "جستجوی مقصد یا کد NV")},leadingIcon={Icon(Icons.Rounded.Search,null)},trailingIcon={IconButton({if(query.isNotBlank()){if(isOrigin)vm.updateOriginQuery("") else vm.updateDestinationQuery("")}else onClose()}){Icon(Icons.Rounded.Close,null)}}); if(isOrigin) TextButton({vm.useCurrentLocationAsOrigin();onTargetChange(V8SearchTarget.DESTINATION)}){Icon(Icons.Rounded.GpsFixed,null,tint=V8Green);Spacer(Modifier.width(5.dp));Text("موقعیت فعلی به عنوان مبدأ",color=text)}; if(query.isNotBlank()&&suggestions.isNotEmpty()) Column { suggestions.take(6).forEach { place -> Row(Modifier.fillMaxWidth().clickable{if(isOrigin){vm.selectOrigin(place);onTargetChange(V8SearchTarget.DESTINATION)}else{vm.selectDestination(place);onClose()}}.padding(9.dp),verticalAlignment=Alignment.CenterVertically){Icon(Icons.Rounded.Place,null,tint=V8Cyan);Spacer(Modifier.width(7.dp));Text(place.name,color=text,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f));Text(place.personalCode?:place.code.toString(),color=V8Muted,style=MaterialTheme.typography.labelSmall)}} } } }
+@Composable
+private fun V8SearchPanel(
+    state: NvUiState,
+    vm: NvViewModel,
+    target: V8SearchTarget,
+    onTargetChange: (V8SearchTarget) -> Unit,
+    onClose: () -> Unit,
+    onUseCurrentLocation: () -> Unit,
+    onRefineOrigin: (() -> Unit)?,
+    onRefineDestination: (() -> Unit)?,
+    panel: Color,
+    text: Color,
+    modifier: Modifier = Modifier
+) {
+    val isOrigin = target == V8SearchTarget.ORIGIN
+    val query = if (isOrigin) state.originQuery else state.destinationQuery
+    val suggestions = if (isOrigin) state.originSuggestions else state.destinationSuggestions
+    val selectedPlace = if (isOrigin) state.origin else state.destination
+    val refineAction = if (isOrigin) onRefineOrigin else onRefineDestination
+
+    Surface(modifier.fillMaxWidth(), RoundedCornerShape(20.dp), panel, border = BorderStroke(1.dp, V8Cyan.copy(alpha=.6f))) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(isOrigin, { onTargetChange(V8SearchTarget.ORIGIN) }, { Text(state.origin?.name?.take(15) ?: "مبدأ") }, modifier = Modifier.weight(1f))
+                IconButton(vm::swapEndpoints) { Icon(Icons.Rounded.SwapHoriz, null, tint = V8Cyan) }
+                FilterChip(!isOrigin, { onTargetChange(V8SearchTarget.DESTINATION) }, { Text(state.destination?.name?.take(15) ?: "مقصد") }, modifier = Modifier.weight(1f))
+            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { if (isOrigin) vm.updateOriginQuery(it) else vm.updateDestinationQuery(it) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text(if (isOrigin) "جستجوی مبدأ یا کد NV" else "جستجوی مقصد یا کد NV") },
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                trailingIcon = {
+                    IconButton({ if (query.isNotBlank()) { if (isOrigin) vm.updateOriginQuery("") else vm.updateDestinationQuery("") } else onClose() }) {
+                        Icon(Icons.Rounded.Close, null)
+                    }
+                }
+            )
+            if (isOrigin) {
+                TextButton({ onUseCurrentLocation(); onTargetChange(V8SearchTarget.DESTINATION) }) {
+                    Icon(Icons.Rounded.GpsFixed, null, tint = V8Green)
+                    Spacer(Modifier.width(5.dp))
+                    Text("موقعیت دقیق فعلی به عنوان مبدأ", color = text)
+                }
+            }
+            if (selectedPlace != null && refineAction != null) {
+                OutlinedButton(onClick = refineAction, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.EditLocationAlt, null, tint = V8Gold)
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (isOrigin) "تنظیم دقیق نشانگر مبدأ روی نقشه" else "تنظیم دقیق نشانگر مقصد روی نقشه")
+                }
+            }
+            if (query.isNotBlank() && suggestions.isNotEmpty()) {
+                Column {
+                    suggestions.take(6).forEach { place ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (isOrigin) {
+                                        vm.selectOrigin(place)
+                                        onTargetChange(V8SearchTarget.DESTINATION)
+                                        onRefineOrigin?.invoke()
+                                    } else {
+                                        vm.selectDestination(place)
+                                        onRefineDestination?.invoke()
+                                        onClose()
+                                    }
+                                }
+                                .padding(9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.Place, null, tint = V8Cyan)
+                            Spacer(Modifier.width(7.dp))
+                            Text(place.name, color = text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Text(place.personalCode ?: place.code.toString(), color = V8Muted, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable private fun V8RouteStrip(state:NvUiState,vm:NvViewModel,panel:Color,text:Color,modifier:Modifier=Modifier){Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){state.routeAlternatives.take(4).forEachIndexed{index,route->val color=v8RouteColor(index);Surface(Modifier.width(116.dp).clickable{vm.selectRoute(index)},RoundedCornerShape(16.dp),panel,border=BorderStroke(if(state.selectedRouteIndex==index)3.dp else 1.dp,color)){Column(Modifier.padding(9.dp),horizontalAlignment=Alignment.CenterHorizontally){Text("مسیر ${index+1}",color=color,fontWeight=FontWeight.Black);Text(String.format("%.1f km",route.distanceMeters/1000.0),color=text,fontWeight=FontWeight.Bold);Text("${(route.travelSeconds/60.0).toInt()} دقیقه",color=text)}}}}}
