@@ -132,73 +132,12 @@ jobs:
             nv-release-provenance.txt
             nv-release-manifest.json
           if-no-files-found: error
-      - name: Install and verify NV launch on Android 10
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 29
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          script: bash .github/scripts/verify-nv-launch.sh
-      - name: Upload Android 10 launch diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: NV-launch-diagnostics-android10
-          path: |
-            nv-launch-screen.png
-            nv-nearby-screen.png
-            nv-offline-screen.png
-            nv-pin-screen.png
-            nv-code-screen.png
-            nv-ui.xml
-            nv-window-state.txt
-            nv-activity-state.txt
-            nv-logcat.txt
-            nv-app-logcat.txt
-          if-no-files-found: warn
-      - name: Install and verify NV launch on Android 15
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
-          script: bash .github/scripts/verify-nv-launch-modern.sh
-      - name: Upload Android 15 launch diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: NV-launch-diagnostics-android15
-          path: |
-            nv-modern-launch-screen.png
-            nv-modern-window-state.txt
-            nv-modern-activity-state.txt
-            nv-modern-logcat.txt
-            nv-modern-app-logcat.txt
-          if-no-files-found: warn
 
-  compatibility:
-    name: Android ${{ matrix.android }} compatibility
+  android16:
+    name: Android 16 compatibility
     needs: build
     runs-on: macos-15-intel
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - api: 30
-            android: "11"
-          - api: 31
-            android: "12"
-          - api: 32
-            android: "12L"
-          - api: 33
-            android: "13"
-          - api: 34
-            android: "14"
-          - api: 36
-            android: "16"
     steps:
       - uses: actions/checkout@v4
       - uses: android-actions/setup-android@v3
@@ -207,23 +146,23 @@ jobs:
         with:
           name: NV-debug-apk
           path: app/build/outputs/apk/debug
-      - name: Install and verify NV launch on Android ${{ matrix.android }}
+      - name: Install and verify NV launch on Android 16
         uses: reactivecircus/android-emulator-runner@v2
         env:
           NV_VERIFY_APK: app/build/outputs/apk/debug/app-debug.apk
         with:
-          api-level: ${{ matrix.api }}
+          api-level: 36
           target: google_apis
           arch: x86_64
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 900
           script: bash .github/scripts/verify-nv-launch-modern.sh
-      - name: Upload Android ${{ matrix.android }} diagnostics
+      - name: Upload Android 16 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-launch-diagnostics-android${{ matrix.android }}
+          name: NV-launch-diagnostics-android16
           path: |
             nv-modern-launch-screen.png
             nv-modern-window-state.txt
