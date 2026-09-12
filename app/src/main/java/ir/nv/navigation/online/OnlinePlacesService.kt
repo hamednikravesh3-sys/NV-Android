@@ -16,6 +16,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** Online POIs for route notices and nearby discovery. Google Places is preferred when configured; OSM remains the resilient fallback. */
 class OnlinePlacesService(
@@ -32,20 +37,18 @@ class OnlinePlacesService(
     fun googleConfigured(): Boolean = BuildConfig.GOOGLE_MAPS_API_KEY.isNotBlank()
 
     fun searchNearby(center: Coordinate, query: String, radiusMeters: Int = 100000, limit: Int = 40): List<Place> {
-        val requestedRadius = radiusMeters.coerceIn(1_000, 100_000)
+        val requestedRadius = supportedRadius(radiusMeters)
         val cacheKey = buildCacheKey(center, query, requestedRadius, limit)
-        nearbyCache[cacheKey]?.takeIf { System.currentTimeMillis() - it.createdAt <= CACHE_TTL_MS }?.let { return it.places }
+        nearbyCache[cacheKey]
+            ?.takeIf { System.currentTimeMillis() - it.createdAt <= CACHE_TTL_MS }
+            ?.let { return it.places }
 
-        val progressiveRadii = buildList {
-            add(minOf(18_000, requestedRadius))
-            if (requestedRadius > 18_000) add(minOf(50_000, requestedRadius))
-            if (requestedRadius > 50_000) add(requestedRadius)
-        }.distinct()
-
+        val progressiveRadii = NEARBY_RADIUS_STEPS.takeWhile { it <= requestedRadius }
         var lastGoogleFailure: Throwable? = null
         var lastOsmFailure: Throwable? = null
+
         for (radius in progressiveRadii) {
-            val google = if (googleConfigured()) {
+            val google = if (googleConfigured() && radius <= GOOGLE_MAX_RADIUS_METERS) {
                 runCatching { requestGoogleNearby(center, query, radius, limit) }
                     .onFailure { lastGoogleFailure = it }
                     .getOrDefault(emptyList())
@@ -55,7 +58,7 @@ class OnlinePlacesService(
                 .onFailure { lastOsmFailure = it }
                 .getOrDefault(emptyList())
 
-            val merged = mergeNearby(center, google + osm, limit)
+            val merged = mergeNearby(center, google + osm, radius, limit)
             if (merged.isNotEmpty()) {
                 nearbyCache[cacheKey] = CacheEntry(System.currentTimeMillis(), merged)
                 trimCache()
@@ -63,22 +66,55 @@ class OnlinePlacesService(
             }
         }
 
-        val reason = listOfNotNull(lastGoogleFailure?.message, lastOsmFailure?.message).distinct().joinToString("؛ ")
+        val reason = listOfNotNull(lastGoogleFailure?.message, lastOsmFailure?.message)
+            .distinct()
+            .joinToString("؛ ")
         if (googleConfigured()) {
-            throw IllegalStateException(if (reason.isBlank()) "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد" else "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد ($reason)")
+            throw IllegalStateException(
+                if (reason.isBlank()) "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد"
+                else "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد ($reason)"
+            )
         }
-        throw IllegalStateException(if (reason.isBlank()) "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد؛ Google Places تنظیم نشده است" else "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد ($reason)")
+        throw IllegalStateException(
+            if (reason.isBlank()) "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد؛ Google Places تنظیم نشده است"
+            else "تا شعاع ${requestedRadius / 1000} کیلومتر نتیجه‌ای پیدا نشد ($reason)"
+        )
     }
 
-    private fun mergeNearby(center: Coordinate, values: List<Place>, limit: Int): List<Place> = values
-        .distinctBy { Triple(normalizeName(it.name), (it.coordinate.latitude * 10000).toInt(), (it.coordinate.longitude * 10000).toInt()) }
-        .sortedBy { distanceSquared(center, it.coordinate) }
-        .take(limit)
+    private fun supportedRadius(radiusMeters: Int): Int {
+        val clamped = radiusMeters.coerceIn(NEARBY_RADIUS_STEPS.first(), NEARBY_RADIUS_STEPS.last())
+        return NEARBY_RADIUS_STEPS.firstOrNull { it >= clamped } ?: NEARBY_RADIUS_STEPS.last()
+    }
+
+    private fun mergeNearby(
+        center: Coordinate,
+        values: List<Place>,
+        radiusMeters: Int,
+        limit: Int
+    ): List<Place> = values
+        .mapNotNull { place ->
+            val distance = distanceMeters(center, place.coordinate)
+            place.takeIf { distance <= radiusMeters + 1.0 }?.copy(distance = distance)
+        }
+        .distinctBy {
+            Triple(
+                normalizeName(it.name),
+                (it.coordinate.latitude * 10000).toInt(),
+                (it.coordinate.longitude * 10000).toInt()
+            )
+        }
+        .sortedWith(
+            compareByDescending<Place> { it.isOpen == true }
+                .thenByDescending { it.confidence }
+                .thenByDescending { it.rating ?: -1.0 }
+                .thenBy { it.distance ?: Double.MAX_VALUE }
+        )
+        .take(limit.coerceIn(1, 100))
 
     private fun requestOsmNearby(center: Coordinate, query: String, radiusMeters: Int, limit: Int): List<Place> {
         val selectors = nearbySelectors(query)
         if (selectors.isEmpty()) return emptyList()
-        val radius = radiusMeters.coerceIn(1000, 100000)
+        val radius = radiusMeters.coerceIn(5_000, 100_000)
         val overpass = buildString {
             append("[out:json][timeout:18];(")
             selectors.forEach { selector ->
@@ -93,7 +129,7 @@ class OnlinePlacesService(
 
     private fun requestGoogleNearby(center: Coordinate, query: String, radiusMeters: Int, limit: Int): List<Place> {
         val types = googleTypes(query)
-        if (types.isEmpty()) return emptyList()
+        if (types.isEmpty() || radiusMeters > GOOGLE_MAX_RADIUS_METERS) return emptyList()
         val body = JSONObject().apply {
             put("includedTypes", JSONArray(types.take(8)))
             put("maxResultCount", limit.coerceIn(1, 20))
@@ -104,7 +140,7 @@ class OnlinePlacesService(
                         put("latitude", center.latitude)
                         put("longitude", center.longitude)
                     })
-                    put("radius", radiusMeters.coerceIn(500, 50000).toDouble())
+                    put("radius", radiusMeters.coerceIn(500, GOOGLE_MAX_RADIUS_METERS).toDouble())
                 })
             })
             put("languageCode", "fa")
@@ -115,7 +151,11 @@ class OnlinePlacesService(
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .header("X-Goog-Api-Key", BuildConfig.GOOGLE_MAPS_API_KEY)
-            .header("X-Goog-FieldMask", "places.id,places.displayName,places.location,places.primaryType")
+            .header(
+                "X-Goog-FieldMask",
+                "places.id,places.displayName,places.location,places.primaryType,places.formattedAddress," +
+                    "places.nationalPhoneNumber,places.rating,places.userRatingCount,places.currentOpeningHours.openNow"
+            )
             .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
             .build()
 
@@ -132,13 +172,23 @@ class OnlinePlacesService(
                     if (lat.isNaN() || lon.isNaN()) continue
                     val name = item.optJSONObject("displayName")?.optString("text").orEmpty().trim()
                     if (name.isBlank()) continue
-                    val id = item.optString("id").hashCode().toLong()
+                    val providerId = item.optString("id").ifBlank { "google:$i:$lat:$lon" }
+                    val codeSeed = providerId.hashCode().toLong()
+                    val hours = item.optJSONObject("currentOpeningHours")
                     add(
                         Place(
-                            code = -9_000_000_000L - kotlin.math.abs(id),
+                            code = -9_000_000_000L - kotlin.math.abs(codeSeed),
                             name = name,
                             coordinate = Coordinate(lat, lon),
-                            category = "google:${item.optString("primaryType", "poi")}"
+                            category = "google:${item.optString("primaryType", "poi")}",
+                            id = providerId,
+                            address = item.optString("formattedAddress").takeIf(String::isNotBlank),
+                            phone = item.optString("nationalPhoneNumber").takeIf(String::isNotBlank),
+                            rating = item.takeIf { it.has("rating") }?.optDouble("rating")?.takeIf { !it.isNaN() },
+                            reviewCount = item.takeIf { it.has("userRatingCount") }?.optInt("userRatingCount"),
+                            isOpen = hours?.takeIf { it.has("openNow") }?.optBoolean("openNow"),
+                            source = "google",
+                            confidence = 0.94
                         )
                     )
                 }
@@ -149,14 +199,18 @@ class OnlinePlacesService(
     fun searchNamedNearby(center: Coordinate, query: String, radiusMeters: Int = 100000, limit: Int = 30): List<Place> {
         val clean = query.trim().replace("\"", "").take(80)
         if (clean.length < 2) return emptyList()
-        val radius = radiusMeters.coerceIn(3000, 100000)
+        val radius = radiusMeters.coerceIn(3_000, 100_000)
         val escaped = clean.replace("\\", "\\\\").replace("'", "\\'")
         val words = escaped.split(Regex("\\s+")).filter { it.length >= 2 }.take(4)
         val regex = words.joinToString(".*") { Regex.escape(it) }.ifBlank { Regex.escape(escaped) }
         val overpass = "[out:json][timeout:18];(nwr(around:$radius,${center.latitude},${center.longitude})[\"name\"~\"$regex\",i];nwr(around:$radius,${center.latitude},${center.longitude})[\"name:fa\"~\"$regex\",i];);out center tags $limit;"
         return requestPlaces(overpass)
-            .distinctBy { Triple(it.name, (it.coordinate.latitude * 10000).toInt(), (it.coordinate.longitude * 10000).toInt()) }
-            .sortedBy { distanceSquared(center, it.coordinate) }
+            .mapNotNull { place ->
+                val distance = distanceMeters(center, place.coordinate)
+                place.takeIf { distance <= radius + 1.0 }?.copy(distance = distance)
+            }
+            .distinctBy { Triple(normalizeName(it.name), (it.coordinate.latitude * 10000).toInt(), (it.coordinate.longitude * 10000).toInt()) }
+            .sortedBy { it.distance ?: Double.MAX_VALUE }
             .take(limit)
     }
 
@@ -208,9 +262,28 @@ class OnlinePlacesService(
                             val latitude = if (element.has("lat")) element.optDouble("lat") else c?.optDouble("lat")
                             val longitude = if (element.has("lon")) element.optDouble("lon") else c?.optDouble("lon")
                             if (latitude == null || longitude == null || latitude.isNaN() || longitude.isNaN()) continue
-                            val name = tags.optString("name:fa").ifBlank { tags.optString("name") }.ifBlank { tags.optString("brand") }
+                            val name = tags.optString("name:fa")
+                                .ifBlank { tags.optString("name") }
+                                .ifBlank { tags.optString("brand") }
                             if (name.isBlank()) continue
-                            add(Place(code = -element.optLong("id", index.toLong() + 1L), name = name, coordinate = Coordinate(latitude, longitude), category = category(tags) ?: "poi"))
+                            val osmId = element.optLong("id", index.toLong() + 1L)
+                            val osmType = element.optString("type", "node")
+                            val openingHours = tags.optString("opening_hours")
+                            add(
+                                Place(
+                                    code = -osmId,
+                                    name = name,
+                                    coordinate = Coordinate(latitude, longitude),
+                                    category = category(tags) ?: "poi",
+                                    id = "osm:$osmType:$osmId",
+                                    address = osmAddress(tags),
+                                    phone = tags.optString("phone").ifBlank { tags.optString("contact:phone") }.takeIf(String::isNotBlank),
+                                    isOpen = true.takeIf { openingHours.equals("24/7", ignoreCase = true) },
+                                    open24Hours = openingHours.equals("24/7", ignoreCase = true).takeIf { openingHours.isNotBlank() },
+                                    source = "osm",
+                                    confidence = 0.82
+                                )
+                            )
                         }
                     }
                 }
@@ -227,6 +300,7 @@ class OnlinePlacesService(
             q.contains("داروخانه") -> listOf("pharmacy")
             q.contains("پلیس") -> listOf("police")
             q.contains("آتش") -> listOf("fire_station")
+            q.contains("نجات") || q.contains("امداد") -> listOf("hospital", "fire_station")
             q.contains("پزشک") || q.contains("دکتر") -> listOf("doctor")
             q.contains("دندان") -> listOf("dentist")
             q.contains("آزمایشگاه") -> listOf("medical_lab")
@@ -245,7 +319,7 @@ class OnlinePlacesService(
             q.contains("هتل") || q.contains("اقامت") -> listOf("hotel")
             q.contains("سوپر") -> listOf("supermarket")
             q.contains("فروشگاه") -> listOf("store")
-            q.contains("مرکز خرید") -> listOf("shopping_mall")
+            q.contains("مرکز خرید") || q.contains("خرید") -> listOf("shopping_mall")
             q.contains("بانک") -> listOf("bank")
             q.contains("خودپرداز") -> listOf("atm")
             q.contains("نانوایی") -> listOf("bakery")
@@ -256,6 +330,7 @@ class OnlinePlacesService(
             q.contains("سرویس") || q.contains("دستشویی") -> listOf("public_bathroom")
             q.contains("تعمیرگاه") -> listOf("car_repair")
             q.contains("کارواش") -> listOf("car_wash")
+            q.contains("خدمات") -> listOf("post_office", "car_repair", "bank")
             q.contains("ورزشگاه") -> listOf("stadium")
             q.contains("سینما") -> listOf("movie_theater")
             q.contains("موزه") -> listOf("museum")
@@ -273,6 +348,7 @@ class OnlinePlacesService(
             q.contains("داروخانه") -> listOf("[\"amenity\"=\"pharmacy\"]")
             q.contains("پلیس") -> listOf("[\"amenity\"=\"police\"]")
             q.contains("آتش") -> listOf("[\"amenity\"=\"fire_station\"]")
+            q.contains("نجات") || q.contains("امداد") -> listOf("[\"emergency\"]", "[\"amenity\"~\"^(rescue_station|hospital|fire_station)$\"]")
             q.contains("پزشک") || q.contains("دکتر") -> listOf("[\"amenity\"=\"doctors\"]", "[\"healthcare\"=\"doctor\"]")
             q.contains("دندان") -> listOf("[\"amenity\"=\"dentist\"]", "[\"healthcare\"=\"dentist\"]")
             q.contains("آزمایشگاه") -> listOf("[\"healthcare\"=\"laboratory\"]")
@@ -287,13 +363,13 @@ class OnlinePlacesService(
             q.contains("پارکینگ") -> listOf("[\"amenity\"=\"parking\"]")
             q.contains("پمپ") || q.contains("سوخت") -> listOf("[\"amenity\"=\"fuel\"]")
             q.contains("شارژ") -> listOf("[\"amenity\"=\"charging_station\"]")
-            q.contains("رستوران") -> listOf("[\"amenity\"=\"restaurant\"]")
+            q.contains("رستوران") -> listOf("[\"amenity\"=\"restaurant\"]", "[\"amenity\"=\"fast_food\"]")
             q.contains("فست") -> listOf("[\"amenity\"=\"fast_food\"]")
             q.contains("کافه") -> listOf("[\"amenity\"=\"cafe\"]")
             q.contains("هتل") || q.contains("اقامت") -> listOf("[\"tourism\"~\"^(hotel|guest_house|hostel)$\"]")
             q.contains("سوپر") -> listOf("[\"shop\"~\"^(supermarket|convenience)$\"]")
+            q.contains("مرکز خرید") || q.contains("خرید") -> listOf("[\"shop\"=\"mall\"]", "[\"building\"=\"retail\"]")
             q.contains("فروشگاه") -> listOf("[\"shop\"]")
-            q.contains("مرکز خرید") -> listOf("[\"shop\"=\"mall\"]", "[\"building\"=\"retail\"]")
             q.contains("بانک") -> listOf("[\"amenity\"=\"bank\"]")
             q.contains("خودپرداز") -> listOf("[\"amenity\"=\"atm\"]")
             q.contains("نانوایی") -> listOf("[\"shop\"=\"bakery\"]")
@@ -308,11 +384,12 @@ class OnlinePlacesService(
             q.contains("لاستیک") -> listOf("[\"shop\"=\"tyres\"]")
             q.contains("آرایشگاه") -> listOf("[\"shop\"=\"hairdresser\"]")
             q.contains("خشکشویی") -> listOf("[\"shop\"~\"^(laundry|dry_cleaning)$\"]")
+            q.contains("خدمات") -> listOf("[\"amenity\"~\"^(post_office|toilets|library|car_wash)$\"]", "[\"shop\"~\"^(car_repair|laundry|dry_cleaning)$\"]")
             q.contains("ورزشگاه") -> listOf("[\"leisure\"~\"^(stadium|sports_centre)$\"]")
             q.contains("استخر") -> listOf("[\"leisure\"=\"swimming_pool\"]")
             q.contains("سینما") -> listOf("[\"amenity\"=\"cinema\"]")
             q.contains("موزه") -> listOf("[\"tourism\"=\"museum\"]")
-            q.contains("پارک") -> listOf("[\"leisure\"=\"park\"]")
+            q.contains("پارک") -> listOf("[\"leisure\"~\"^(park|garden)$\"]")
             q.contains("شهربازی") -> listOf("[\"tourism\"=\"theme_park\"]", "[\"leisure\"=\"amusement_arcade\"]")
             q.contains("تاریخی") || q.contains("اثر") -> listOf("[\"historic\"]")
             q.contains("طبیعت") || q.contains("کوه") || q.contains("منظره") -> listOf("[\"natural\"]", "[\"tourism\"=\"viewpoint\"]")
@@ -328,6 +405,8 @@ class OnlinePlacesService(
         tags.has("tourism") -> "tourism:${tags.optString("tourism")}"
         tags.has("historic") -> "historic:${tags.optString("historic")}"
         tags.has("natural") -> "natural:${tags.optString("natural")}"
+        tags.has("emergency") -> "emergency:${tags.optString("emergency")}"
+        tags.has("healthcare") -> "healthcare:${tags.optString("healthcare")}"
         tags.has("amenity") -> "amenity:${tags.optString("amenity")}"
         tags.has("shop") -> "shop:${tags.optString("shop")}"
         tags.has("leisure") -> "leisure:${tags.optString("leisure")}"
@@ -336,12 +415,30 @@ class OnlinePlacesService(
         else -> null
     }
 
-    private fun normalizeName(value: String): String = value.lowercase().replace('ي', 'ی').replace('ك', 'ک').replace("‌", " ").trim()
+    private fun osmAddress(tags: JSONObject): String? = buildList {
+        tags.optString("addr:street").takeIf(String::isNotBlank)?.let { street ->
+            val number = tags.optString("addr:housenumber")
+            add(if (number.isBlank()) street else "$street $number")
+        }
+        tags.optString("addr:district").takeIf(String::isNotBlank)?.let(::add)
+        tags.optString("addr:city").takeIf(String::isNotBlank)?.let(::add)
+    }.takeIf { it.isNotEmpty() }?.joinToString("، ")
 
-    private fun distanceSquared(a: Coordinate, b: Coordinate): Double {
-        val dx = (a.longitude - b.longitude) * kotlin.math.cos(Math.toRadians((a.latitude + b.latitude) / 2.0))
-        val dy = a.latitude - b.latitude
-        return dx * dx + dy * dy
+    private fun normalizeName(value: String): String = value
+        .lowercase()
+        .replace('ي', 'ی')
+        .replace('ك', 'ک')
+        .replace("‌", " ")
+        .trim()
+
+    private fun distanceMeters(a: Coordinate, b: Coordinate): Double {
+        val lat1 = Math.toRadians(a.latitude)
+        val lat2 = Math.toRadians(b.latitude)
+        val dLat = lat2 - lat1
+        val dLon = Math.toRadians(b.longitude - a.longitude)
+        val h = sin(dLat / 2) * sin(dLat / 2) +
+            cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2)
+        return 2 * EARTH_RADIUS_METERS * asin(sqrt(min(1.0, h)))
     }
 
     private fun buildCacheKey(center: Coordinate, query: String, radiusMeters: Int, limit: Int): String =
@@ -351,13 +448,18 @@ class OnlinePlacesService(
         val now = System.currentTimeMillis()
         nearbyCache.entries.removeIf { now - it.value.createdAt > CACHE_TTL_MS }
         if (nearbyCache.size > MAX_CACHE_ENTRIES) {
-            nearbyCache.entries.sortedBy { it.value.createdAt }.take(nearbyCache.size - MAX_CACHE_ENTRIES).forEach { nearbyCache.remove(it.key) }
+            nearbyCache.entries.sortedBy { it.value.createdAt }
+                .take(nearbyCache.size - MAX_CACHE_ENTRIES)
+                .forEach { nearbyCache.remove(it.key) }
         }
     }
 
     private companion object {
+        val NEARBY_RADIUS_STEPS = listOf(5_000, 10_000, 25_000, 50_000, 100_000)
         val SAMPLE_DISTANCES = listOf(1_000.0, 4_000.0, 7_000.0, 10_000.0)
+        const val GOOGLE_MAX_RADIUS_METERS = 50_000
         const val MAX_AHEAD_METERS = 10_000.0
+        const val EARTH_RADIUS_METERS = 6_371_000.0
         const val CACHE_TTL_MS = 120_000L
         const val MAX_CACHE_ENTRIES = 32
     }

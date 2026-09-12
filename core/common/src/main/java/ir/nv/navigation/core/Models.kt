@@ -2,13 +2,33 @@ package ir.nv.navigation.core
 
 data class Coordinate(val latitude: Double, val longitude: Double)
 
+/**
+ * Canonical place model used across online, offline, nearby and navigation features.
+ * Distances are metres and ETA is seconds. Nullable operational fields mean that the
+ * backing provider did not supply trustworthy data rather than an assumed value.
+ */
 data class Place(
     val code: Long,
     val name: String,
     val coordinate: Coordinate,
     val category: String,
-    val personalCode: String? = null
+    val personalCode: String? = null,
+    val id: String = code.toString(),
+    val address: String? = null,
+    val phone: String? = null,
+    val rating: Double? = null,
+    val reviewCount: Int? = null,
+    val isOpen: Boolean? = null,
+    val open24Hours: Boolean? = null,
+    val distance: Double? = null,
+    val routeDistance: Double? = null,
+    val eta: Double? = null,
+    val source: String = "unknown",
+    val confidence: Double = 0.5
 ) {
+    val lat: Double get() = coordinate.latitude
+    val lon: Double get() = coordinate.longitude
+
     val displayName: String
         get() = when {
             !personalCode.isNullOrBlank() -> "$name — $personalCode"
