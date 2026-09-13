@@ -35,9 +35,9 @@ jobs:
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "8.11.1"
       - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-36" "build-tools;35.0.0"
       - name: Android lint, unit tests and debug/release APKs
         env:
           NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
@@ -59,19 +59,19 @@ jobs:
           BADGING="$("$AAPT" dump badging "$RELEASE_APK")"
           echo "$BADGING" > nv-release-badging.txt
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
-          echo "$BADGING" | grep -q "versionCode='18'"
-          echo "$BADGING" | grep -q "versionName='0.17.0'"
+          echo "$BADGING" | grep -q "versionCode='19'"
+          echo "$BADGING" | grep -q "versionName='0.18.0'"
           echo "$BADGING" | grep -q "sdkVersion:'29'"
-          echo "$BADGING" | grep -q "targetSdkVersion:'35'"
+          echo "$BADGING" | grep -q "targetSdkVersion:'36'"
           shasum -a 256 "$RELEASE_APK" > nv-release-sha256.txt
           APK_SHA256="$(awk '{print $1}' nv-release-sha256.txt)"
           {
             echo "git_sha=$GITHUB_SHA"
             echo "package=ir.nv.navigation"
-            echo "version_code=18"
-            echo "version_name=0.17.0"
+            echo "version_code=19"
+            echo "version_name=0.18.0"
             echo "min_sdk=29"
-            echo "target_sdk=35"
+            echo "target_sdk=36"
             cat nv-release-sha256.txt
           } > nv-release-provenance.txt
           APK_SHA256="$APK_SHA256" python - <<'PY'
@@ -80,10 +80,10 @@ jobs:
               "schema_version": 1,
               "artifact_kind": "unsigned-release-validation",
               "package": "ir.nv.navigation",
-              "version_code": 18,
-              "version_name": "0.17.0",
+              "version_code": 19,
+              "version_name": "0.18.0",
               "min_sdk": 29,
-              "target_sdk": 35,
+              "target_sdk": 36,
               "git_sha": os.environ["GITHUB_SHA"],
               "apk_sha256": os.environ["APK_SHA256"],
               "signing_cert_sha256": None,
@@ -100,10 +100,10 @@ jobs:
               "schema_version": 1,
               "artifact_kind": "unsigned-release-validation",
               "package": "ir.nv.navigation",
-              "version_code": 18,
-              "version_name": "0.17.0",
+              "version_code": 19,
+              "version_name": "0.18.0",
               "min_sdk": 29,
-              "target_sdk": 35,
+              "target_sdk": 36,
               "git_sha": os.environ["GITHUB_SHA"],
               "apk_sha256": os.environ["APK_SHA256"],
               "signing_cert_sha256": None,
@@ -136,8 +136,8 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$OUTPUT_APK" > nv-android16-apksigner.txt
           BADGING="$("$AAPT" dump badging "$OUTPUT_APK")"
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
-          echo "$BADGING" | grep -q "versionCode='18'"
-          echo "$BADGING" | grep -q "versionName='0.17.0'"
+          echo "$BADGING" | grep -q "versionCode='19'"
+          echo "$BADGING" | grep -q "versionName='0.18.0'"
           shasum -a 256 "$OUTPUT_APK" > nv-android16-apk-sha256.txt
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
