@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "ir.nv.navigation"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         val trafficApiKey = System.getenv("NV_TRAFFIC_API_KEY").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
         val googleMapsApiKey = System.getenv("NV_GOOGLE_MAPS_API_KEY").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
@@ -14,9 +14,9 @@ android {
         val valhallaApiUrl = System.getenv("NV_VALHALLA_API_URL").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
         applicationId = "ir.nv.navigation"
         minSdk = 29
-        targetSdk = 35
-        versionCode = 18
-        versionName = "0.17.0"
+        targetSdk = 36
+        versionCode = 19
+        versionName = "0.18.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "IRAN_PACK_URL", "\"https://github.com/hamednikravesh3-sys/NV-Android/releases/download/map-v1/iran.nvpack\"")
