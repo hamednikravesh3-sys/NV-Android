@@ -1,0 +1,36 @@
+name: Source Snapshot
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive source
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD > SOURCE_HEAD.txt
+          git status --porcelain=v1 > SOURCE_STATUS.txt
+          tar \
+            --exclude=.git \
+            --exclude='**/build' \
+            --exclude='**/.gradle' \
+            -czf NV-Android-source.tgz .
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-Android-source-snapshot
+          path: |
+            NV-Android-source.tgz
+            SOURCE_HEAD.txt
+            SOURCE_STATUS.txt
+          if-no-files-found: error
+          retention-days: 3
