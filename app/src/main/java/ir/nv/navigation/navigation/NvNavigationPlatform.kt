@@ -10,6 +10,7 @@ import ir.nv.navigation.navigation.guidance.GuidanceEngine
 import ir.nv.navigation.navigation.mapmatching.MapMatchingEngine
 import ir.nv.navigation.navigation.mapmatching.PassThroughMapMatchingEngine
 import ir.nv.navigation.navigation.valhalla.ValhallaMapMatchingEngine
+import ir.nv.navigation.navigation.valhalla.ValhallaRouteProvider
 import ir.nv.navigation.online.OnlineNavigationService
 import ir.nv.navigation.places.AheadEngine
 import ir.nv.navigation.routing.AStarRouter
@@ -28,8 +29,14 @@ class NvNavigationPlatform(
         trafficPredictor = HistoricalTrafficPredictor(emptyList())
     )
 
+    private val osrmProvider = OnlineRouteProviderAdapter(onlineService)
+    private val onlineRouteProvider: RouteProvider = FallbackRouteProvider(
+        primary = BuildConfig.VALHALLA_API_URL.trim().takeIf(String::isNotEmpty)?.let(::ValhallaRouteProvider),
+        fallback = osrmProvider
+    )
+
     val routeCoordinator = HybridRouteCoordinator(
-        onlineProvider = OnlineRouteProviderAdapter(onlineService),
+        onlineProvider = onlineRouteProvider,
         offlineProvider = OfflineRouteProviderAdapter(routerProvider),
         trafficProvider = trafficProvider,
         ranker = NvAdaptiveRouteRanker(),
