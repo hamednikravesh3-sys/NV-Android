@@ -26,6 +26,7 @@ import androidx.core.content.ContextCompat
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.map.OfflineIranMap
 import ir.nv.navigation.map.OnlineIranMap
+import ir.nv.navigation.places.NearbySearchPolicy
 import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvColors
@@ -288,6 +289,19 @@ private fun RahnamaSearchBar(
     onExpandedChange: (Boolean) -> Unit,
     onSelectDestination: (ir.nv.navigation.core.Place) -> Unit
 ) {
+    var selectedRadiusKm by remember { mutableStateOf<Int?>(null) }
+    val visibleSuggestions = remember(state.destinationSuggestions, state.currentLocation, selectedRadiusKm) {
+        val radiusKm = selectedRadiusKm
+        val center = state.currentLocation
+        if (radiusKm == null) {
+            state.destinationSuggestions
+        } else if (center == null) {
+            emptyList()
+        } else {
+            NearbySearchPolicy.filterWithinRadius(center, state.destinationSuggestions, radiusKm * 1_000)
+        }
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = NvColors.Navy900.copy(alpha = .96f),
@@ -325,9 +339,66 @@ private fun RahnamaSearchBar(
                     unfocusedIndicatorColor = Color.Transparent
                 )
             )
-            if (expanded && state.destinationSuggestions.isNotEmpty()) {
+
+            if (expanded) {
                 HorizontalDivider(color = NvColors.DividerDark)
-                state.destinationSuggestions.take(5).forEach { place ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = NvSpacing.Sm, vertical = NvSpacing.Xs),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("جستجوی هوشمند", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black)
+                    Text(
+                        if (state.onlineAvailable) "آنلاین + آفلاین" else "جستجوی آفلاین",
+                        color = if (state.onlineAvailable || state.offlineReady) NvColors.Success else NvColors.Warning,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+                Text(
+                    "شعاع جستجو",
+                    color = NvColors.TextSecondaryDark,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = NvSpacing.Sm)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = NvSpacing.Sm),
+                    horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)
+                ) {
+                    FilterChip(
+                        selected = selectedRadiusKm == null,
+                        onClick = { selectedRadiusKm = null },
+                        label = { Text("همه") }
+                    )
+                    listOf(5, 10, 25, 50, 100).forEach { radiusKm ->
+                        FilterChip(
+                            selected = selectedRadiusKm == radiusKm,
+                            onClick = { selectedRadiusKm = radiusKm },
+                            label = { Text("$radiusKm کیلومتر") }
+                        )
+                    }
+                }
+
+                if (selectedRadiusKm != null && state.currentLocation == null) {
+                    Text(
+                        "برای فیلتر شعاعی ابتدا موقعیت فعلی را فعال کنید",
+                        color = NvColors.Warning,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = NvSpacing.Sm)
+                    )
+                }
+                if (state.destinationSearching) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = NvSpacing.Sm))
+                }
+                state.searchMessage?.takeIf(String::isNotBlank)?.let { message ->
+                    Text(
+                        message,
+                        color = NvColors.Warning,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = NvSpacing.Sm)
+                    )
+                }
+
+                visibleSuggestions.take(5).forEach { place ->
                     Row(
                         Modifier.fillMaxWidth().clickable { onSelectDestination(place) }.padding(horizontal = NvSpacing.Sm, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -336,12 +407,32 @@ private fun RahnamaSearchBar(
                         Spacer(Modifier.width(NvSpacing.Sm))
                         Column(Modifier.weight(1f)) {
                             Text(place.name, color = NvColors.TextPrimaryDark, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            place.address?.takeIf { it.isNotBlank() }?.let {
-                                Text(it, color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val details = buildList {
+                                place.distance?.let { distance ->
+                                    add(if (distance >= 1_000.0) "%.1f کیلومتر".format(distance / 1_000.0) else "${distance.toInt()} متر")
+                                }
+                                place.address?.takeIf(String::isNotBlank)?.let(::add)
+                            }.joinToString(" • ")
+                            if (details.isNotBlank()) {
+                                Text(details, color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                         Icon(Icons.Rounded.ChevronLeft, contentDescription = null, tint = NvColors.TextSecondaryDark)
                     }
+                }
+
+                if (
+                    state.destinationQuery.isNotBlank() &&
+                    !state.destinationSearching &&
+                    visibleSuggestions.isEmpty() &&
+                    !(selectedRadiusKm != null && state.currentLocation == null)
+                ) {
+                    Text(
+                        if (selectedRadiusKm == null) "نتیجه‌ای پیدا نشد" else "نتیجه‌ای در شعاع انتخاب‌شده پیدا نشد",
+                        color = NvColors.TextSecondaryDark,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = NvSpacing.Sm, vertical = NvSpacing.Xs)
+                    )
                 }
             }
         }
