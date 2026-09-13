@@ -14,6 +14,7 @@ enum class SmartFeatureScreen(val titleFa: String) {
     ETA_CONFIDENCE("اطمینان زمان رسیدن"),
     TIME_COST("زمان و هزینه"),
     WALKING("مسیریابی پیاده"),
+    PARKING("پارکینگ مقصد"),
     PREFERENCES("ترجیحات هوشمند")
 }
 
@@ -33,6 +34,26 @@ data class ProviderAvailability(
     val messageFa: String
 )
 
+enum class Urgency { RELAXED, NORMAL, HURRY }
+
+data class TravelPreferences(
+    val urgency: Urgency = Urgency.NORMAL,
+    val maxWalkingMeters: Int = 1_500,
+    val enabledModes: Set<MobilityMode> = MobilityMode.entries.toSet(),
+    val maxCost: Long? = null,
+    val maxTransfers: Int = 2,
+    val avoidCrowding: Boolean = false,
+    val accessibilityRequired: Boolean = false,
+    val weatherSensitive: Boolean = false
+) {
+    fun normalized(): TravelPreferences = copy(
+        maxWalkingMeters = maxWalkingMeters.coerceIn(0, 20_000),
+        maxCost = maxCost?.coerceAtLeast(0L),
+        maxTransfers = maxTransfers.coerceIn(0, 5),
+        enabledModes = enabledModes.ifEmpty { setOf(MobilityMode.WALK) }
+    )
+}
+
 data class StationStatus(
     val stationName: String,
     val lineName: String,
@@ -49,6 +70,30 @@ data class TaxiEstimate(
     val currency: String?,
     val source: String,
     val bookable: Boolean
+)
+
+data class StationTransferOption(
+    val stationName: String,
+    val walkMeters: Double,
+    val waitMinutes: Int?,
+    val transfers: Int,
+    val crowdingPercent: Int?,
+    val accessible: Boolean?,
+    val source: String
+)
+
+enum class EtaRiskLevel(val titleFa: String) { LOW("کم"), MEDIUM("متوسط"), HIGH("زیاد") }
+
+data class EtaRisk(
+    val level: EtaRiskLevel,
+    val riskScore: Double,
+    val reasonFa: String
+)
+
+data class MultimodalRerouteDecision(
+    val shouldReroute: Boolean,
+    val reasonFa: String,
+    val triggerScore: Double
 )
 
 interface TransitRealtimeProvider {
@@ -79,6 +124,35 @@ object UnavailableTaxiProvider : TaxiProvider {
     )
 
     override fun estimate(distanceMeters: Double): TaxiEstimate? = null
+}
+
+/** Explicit deterministic mock for tests/demos only. Never wired by default in production. */
+class DeterministicMockTransitRealtimeProvider : TransitRealtimeProvider {
+    override val availability = ProviderAvailability(
+        available = true,
+        source = "mock-non-live",
+        messageFa = "داده آزمایشی mock است و زنده نیست"
+    )
+
+    override fun nearbyStationStatus(): List<StationStatus> = listOf(
+        StationStatus("ایستگاه آزمایشی", "خط آزمایشی", 7, 45, live = false, source = "mock-non-live")
+    )
+}
+
+/** Explicit deterministic mock for tests/demos only; never bookable. */
+class DeterministicMockTaxiProvider : TaxiProvider {
+    override val availability = ProviderAvailability(
+        available = true,
+        source = "mock-non-bookable",
+        messageFa = "برآورد آزمایشی mock است و امکان رزرو ندارد"
+    )
+
+    override fun estimate(distanceMeters: Double): TaxiEstimate {
+        val km = distanceMeters.coerceAtLeast(0.0) / 1_000.0
+        val eta = (4 + km * 1.2).roundToInt().coerceAtLeast(4)
+        val base = (50_000 + km * 12_000).roundToInt().toLong()
+        return TaxiEstimate(eta, base, base + 30_000, "mock-unit", "mock-non-bookable", bookable = false)
+    }
 }
 
 data class SmartAssistantReply(
@@ -297,6 +371,114 @@ class SmartMobilityEngine(
         taxiProvider.estimate(distanceMeters.coerceAtLeast(0.0))
     } else {
         null
+    }
+
+    fun rankStationTransfers(
+        options: List<StationTransferOption>,
+        preferences: TravelPreferences = TravelPreferences()
+    ): List<StationTransferOption> {
+        val prefs = preferences.normalized()
+        return options.filter { option ->
+            option.walkMeters <= prefs.maxWalkingMeters &&
+                option.transfers <= prefs.maxTransfers &&
+                (!prefs.accessibilityRequired || option.accessible != false)
+        }.sortedBy { option ->
+            val walkMinutes = option.walkMeters / WALKING_SPEED_MPS / 60.0
+            val wait = option.waitMinutes?.coerceAtLeast(0)?.toDouble() ?: 12.0
+            val transferPenalty = option.transfers * when (prefs.urgency) {
+                Urgency.HURRY -> 12.0
+                Urgency.NORMAL -> 8.0
+                Urgency.RELAXED -> 5.0
+            }
+            val crowdPenalty = if (prefs.avoidCrowding) (option.crowdingPercent ?: 50) / 8.0 else 0.0
+            walkMinutes + wait + transferPenalty + crowdPenalty
+        }
+    }
+
+    fun etaRisk(confidence: EtaConfidence, trafficDelaySeconds: Double? = null): EtaRisk {
+        val delayRatio = if (confidence.etaSeconds <= 0.0) 0.0 else
+            (trafficDelaySeconds?.coerceAtLeast(0.0) ?: 0.0) / confidence.etaSeconds
+        val uncertaintyRatio = if (confidence.etaSeconds <= 0.0) 1.0 else
+            confidence.uncertaintySeconds / confidence.etaSeconds
+        val score = ((1.0 - confidence.confidence) * 0.65 +
+            uncertaintyRatio.coerceIn(0.0, 1.0) * 0.20 +
+            delayRatio.coerceIn(0.0, 1.0) * 0.15).coerceIn(0.0, 1.0)
+        val level = when {
+            score >= .45 -> EtaRiskLevel.HIGH
+            score >= .25 -> EtaRiskLevel.MEDIUM
+            else -> EtaRiskLevel.LOW
+        }
+        val reason = when (level) {
+            EtaRiskLevel.LOW -> "داده‌های ETA پایدار هستند"
+            EtaRiskLevel.MEDIUM -> "عدم‌قطعیت یا تأخیر مسیر قابل توجه است"
+            EtaRiskLevel.HIGH -> "ETA ناپایدار است؛ زمان بیشتری برای سفر در نظر بگیرید"
+        }
+        return EtaRisk(level, score, reason)
+    }
+
+    fun multimodalCandidates(
+        route: Route?,
+        preferences: TravelPreferences = TravelPreferences()
+    ): List<MultimodalPlan> {
+        if (route == null) return emptyList()
+        val prefs = preferences.normalized()
+        val plans = mutableListOf<MultimodalPlan>()
+        if (MobilityMode.WALK in prefs.enabledModes && route.distanceMeters <= prefs.maxWalkingMeters) {
+            val walk = walking(route.distanceMeters)
+            plans += MultimodalPlan(
+                available = true,
+                legs = listOf(MultimodalLeg(MobilityMode.WALK, "پیاده‌روی", walk.distanceMeters, walk.travelSeconds, false, walk.source)),
+                totalSeconds = walk.travelSeconds,
+                warningFa = if (walk.exactRoute) null else "فاصله پیاده برآورد محلی است"
+            )
+        }
+        if (MobilityMode.TAXI in prefs.enabledModes && taxiProvider.availability.available) {
+            val estimate = taxiProvider.estimate(route.distanceMeters)
+            if (estimate != null && (prefs.maxCost == null || estimate.fareMin == null || estimate.fareMin <= prefs.maxCost)) {
+                plans += MultimodalPlan(
+                    available = true,
+                    legs = listOf(MultimodalLeg(MobilityMode.TAXI, "تاکسی", route.distanceMeters, route.travelSeconds, false, estimate.source)),
+                    totalSeconds = estimate.etaMinutes * 60.0 + route.travelSeconds,
+                    warningFa = if (estimate.bookable) null else "این provider امکان رزرو مستقیم ندارد"
+                )
+            }
+        }
+        if (setOf(MobilityMode.METRO, MobilityMode.BUS, MobilityMode.BRT).any(prefs.enabledModes::contains) && transitProvider.availability.available) {
+            val status = transitProvider.nearbyStationStatus().firstOrNull()
+            if (status != null) {
+                val waitSeconds = (status.nextArrivalMinutes ?: 12).coerceAtLeast(0) * 60.0
+                plans += MultimodalPlan(
+                    available = true,
+                    legs = listOf(MultimodalLeg(MobilityMode.METRO, status.lineName, route.distanceMeters, route.travelSeconds + waitSeconds, status.live, status.source)),
+                    totalSeconds = route.travelSeconds + waitSeconds,
+                    warningFa = if (status.live) null else "زمان حمل‌ونقل عمومی زنده نیست"
+                )
+            }
+        }
+        return plans.sortedBy { plan ->
+            val urgencyFactor = when (prefs.urgency) { Urgency.HURRY -> 1.0; Urgency.NORMAL -> .8; Urgency.RELAXED -> .6 }
+            plan.totalSeconds * urgencyFactor
+        }
+    }
+
+    fun dynamicRerouteDecision(
+        delayIncreaseSeconds: Double,
+        crowdingPercent: Int?,
+        walkingMeters: Double,
+        preferences: TravelPreferences = TravelPreferences()
+    ): MultimodalRerouteDecision {
+        val prefs = preferences.normalized()
+        val delayScore = (delayIncreaseSeconds.coerceAtLeast(0.0) / 900.0).coerceIn(0.0, 1.0)
+        val crowdScore = if (prefs.avoidCrowding) ((crowdingPercent ?: 0) / 100.0).coerceIn(0.0, 1.0) else 0.0
+        val walkScore = if (walkingMeters > prefs.maxWalkingMeters) 1.0 else 0.0
+        val urgencyBoost = if (prefs.urgency == Urgency.HURRY) .15 else 0.0
+        val score = (delayScore * .55 + crowdScore * .25 + walkScore * .20 + urgencyBoost).coerceIn(0.0, 1.0)
+        val reroute = score >= .45
+        return MultimodalRerouteDecision(
+            shouldReroute = reroute,
+            reasonFa = if (reroute) "شرایط سفر چندحالته تغییر معنادار کرده است؛ گزینه جایگزین بررسی شود" else "تغییر فعلی برای تعویض برنامه سفر کافی نیست",
+            triggerScore = score
+        )
     }
 
     private companion object {

@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import ir.nv.navigation.community.CommunityReportType
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.map.OfflineIranMap
@@ -142,7 +143,8 @@ fun RahnamaNavigationScreen(
             RightNavigationBottomBar(
                 remainingDistanceMeters = state.remainingDistanceMeters,
                 remainingSeconds = state.remainingSeconds.toLong(),
-                speedKmh = state.speedKmh
+                speedKmh = state.speedKmh,
+                speedLimitKmh = state.speedLimitKmh
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Sm)) {
                 OutlinedButton(
@@ -174,6 +176,8 @@ fun RahnamaNavigationScreen(
             RahnamaRouteAlerts(
                 notices = state.routeNotices,
                 loading = state.routeInsightsLoading,
+                communityUploadsEnabled = state.privacySettings.communityUploads,
+                onReport = viewModel::submitCommunityReport,
                 onClose = { alertsOpen = false }
             )
         }
@@ -278,6 +282,8 @@ private fun NavigationFloatingButton(
 private fun RahnamaRouteAlerts(
     notices: List<RouteNotice>,
     loading: Boolean,
+    communityUploadsEnabled: Boolean,
+    onReport: (CommunityReportType, String?) -> Unit,
     onClose: () -> Unit
 ) {
     Column(
@@ -293,6 +299,32 @@ private fun RahnamaRouteAlerts(
             color = NvColors.TextSecondaryDark,
             style = MaterialTheme.typography.bodySmall
         )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = NvColors.Navy850,
+            shape = RoundedCornerShape(NvRadius.Card),
+            border = BorderStroke(1.dp, NvColors.DividerDark)
+        ) {
+            Column(Modifier.padding(NvSpacing.Md), verticalArrangement = Arrangement.spacedBy(NvSpacing.Sm)) {
+                Text("گزارش مشارکتی مسیر", fontWeight = FontWeight.Bold)
+                Text(
+                    if (communityUploadsEnabled) "ارسال شبکه با رضایت شما فعال است" else "گزارش‌ها محلی ذخیره می‌شوند؛ ارسال شبکه خاموش است",
+                    color = NvColors.TextSecondaryDark,
+                    style = MaterialTheme.typography.labelSmall
+                )
+                CommunityReportType.entries.chunked(4).forEach { rowItems ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+                        rowItems.forEach { type ->
+                            OutlinedButton(
+                                onClick = { onReport(type, null) },
+                                modifier = Modifier.weight(1f)
+                            ) { Text(type.titleFa, maxLines = 1) }
+                        }
+                        repeat(4 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (!loading && notices.isEmpty()) {
             Surface(

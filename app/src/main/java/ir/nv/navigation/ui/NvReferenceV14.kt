@@ -12,16 +12,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.places.NearbyCategory
 import ir.nv.navigation.places.NearbyScope
-import ir.nv.navigation.places.NearbySearchCoordinator
 import ir.nv.navigation.places.NearbySearchRequest
-import ir.nv.navigation.places.PlaceSearchContext
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvColors
 import ir.nv.navigation.ui.theme.NvRadius
@@ -37,6 +34,7 @@ fun NvReferenceV14(
 ) {
     val state by viewModel.state.collectAsState()
     var nearbyOpen by remember { mutableStateOf(false) }
+    var nearbyInitialCategory by remember { mutableStateOf<NearbyCategory?>(null) }
     var savedOpen by remember { mutableStateOf(false) }
     var selectedPlace by remember { mutableStateOf<Place?>(null) }
 
@@ -53,9 +51,11 @@ fun NvReferenceV14(
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             viewModel = viewModel,
-            onNearby = { nearbyOpen = true },
-            onPin = { savedOpen = true },
-            onRefineDestination = { }
+            onNearby = { category ->
+                nearbyInitialCategory = category
+                nearbyOpen = true
+            },
+            onPin = { savedOpen = true }
         )
     }
 
@@ -63,8 +63,12 @@ fun NvReferenceV14(
         RahnamaNearbyDialog(
             state = state,
             viewModel = viewModel,
+            initialCategory = nearbyInitialCategory,
             onPlaceSelected = { selectedPlace = it },
-            onDismiss = { nearbyOpen = false }
+            onDismiss = {
+                nearbyOpen = false
+                nearbyInitialCategory = null
+            }
         )
     }
 
@@ -72,8 +76,12 @@ fun NvReferenceV14(
         RahnamaPlaceDetailsDialog(
             place = place,
             onRoute = {
-                if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
-                viewModel.selectDestination(place)
+                if (state.origin == null) {
+                    viewModel.routeFromCurrentLocationTo(place)
+                } else {
+                    viewModel.selectDestination(place)
+                    viewModel.calculateRoute()
+                }
                 selectedPlace = null
                 nearbyOpen = false
             },
@@ -94,18 +102,14 @@ fun NvReferenceV14(
 private fun RahnamaNearbyDialog(
     state: NvUiState,
     viewModel: NvViewModel,
+    initialCategory: NearbyCategory?,
     onPlaceSelected: (Place) -> Unit,
     onDismiss: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val androidContext = LocalContext.current.applicationContext
-    val nearbyCoordinator = remember(androidContext) { NearbySearchCoordinator(androidContext) }
-    DisposableEffect(nearbyCoordinator) {
-        onDispose { nearbyCoordinator.close() }
-    }
     var radiusKm by remember { mutableIntStateOf(5) }
     var nearbyScope by remember { mutableStateOf(NearbyScope.AROUND_ME) }
-    var selectedCategory by remember { mutableStateOf<NearbyCategory?>(null) }
+    var selectedCategory by remember(initialCategory) { mutableStateOf(initialCategory) }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -116,19 +120,11 @@ private fun RahnamaNearbyDialog(
         results = emptyList()
         error = null
 
-        val context = PlaceSearchContext(
-            currentLocation = state.currentLocation,
-            origin = state.origin?.coordinate,
-            destination = state.destination?.coordinate,
-            route = state.route,
-            onlineAvailable = state.onlineAvailable,
-            preferOffline = state.preferOffline
-        )
         val missingAnchor = when (nearbyScope) {
-            NearbyScope.AROUND_ME -> context.currentLocation == null
-            NearbyScope.NEAR_ORIGIN -> context.origin == null
-            NearbyScope.NEAR_DESTINATION -> context.destination == null
-            NearbyScope.ALONG_ROUTE -> context.route == null
+            NearbyScope.AROUND_ME -> state.currentLocation == null
+            NearbyScope.NEAR_ORIGIN -> state.origin == null
+            NearbyScope.NEAR_DESTINATION -> state.destination == null
+            NearbyScope.ALONG_ROUTE -> state.route == null
         }
         if (missingAnchor) {
             if (nearbyScope == NearbyScope.AROUND_ME) viewModel.useCurrentLocationAsOrigin()
@@ -148,14 +144,13 @@ private fun RahnamaNearbyDialog(
         loading = true
         coroutineScope.launch {
             val value = runCatching {
-                nearbyCoordinator.nearby(
+                viewModel.discoverNearby(
                     NearbySearchRequest(
                         category = resolvedCategory,
                         scope = nearbyScope,
                         radiusMeters = radiusKm * 1_000,
                         limit = 40
-                    ),
-                    context
+                    )
                 )
             }
             value.onSuccess {
@@ -163,6 +158,18 @@ private fun RahnamaNearbyDialog(
                 if (it.isEmpty()) error = "در محدوده انتخاب‌شده نتیجه‌ای پیدا نشد"
             }.onFailure { error = it.message ?: "جستجوی اطراف ناموفق بود" }
             loading = false
+        }
+    }
+
+    LaunchedEffect(initialCategory, state.currentLocation, state.origin, state.destination, state.route, nearbyScope, radiusKm) {
+        if (initialCategory != null && selectedCategory == initialCategory) {
+            val anchorReady = when (nearbyScope) {
+                NearbyScope.AROUND_ME -> state.currentLocation != null
+                NearbyScope.NEAR_ORIGIN -> state.origin != null
+                NearbyScope.NEAR_DESTINATION -> state.destination != null
+                NearbyScope.ALONG_ROUTE -> state.route != null
+            }
+            if (anchorReady && results.isEmpty() && !loading) search(initialCategory)
         }
     }
 
@@ -389,8 +396,12 @@ private fun RahnamaSavedDialog(state: NvUiState, viewModel: NvViewModel, onDismi
                     saved.forEach { place ->
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
-                                viewModel.selectDestination(place)
+                                if (state.origin == null) {
+                                    viewModel.routeFromCurrentLocationTo(place)
+                                } else {
+                                    viewModel.selectDestination(place)
+                                    viewModel.calculateRoute()
+                                }
                                 onDismiss()
                             }.padding(vertical = NvSpacing.Md),
                             verticalAlignment = Alignment.CenterVertically

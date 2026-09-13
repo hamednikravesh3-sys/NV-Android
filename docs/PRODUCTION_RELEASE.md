@@ -42,11 +42,11 @@ The `Signed Release APK` workflow is intentionally manual (`workflow_dispatch`) 
 5. Release unit tests and `assembleRelease` pass.
 6. `apksigner verify` passes on the generated APK.
 7. APK signing certificate SHA-256 matches the pinned production certificate.
-8. APK identity is exactly `ir.nv.navigation`, versionCode `18`, versionName `0.17.0`, minSdk `29`, targetSdk `35`.
+8. APK identity is exactly `ir.nv.navigation`, versionCode `19`, versionName `0.18.0`, minSdk `29`, targetSdk `36`.
 9. APK SHA-256 is generated and recorded.
 10. The machine-readable release manifest matches the APK, Git SHA, SDK/version identity, SHA-256, and signing certificate.
-11. The signed APK installs and launches successfully on Android 10 / API 29.
-12. The signed APK installs and launches successfully on Android 15 / API 35.
+11. The signed APK is 16 KiB page aligned and passes package/signature verification.
+12. The signed APK installs and launches successfully on Android 16 / API 36.
 13. No app fatal exception or ANR is detected by the release smoke tests.
 14. The final signed artifact bundle uploads successfully.
 

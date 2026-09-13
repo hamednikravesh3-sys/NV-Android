@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import ir.nv.navigation.navigation.VehicleProfile
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvColors
 
@@ -75,8 +76,13 @@ fun NvReferenceV16(
             viewModel = viewModel,
             onDismiss = { emergencyOpen = false },
             onRouteToPlace = { place ->
-                if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
-                viewModel.selectDestination(place)
+                if (state.origin == null) {
+                    viewModel.routeFromCurrentLocationTo(place, VehicleProfile.CAR)
+                } else {
+                    viewModel.selectDestination(place)
+                    viewModel.setVehicleProfile(VehicleProfile.CAR)
+                    viewModel.calculateRoute()
+                }
                 emergencyOpen = false
             }
         )

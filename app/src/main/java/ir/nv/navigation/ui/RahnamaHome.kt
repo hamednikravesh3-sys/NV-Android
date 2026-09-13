@@ -27,6 +27,7 @@ import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.map.OfflineIranMap
 import ir.nv.navigation.map.OnlineIranMap
 import ir.nv.navigation.places.NearbySearchPolicy
+import ir.nv.navigation.places.NearbyCategory
 import ir.nv.navigation.routing.NavigationModeResolver
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvColors
@@ -41,15 +42,13 @@ fun RahnamaHomeScreen(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
     viewModel: NvViewModel,
-    onNearby: () -> Unit,
-    onPin: () -> Unit,
-    onRefineDestination: () -> Unit
+    onNearby: (NearbyCategory?) -> Unit,
+    onPin: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     var settingsVisible by remember { mutableStateOf(false) }
     var searchExpanded by remember { mutableStateOf(false) }
-    var lastPair by remember { mutableStateOf<String?>(null) }
 
     fun hasFineLocationPermission() =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -90,18 +89,6 @@ fun RahnamaHomeScreen(
         else navigationLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
-    val pairKey = if (state.origin != null && state.destination != null) {
-        "${state.origin!!.coordinate.latitude},${state.origin!!.coordinate.longitude}->${state.destination!!.coordinate.latitude},${state.destination!!.coordinate.longitude}"
-    } else null
-
-    LaunchedEffect(pairKey) {
-        if (pairKey != null && pairKey != lastPair) {
-            lastPair = pairKey
-            viewModel.clearRoute()
-            viewModel.calculateRoute()
-        }
-    }
-
     Box(Modifier.fillMaxSize()) {
         RahnamaMap(state, viewModel, darkMode)
 
@@ -118,10 +105,13 @@ fun RahnamaHomeScreen(
                 expanded = searchExpanded,
                 onExpandedChange = { searchExpanded = it },
                 onSelectDestination = { place ->
-                    if (state.origin == null) viewModel.useCurrentLocationAsOrigin()
-                    viewModel.selectDestination(place)
+                    if (state.origin == null) {
+                        viewModel.routeFromCurrentLocationTo(place)
+                    } else {
+                        viewModel.selectDestination(place)
+                        viewModel.calculateRoute()
+                    }
                     searchExpanded = false
-                    onRefineDestination()
                 }
             )
 
@@ -160,9 +150,6 @@ fun RahnamaHomeScreen(
         if (state.routeAlternatives.isEmpty() && !searchExpanded) {
             RahnamaQuickPanel(
                 onNearby = onNearby,
-                onEmergency = onNearby,
-                onPharmacy = onNearby,
-                onParking = onNearby,
                 onPin = onPin,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -455,10 +442,7 @@ private fun RahnamaSearchBar(
 
 @Composable
 private fun RahnamaQuickPanel(
-    onNearby: () -> Unit,
-    onEmergency: () -> Unit,
-    onPharmacy: () -> Unit,
-    onParking: () -> Unit,
+    onNearby: (NearbyCategory?) -> Unit,
     onPin: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -472,13 +456,13 @@ private fun RahnamaQuickPanel(
         Column(Modifier.padding(NvSpacing.Md), verticalArrangement = Arrangement.spacedBy(NvSpacing.Md)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("دسترسی سریع", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black)
-                TextButton(onClick = onNearby) { Text("همه اطراف من", color = NvColors.RouteBlue) }
+                TextButton(onClick = { onNearby(null) }) { Text("همه اطراف من", color = NvColors.RouteBlue) }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                RahnamaQuickAction(Icons.Rounded.Emergency, "اورژانس", NvColors.Emergency, onEmergency)
-                RahnamaQuickAction(Icons.Rounded.LocalHospital, "بیمارستان", NvColors.Info, onNearby)
-                RahnamaQuickAction(Icons.Rounded.LocalPharmacy, "داروخانه", NvColors.Success, onPharmacy)
-                RahnamaQuickAction(Icons.Rounded.LocalParking, "پارکینگ", NvColors.RouteBlue, onParking)
+                RahnamaQuickAction(Icons.Rounded.Emergency, "اورژانس", NvColors.Emergency) { onNearby(NearbyCategory.EMERGENCY) }
+                RahnamaQuickAction(Icons.Rounded.LocalHospital, "بیمارستان", NvColors.Info) { onNearby(NearbyCategory.HOSPITAL) }
+                RahnamaQuickAction(Icons.Rounded.LocalPharmacy, "داروخانه", NvColors.Success) { onNearby(NearbyCategory.PHARMACY) }
+                RahnamaQuickAction(Icons.Rounded.LocalParking, "پارکینگ", NvColors.RouteBlue) { onNearby(NearbyCategory.PARKING) }
                 RahnamaQuickAction(Icons.Rounded.Bookmark, "ذخیره", NvColors.Warning, onPin)
             }
         }

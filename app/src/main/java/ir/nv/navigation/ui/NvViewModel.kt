@@ -1,6 +1,7 @@
 package ir.nv.navigation.ui
 
 import android.app.Application
+import ir.nv.navigation.BuildConfig
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import ir.nv.navigation.core.Place
@@ -10,6 +11,14 @@ import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.core.RouteSource
 import ir.nv.navigation.core.TrafficSummary
 import ir.nv.navigation.core.TrafficSegment
+import ir.nv.navigation.community.CommunityReport
+import ir.nv.navigation.community.CommunityReportRepository
+import ir.nv.navigation.community.CommunityReportType
+import ir.nv.navigation.community.HttpCommunityReportRemote
+import ir.nv.navigation.community.UnavailableCommunityReportRemote
+import ir.nv.navigation.application.DestinationParkingUseCase
+import ir.nv.navigation.application.EmergencySearchUseCase
+import ir.nv.navigation.application.NearbyDiscoveryUseCase
 import ir.nv.navigation.data.PersonalPlaceStore
 import ir.nv.navigation.data.IranCityIndex
 import ir.nv.navigation.data.PersianText
@@ -22,13 +31,26 @@ import ir.nv.navigation.location.DeviceLocationProvider
 import ir.nv.navigation.location.NavigationFix
 import ir.nv.navigation.navigation.ContinuousRerouteEngine
 import ir.nv.navigation.navigation.ContinuousReroutePolicy
+import ir.nv.navigation.navigation.ArrivalConfirmationGate
+import ir.nv.navigation.navigation.EvRoutePreferences
 import ir.nv.navigation.navigation.NvNavigationPlatform
+import ir.nv.navigation.navigation.OffRouteConfirmationGate
 import ir.nv.navigation.navigation.RouteProfile
 import ir.nv.navigation.navigation.RouteRequest
+import ir.nv.navigation.navigation.TruckRestrictions
+import ir.nv.navigation.navigation.VehicleProfile
 import ir.nv.navigation.navigation.mapmatching.RawLocationSample
+import ir.nv.navigation.navigation.mapmatching.RouteLocalMapMatcher
 import ir.nv.navigation.network.NetworkMonitor
 import ir.nv.navigation.online.OnlineNavigationService
 import ir.nv.navigation.online.OnlinePlacesService
+import ir.nv.navigation.places.NearbyCategory
+import ir.nv.navigation.places.NearbySearchRequest
+import ir.nv.navigation.places.PlaceSearchContext
+import ir.nv.navigation.parking.ParkingOption
+import ir.nv.navigation.parking.ParkingPlanner
+import ir.nv.navigation.privacy.PrivacySettingsState
+import ir.nv.navigation.privacy.PrivacySettingsStore
 import ir.nv.navigation.routing.AStarRouter
 import ir.nv.navigation.routing.RouteProgressEngine
 import ir.nv.navigation.routing.RouteOriginConnector
@@ -68,6 +90,20 @@ data class NvUiState(
     val route: Route? = null,
     val routeAlternatives: List<Route> = emptyList(),
     val selectedRouteIndex: Int = 0,
+    val routeProfile: RouteProfile = RouteProfile.SMART,
+    val vehicleProfile: VehicleProfile = VehicleProfile.CAR,
+    val truckRestrictions: TruckRestrictions = TruckRestrictions(),
+    val evRoutePreferences: EvRoutePreferences = EvRoutePreferences(),
+    val arrivalDetected: Boolean = false,
+    val speedLimitKmh: Int? = null,
+    val parkingOptions: List<ParkingOption> = emptyList(),
+    val parkingSearchLoading: Boolean = false,
+    val parkingFinalDestination: Place? = null,
+    val parkingHandoffAvailable: Boolean = false,
+    val privacySettings: PrivacySettingsState = PrivacySettingsState(),
+    val communityReports: List<CommunityReport> = emptyList(),
+    val communitySyncing: Boolean = false,
+    val locationAccuracyMeters: Float? = null,
     val recentPlaces: List<Place> = emptyList(),
     val personalPlaces: List<Place> = emptyList(),
     val navigationActive: Boolean = false,
@@ -107,6 +143,16 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private val onlinePlaces = OnlinePlacesService()
     private val networkMonitor = NetworkMonitor(application)
     private val locationProvider = DeviceLocationProvider(application)
+    private val nearbyDiscoveryUseCase = NearbyDiscoveryUseCase(application)
+    private val emergencySearchUseCase = EmergencySearchUseCase(nearbyDiscoveryUseCase)
+    private val destinationParkingUseCase = DestinationParkingUseCase(nearbyDiscoveryUseCase)
+    private val privacySettingsStore = PrivacySettingsStore(application)
+    private val communityReportRepository = CommunityReportRepository(
+        application,
+        BuildConfig.COMMUNITY_REPORT_API_URL.takeIf { it.startsWith("https://") }
+            ?.let(::HttpCommunityReportRemote)
+            ?: UnavailableCommunityReportRemote
+    )
     private val trialManager = TrialManager(application)
     private val weatherAlerts = WeatherAlertService()
     private val liveTraffic = LiveTrafficService()
@@ -117,6 +163,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             offlineReady = packManager.isReady(),
             recentPlaces = recentPlaces.all(),
             personalPlaces = personalPlaces.all(),
+            privacySettings = privacySettingsStore.load(),
+            communityReports = communityReportRepository.all(),
             trialState = runCatching { trialManager.state() }.getOrDefault(TrialManager.State.Trial(30))
         )
     )
@@ -148,7 +196,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
     private var navigationJob: Job? = null
     private var insightsRefreshJob: Job? = null
-    private var offRouteSamples = 0
+    private val offRouteConfirmationGate = OffRouteConfirmationGate()
+    private val arrivalConfirmationGate = ArrivalConfirmationGate()
     private var lastRerouteAt = 0L
     private var lastContinuousRerouteCheckAt = 0L
     private var previousTrafficDelaySeconds = 0.0
@@ -168,6 +217,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     )
                 }
+                if (available) syncCommunityReports()
             }
         }
         if (packManager.isReady()) viewModelScope.launch { openDataPack() }
@@ -220,6 +270,31 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             mutableState.update { it.copy(preferOffline = value, message = null) }
         }
+    }
+
+    fun setRouteProfile(profile: RouteProfile) {
+        mutableState.update { it.copy(routeProfile = profile, message = null) }
+    }
+
+    fun setVehicleProfile(profile: VehicleProfile) {
+        mutableState.update { state ->
+            state.copy(
+                vehicleProfile = profile,
+                message = when {
+                    profile == VehicleProfile.TRANSIT && !state.onlineAvailable ->
+                        "مسیر حمل‌ونقل عمومی به provider آنلاین سازگار نیاز دارد"
+                    else -> null
+                }
+            )
+        }
+    }
+
+    fun updateTruckRestrictions(value: TruckRestrictions) {
+        mutableState.update { it.copy(truckRestrictions = value.normalized(), vehicleProfile = VehicleProfile.TRUCK) }
+    }
+
+    fun updateEvRoutePreferences(value: EvRoutePreferences) {
+        mutableState.update { it.copy(evRoutePreferences = value.normalized(), vehicleProfile = VehicleProfile.EV) }
     }
 
     fun toggleSatelliteMode() {
@@ -345,6 +420,12 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 navigationActive = false,
                 maneuverIndex = 0,
                 offRoute = false,
+                arrivalDetected = false,
+                speedLimitKmh = null,
+                parkingOptions = emptyList(),
+                parkingSearchLoading = false,
+                parkingFinalDestination = null,
+                parkingHandoffAvailable = false,
                 routeSource = RouteSource.NONE,
                 routeNotices = emptyList(),
                 routeInsightsLoading = false,
@@ -361,7 +442,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         navigationJob?.cancel()
-        offRouteSamples = 0
+        offRouteConfirmationGate.reset()
+        arrivalConfirmationGate.reset()
         lastRerouteAt = 0L
         lastContinuousRerouteCheckAt = 0L
         previousTrafficDelaySeconds = mutableState.value.traffic?.delaySeconds ?: 0.0
@@ -369,6 +451,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update {
             it.copy(
                 navigationActive = true,
+                arrivalDetected = false,
                 navigationZoomLevel = DEFAULT_NAVIGATION_ZOOM,
                 cameraAutomatic = true,
                 followNavigation = true,
@@ -431,6 +514,46 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleVoice() {
         mutableState.update { it.copy(voiceEnabled = !it.voiceEnabled) }
+    }
+
+    fun routeFromCurrentLocationTo(destination: Place, vehicleProfile: VehicleProfile = mutableState.value.vehicleProfile) {
+        if (!locationProvider.hasPermission()) {
+            mutableState.update { it.copy(message = "برای مسیریابی از موقعیت فعلی، دسترسی موقعیت مکانی را فعال کنید") }
+            return
+        }
+        viewModelScope.launch {
+            mutableState.update { it.copy(locating = true, routing = true, message = "در حال دریافت موقعیت فعلی…") }
+            val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
+            if (coordinate == null) {
+                mutableState.update { it.copy(locating = false, routing = false, message = "موقعیت فعلی پیدا نشد؛ GPS را بررسی کنید") }
+                return@launch
+            }
+            val origin = Place(
+                code = CURRENT_LOCATION_CODE,
+                name = "موقعیت فعلی من",
+                coordinate = coordinate,
+                category = DEVICE_LOCATION_SNAPSHOT_CATEGORY
+            )
+            recentPlaces.record(destination)
+            mutableState.update {
+                it.copy(
+                    locating = false,
+                    routing = false,
+                    currentLocation = coordinate,
+                    origin = origin,
+                    originQuery = origin.name,
+                    originSuggestions = emptyList(),
+                    destination = destination,
+                    destinationQuery = destination.name,
+                    destinationSuggestions = emptyList(),
+                    recentPlaces = recentPlaces.all(),
+                    vehicleProfile = vehicleProfile,
+                    arrivalDetected = false,
+                    message = null
+                )
+            }
+            calculateRoute()
+        }
     }
 
     fun useCurrentLocationAsOrigin() {
@@ -534,10 +657,13 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             val request = RouteRequest(
                 origin = origin.coordinate,
                 destination = destination.coordinate,
-                profile = RouteProfile.SMART,
+                profile = snapshot.routeProfile,
+                vehicleProfile = snapshot.vehicleProfile,
                 preferOffline = snapshot.preferOffline,
                 onlineAvailable = snapshot.onlineAvailable,
-                offlineAvailable = snapshot.offlineReady && router != null
+                offlineAvailable = snapshot.offlineReady && router != null,
+                truck = snapshot.truckRestrictions,
+                ev = snapshot.evRoutePreferences
             )
             val plan = runCatching { navigationPlatform.routeCoordinator.plan(request) }
                 .getOrElse { error ->
@@ -564,6 +690,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     remainingDistanceMeters = result?.distanceMeters ?: 0.0,
                     remainingSeconds = result?.travelSeconds ?: 0.0,
                     offRoute = false,
+                    arrivalDetected = false,
+                    speedLimitKmh = result?.maneuvers?.firstOrNull()?.speedLimitKmh,
                     routeSource = source,
                     routeNotices = emptyList(),
                     routeInsightsLoading = result != null,
@@ -584,6 +712,208 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 lastInsightsRemainingMeters = it.distanceMeters
                 loadRouteNotices(it, it)
             }
+        }
+    }
+
+    suspend fun discoverNearby(request: NearbySearchRequest): List<Place> {
+        val snapshot = mutableState.value
+        return nearbyDiscoveryUseCase(
+            request,
+            PlaceSearchContext(
+                currentLocation = snapshot.currentLocation,
+                origin = snapshot.origin?.coordinate,
+                destination = snapshot.destination?.coordinate,
+                route = snapshot.route,
+                onlineAvailable = snapshot.onlineAvailable,
+                preferOffline = snapshot.preferOffline
+            )
+        )
+    }
+
+    suspend fun discoverEmergency(category: NearbyCategory, radiusMeters: Int = 25_000): List<Place> {
+        val snapshot = mutableState.value
+        val center = snapshot.currentLocation ?: snapshot.origin?.coordinate
+            ?: throw IllegalStateException("ابتدا موقعیت فعلی را دریافت کنید")
+        return emergencySearchUseCase.search(
+            category = category,
+            center = center,
+            onlineAvailable = snapshot.onlineAvailable,
+            preferOffline = snapshot.preferOffline,
+            radiusMeters = radiusMeters
+        )
+    }
+
+    suspend fun discoverDestinationParking(radiusMeters: Int = 5_000): List<Place> {
+        val snapshot = mutableState.value
+        val destination = snapshot.destination?.coordinate
+            ?: throw IllegalStateException("ابتدا مقصد را مشخص کنید")
+        return destinationParkingUseCase.search(
+            destination = destination,
+            onlineAvailable = snapshot.onlineAvailable,
+            preferOffline = snapshot.preferOffline,
+            radiusMeters = radiusMeters
+        )
+    }
+
+    fun setStrictPrivacy(enabled: Boolean) {
+        val updated = privacySettingsStore.update { it.copy(strictMode = enabled) }
+        mutableState.update { it.copy(privacySettings = updated) }
+    }
+
+    fun setLocationHistoryConsent(enabled: Boolean) {
+        val updated = privacySettingsStore.update { it.copy(locationHistory = enabled) }
+        mutableState.update { it.copy(privacySettings = updated) }
+    }
+
+    fun setAnalyticsConsent(enabled: Boolean) {
+        val updated = privacySettingsStore.update { it.copy(analytics = enabled) }
+        mutableState.update { it.copy(privacySettings = updated) }
+    }
+
+    fun setCommunityUploads(enabled: Boolean) {
+        val updated = privacySettingsStore.update { it.copy(communityUploads = enabled) }
+        mutableState.update {
+            it.copy(
+                privacySettings = updated,
+                message = if (enabled && BuildConfig.COMMUNITY_REPORT_API_URL.isBlank()) {
+                    "رضایت ارسال ثبت شد، اما endpoint گزارش‌های مشارکتی پیکربندی نشده است"
+                } else null
+            )
+        }
+        if (enabled && mutableState.value.onlineAvailable) syncCommunityReports()
+    }
+
+    fun setCloudSyncConsent(enabled: Boolean) {
+        val updated = privacySettingsStore.update { it.copy(cloudSync = enabled) }
+        mutableState.update { it.copy(privacySettings = updated) }
+    }
+
+    fun submitCommunityReport(type: CommunityReportType, note: String? = null) {
+        val snapshot = mutableState.value
+        val coordinate = snapshot.currentLocation ?: run {
+            mutableState.update { it.copy(message = "برای ثبت گزارش، موقعیت فعلی لازم است") }
+            return
+        }
+        communityReportRepository.submit(
+            type = type,
+            coordinate = coordinate,
+            accuracyMeters = snapshot.locationAccuracyMeters,
+            note = note
+        )
+        mutableState.update {
+            it.copy(
+                communityReports = communityReportRepository.all(),
+                message = if (it.privacySettings.communityUploads) {
+                    "گزارش ${type.titleFa} ثبت شد و برای همگام‌سازی آماده است"
+                } else {
+                    "گزارش ${type.titleFa} محلی ثبت شد؛ ارسال شبکه در حریم خصوصی خاموش است"
+                }
+            )
+        }
+        if (snapshot.onlineAvailable && snapshot.privacySettings.communityUploads) syncCommunityReports()
+    }
+
+    private fun syncCommunityReports() {
+        val snapshot = mutableState.value
+        if (!snapshot.onlineAvailable || !snapshot.privacySettings.communityUploads || snapshot.communitySyncing) return
+        viewModelScope.launch(Dispatchers.IO) {
+            mutableState.update { it.copy(communitySyncing = true) }
+            val reports = runCatching { communityReportRepository.syncPending(mutableState.value.privacySettings) }
+                .getOrDefault(communityReportRepository.all())
+            mutableState.update { it.copy(communityReports = reports, communitySyncing = false) }
+        }
+    }
+
+    fun searchParkingNearDestination(radiusMeters: Int = 5_000) {
+        val snapshot = mutableState.value
+        val destination = snapshot.destination ?: run {
+            mutableState.update { it.copy(message = "ابتدا مقصد را مشخص کنید") }
+            return
+        }
+        if (!snapshot.onlineAvailable && !snapshot.offlineReady) {
+            mutableState.update { it.copy(message = "برای جستجوی پارکینگ، اینترنت یا بسته آفلاین مکان‌ها لازم است") }
+            return
+        }
+        viewModelScope.launch {
+            mutableState.update { it.copy(parkingSearchLoading = true, parkingOptions = emptyList(), message = null) }
+            val result = runCatching {
+                val places = discoverDestinationParking(radiusMeters)
+                ParkingPlanner.rank(destination.coordinate, places)
+            }
+            result.onSuccess { options ->
+                mutableState.update {
+                    it.copy(
+                        parkingSearchLoading = false,
+                        parkingOptions = options,
+                        message = if (options.isEmpty()) "پارکینگ نزدیک مقصد پیدا نشد" else null
+                    )
+                }
+            }.onFailure { error ->
+                mutableState.update { it.copy(parkingSearchLoading = false, message = error.message ?: "جستجوی پارکینگ ناموفق بود") }
+            }
+        }
+    }
+
+    fun routeToParking(option: ParkingOption) {
+        val finalDestination = mutableState.value.destination ?: return
+        recentPlaces.record(option.place)
+        mutableState.update {
+            it.copy(
+                destination = option.place,
+                destinationQuery = option.place.name,
+                destinationSuggestions = emptyList(),
+                recentPlaces = recentPlaces.all(),
+                vehicleProfile = VehicleProfile.CAR,
+                parkingFinalDestination = finalDestination,
+                parkingHandoffAvailable = false,
+                arrivalDetected = false,
+                message = "مسیر خودرو تا پارکینگ انتخاب شد"
+            )
+        }
+        calculateRoute()
+    }
+
+    fun continueWalkingAfterParking() {
+        val snapshot = mutableState.value
+        val finalDestination = snapshot.parkingFinalDestination ?: run {
+            mutableState.update { it.copy(message = "مقصد نهایی برای ادامه پیاده ثبت نشده است") }
+            return
+        }
+        val current = snapshot.currentLocation ?: run {
+            mutableState.update { it.copy(message = "برای شروع مسیر پیاده، موقعیت فعلی لازم است") }
+            return
+        }
+        val walkingOrigin = Place(
+            code = CURRENT_LOCATION_CODE,
+            name = "موقعیت فعلی من",
+            coordinate = current,
+            category = DEVICE_LOCATION_SNAPSHOT_CATEGORY
+        )
+        mutableState.update {
+            it.copy(
+                origin = walkingOrigin,
+                originQuery = walkingOrigin.name,
+                destination = finalDestination,
+                destinationQuery = finalDestination.name,
+                vehicleProfile = VehicleProfile.WALKING,
+                parkingFinalDestination = null,
+                parkingHandoffAvailable = false,
+                parkingOptions = emptyList(),
+                arrivalDetected = false,
+                message = "ادامه مسیر به‌صورت پیاده"
+            )
+        }
+        calculateRoute()
+    }
+
+    fun cancelParkingHandoff() {
+        mutableState.update {
+            it.copy(
+                parkingFinalDestination = null,
+                parkingHandoffAvailable = false,
+                parkingOptions = emptyList(),
+                message = null
+            )
         }
     }
 
@@ -709,24 +1039,58 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun updateNavigationProgress(fix: NavigationFix) {
-        val matched = runCatching {
-            navigationPlatform.mapMatchingEngine.match(
-                RawLocationSample(
-                    coordinate = fix.coordinate,
-                    speedKmh = fix.speedKmh.toDouble(),
-                    bearingDegrees = fix.bearingDegrees,
-                    accuracyMeters = fix.accuracyMeters,
-                    timestampMillis = fix.timestampMillis
-                )
-            )
-        }.getOrNull()
-        val coordinate = matched?.takeIf { it.confidence >= MIN_MAP_MATCH_CONFIDENCE }?.coordinate ?: fix.coordinate
         val snapshot = mutableState.value
         val route = snapshot.route ?: return
+        val sample = RawLocationSample(
+            coordinate = fix.coordinate,
+            speedKmh = fix.speedKmh.toDouble(),
+            bearingDegrees = fix.bearingDegrees,
+            accuracyMeters = fix.accuracyMeters,
+            timestampMillis = fix.timestampMillis
+        )
+        val remoteMatched = runCatching { navigationPlatform.mapMatchingEngine.match(sample) }.getOrNull()
+        val localMatched = RouteLocalMapMatcher.match(route, sample)
+        val matched = listOfNotNull(remoteMatched, localMatched)
+            .filter { it.confidence >= MIN_MAP_MATCH_CONFIDENCE }
+            .maxByOrNull { it.confidence }
+        val coordinate = matched?.coordinate ?: fix.coordinate
         val progress = RouteProgressEngine.calculate(route, coordinate) ?: return
+        val destination = snapshot.destination
+        if (destination != null && arrivalConfirmationGate.observe(
+                location = coordinate,
+                destination = destination.coordinate,
+                gpsAccuracyMeters = fix.accuracyMeters,
+                speedKmh = fix.speedKmh
+            )
+        ) {
+            offRouteConfirmationGate.reset()
+            navigationJob?.cancel()
+            mutableState.update {
+                it.copy(
+                    currentLocation = coordinate,
+                    speedKmh = fix.speedKmh.toInt().coerceIn(0, 240),
+                    bearingDegrees = fix.bearingDegrees,
+                    navigationActive = false,
+                    arrivalDetected = true,
+                    parkingHandoffAvailable = it.parkingFinalDestination != null,
+                    offRoute = false,
+                    remainingDistanceMeters = 0.0,
+                    remainingSeconds = 0.0,
+                    message = if (it.parkingFinalDestination != null) {
+                        "به پارکینگ رسیدید؛ برای ادامه تا مقصد، مسیر پیاده را شروع کنید"
+                    } else {
+                        "به مقصد رسیدید"
+                    }
+                )
+            }
+            return
+        }
+        val speedLimit = route.maneuvers.getOrNull(progress.maneuverIndex)?.speedLimitKmh
+            ?: route.speedLimitsKmh.firstOrNull()
         mutableState.update {
             it.copy(
                 currentLocation = coordinate,
+                locationAccuracyMeters = fix.accuracyMeters,
                 speedKmh = fix.speedKmh.toInt().coerceIn(0, 240),
                 bearingDegrees = fix.bearingDegrees,
                 navigationZoomLevel = if (it.cameraAutomatic) {
@@ -736,14 +1100,19 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 distanceToNextManeuverMeters = progress.distanceToManeuverMeters,
                 remainingDistanceMeters = progress.remainingDistanceMeters,
                 remainingSeconds = progress.remainingSeconds,
+                speedLimitKmh = speedLimit,
                 offRoute = progress.offRoute,
                 message = if (progress.offRoute) "از مسیر خارج شده‌اید؛ در حال بررسی مسیر جدید…" else null
             )
         }
 
-        offRouteSamples = if (progress.offRoute) offRouteSamples + 1 else 0
+        val confirmedOffRoute = offRouteConfirmationGate.observe(
+            offRoute = progress.offRoute,
+            gpsAccuracyMeters = fix.accuracyMeters,
+            mapMatchConfidence = matched?.confidence
+        )
         val now = System.currentTimeMillis()
-        val needsImmediateCheck = offRouteSamples >= 3
+        val needsImmediateCheck = confirmedOffRoute
         val needsPeriodicCheck = now - lastContinuousRerouteCheckAt >= CONTINUOUS_REROUTE_INTERVAL_MS
         if (needsImmediateCheck || needsPeriodicCheck) {
             lastContinuousRerouteCheckAt = now
@@ -764,7 +1133,10 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                             lastRerouteMillis = lastRerouteAt,
                             offRoute = needsImmediateCheck,
                             currentRouteBlocked = false,
-                            profile = RouteProfile.SMART
+                            profile = rerouteState.routeProfile,
+                            vehicleProfile = rerouteState.vehicleProfile,
+                            truck = rerouteState.truckRestrictions,
+                            ev = rerouteState.evRoutePreferences
                         )
                     )
                 }.getOrNull()
@@ -773,7 +1145,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     if (check.decision.shouldReroute && check.replacement != null) {
                         applyContinuousReroute(coordinate, check)
                         lastRerouteAt = now
-                        offRouteSamples = 0
+                        offRouteConfirmationGate.reset()
                         return
                     }
                 }
@@ -817,7 +1189,9 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     ?: replacement.distanceMeters,
                 remainingDistanceMeters = replacement.distanceMeters,
                 remainingSeconds = replacement.travelSeconds,
+                speedLimitKmh = replacement.maneuvers.firstOrNull()?.speedLimitKmh,
                 offRoute = false,
+                arrivalDetected = false,
                 cameraAutomatic = true,
                 followNavigation = true,
                 traffic = candidate.traffic,
@@ -835,10 +1209,13 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         val request = RouteRequest(
             origin = coordinate,
             destination = destination.coordinate,
-            profile = RouteProfile.SMART,
+            profile = snapshot.routeProfile,
+            vehicleProfile = snapshot.vehicleProfile,
             preferOffline = snapshot.preferOffline,
             onlineAvailable = snapshot.onlineAvailable,
-            offlineAvailable = snapshot.offlineReady && router != null
+            offlineAvailable = snapshot.offlineReady && router != null,
+            truck = snapshot.truckRestrictions,
+            ev = snapshot.evRoutePreferences
         )
         val plan = runCatching { navigationPlatform.routeCoordinator.plan(request) }.getOrNull() ?: return
         val candidate = plan.selected ?: return
@@ -855,7 +1232,9 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     ?: replacement.distanceMeters,
                 remainingDistanceMeters = replacement.distanceMeters,
                 remainingSeconds = replacement.travelSeconds,
+                speedLimitKmh = replacement.maneuvers.firstOrNull()?.speedLimitKmh,
                 offRoute = false,
+                arrivalDetected = false,
                 cameraAutomatic = true,
                 followNavigation = true,
                 traffic = candidate.traffic,
@@ -878,6 +1257,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         insightsRefreshJob?.cancel()
         places?.close()
         graph?.close()
+        nearbyDiscoveryUseCase.close()
         networkMonitor.close()
         super.onCleared()
     }
@@ -885,6 +1265,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         const val CURRENT_LOCATION_CODE = -9_000_000_001L
         const val DEVICE_LOCATION_CATEGORY = "device:location"
+        const val DEVICE_LOCATION_SNAPSHOT_CATEGORY = "device:location:snapshot"
         const val MIN_NAVIGATION_ZOOM = 15
         const val DEFAULT_NAVIGATION_ZOOM = 18
         const val MAX_NAVIGATION_ZOOM = 19

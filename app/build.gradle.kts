@@ -12,6 +12,7 @@ android {
         val cloudApiUrl = System.getenv("NV_CLOUD_API_URL").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
         val nvCodeRegistryUrl = System.getenv("NV_CODE_REGISTRY_URL").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
         val valhallaApiUrl = System.getenv("NV_VALHALLA_API_URL").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
+        val communityReportApiUrl = System.getenv("NV_COMMUNITY_REPORT_API_URL").orEmpty().replace("\\", "\\\\").replace("\"", "\\\"")
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 36
@@ -26,6 +27,7 @@ android {
         buildConfigField("String", "CLOUD_API_URL", "\"$cloudApiUrl\"")
         buildConfigField("String", "NV_CODE_REGISTRY_URL", "\"$nvCodeRegistryUrl\"")
         buildConfigField("String", "VALHALLA_API_URL", "\"$valhallaApiUrl\"")
+        buildConfigField("String", "COMMUNITY_REPORT_API_URL", "\"$communityReportApiUrl\"")
         buildConfigField("String", "WEATHER_API_KEY", "\"\"")
         buildConfigField("String", "WEATHER_API_URL", "\"https://api.open-meteo.com/v1/forecast\"")
         buildConfigField("String", "PLACES_API_URL", "\"https://overpass-api.de/api/interpreter\"")
@@ -90,6 +92,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.json:json:20250517")
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

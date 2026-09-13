@@ -30,27 +30,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.core.Place
-import ir.nv.navigation.online.OnlinePlacesService
+import ir.nv.navigation.places.NearbyCategory
 import ir.nv.navigation.ui.theme.NvColors
 import ir.nv.navigation.ui.theme.NvRadius
 import ir.nv.navigation.ui.theme.NvSpacing
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private data class EmergencyService(
     val title: String,
     val number: String,
-    val query: String,
+    val category: NearbyCategory,
     val icon: ImageVector,
     val accent: Color
 )
 
 private val IranEmergencyServices = listOf(
-    EmergencyService("اورژانس پزشکی", "115", "اورژانس", Icons.Rounded.LocalHospital, NvColors.Emergency),
-    EmergencyService("پلیس", "110", "پلیس", Icons.Rounded.LocalPolice, NvColors.Info),
-    EmergencyService("آتش‌نشانی", "125", "آتش نشانی", Icons.Rounded.FireTruck, NvColors.Warning),
-    EmergencyService("امداد و نجات", "112", "امداد و نجات", Icons.Rounded.HealthAndSafety, NvColors.Success)
+    EmergencyService("اورژانس پزشکی", "115", NearbyCategory.EMERGENCY, Icons.Rounded.LocalHospital, NvColors.Emergency),
+    EmergencyService("پلیس", "110", NearbyCategory.POLICE, Icons.Rounded.LocalPolice, NvColors.Info),
+    EmergencyService("آتش‌نشانی", "125", NearbyCategory.FIRE, Icons.Rounded.FireTruck, NvColors.Warning),
+    EmergencyService("امداد و نجات", "112", NearbyCategory.RESCUE, Icons.Rounded.HealthAndSafety, NvColors.Success)
 )
 
 @Composable
@@ -62,7 +60,6 @@ fun RahnamaEmergencyOverlay(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val placesService = remember { OnlinePlacesService() }
     var selected by remember { mutableStateOf(IranEmergencyServices.first()) }
     var results by remember { mutableStateOf<List<Place>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -80,8 +77,8 @@ fun RahnamaEmergencyOverlay(
             viewModel.useCurrentLocationAsOrigin()
             return
         }
-        if (!state.onlineAvailable) {
-            message = "برای جستجوی مراکز اضطراری نزدیک، اتصال اینترنت لازم است؛ تماس اضطراری همچنان در دسترس است"
+        if (!state.onlineAvailable && !state.offlineReady) {
+            message = "اینترنت در دسترس نیست و داده آفلاین مراکز نصب نشده است؛ تماس اضطراری همچنان در دسترس است"
             results = emptyList()
             return
         }
@@ -90,9 +87,7 @@ fun RahnamaEmergencyOverlay(
         results = emptyList()
         scope.launch {
             val found = runCatching {
-                withContext(Dispatchers.IO) {
-                    placesService.searchNearby(center, service.query, radiusMeters = 25_000, limit = 20)
-                }
+                viewModel.discoverEmergency(service.category, radiusMeters = 25_000)
             }
             found.onSuccess {
                 results = it

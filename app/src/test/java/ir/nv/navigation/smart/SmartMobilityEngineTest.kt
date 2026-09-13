@@ -63,4 +63,46 @@ class SmartMobilityEngineTest {
         assertEquals(SmartFeatureScreen.TAXI, engine.assistant("تاکسی می‌خواهم", true, true).suggestedScreen)
         assertEquals(SmartFeatureScreen.WALKING, engine.assistant("پیاده چقدر طول می‌کشد", true, true).suggestedScreen)
     }
+    @Test
+    fun `explicit mocks are labelled non live and non bookable`() {
+        val engine = SmartMobilityEngine(DeterministicMockTransitRealtimeProvider(), DeterministicMockTaxiProvider())
+        val metro = engine.metroStatus().single()
+        assertFalse(metro.live)
+        assertTrue(metro.source.contains("mock"))
+        val taxi = requireNotNull(engine.taxiEstimate(4_000.0))
+        assertFalse(taxi.bookable)
+        assertTrue(taxi.source.contains("mock"))
+    }
+
+    @Test
+    fun `station transfer ranking respects walking transfer crowding and accessibility preferences`() {
+        val engine = SmartMobilityEngine()
+        val prefs = TravelPreferences(maxWalkingMeters = 800, maxTransfers = 1, avoidCrowding = true, accessibilityRequired = true)
+        val options = listOf(
+            StationTransferOption("A", 300.0, 5, 1, 80, true, "test"),
+            StationTransferOption("B", 200.0, 6, 0, 20, true, "test"),
+            StationTransferOption("C", 900.0, 1, 0, 0, true, "test"),
+            StationTransferOption("D", 100.0, 1, 0, 0, false, "test")
+        )
+        val ranked = engine.rankStationTransfers(options, prefs)
+        assertEquals("B", ranked.first().stationName)
+        assertEquals(2, ranked.size)
+    }
+
+    @Test
+    fun `eta risk rises when confidence is poor`() {
+        val engine = SmartMobilityEngine()
+        val highConfidence = EtaConfidence(1000.0, .9, 60.0, "high")
+        val lowConfidence = EtaConfidence(1000.0, .45, 300.0, "low")
+        assertTrue(engine.etaRisk(lowConfidence, 250.0).riskScore > engine.etaRisk(highConfidence, 0.0).riskScore)
+    }
+
+    @Test
+    fun `multimodal mock candidates remain explicitly sourced`() {
+        val engine = SmartMobilityEngine(DeterministicMockTransitRealtimeProvider(), DeterministicMockTaxiProvider())
+        val plans = engine.multimodalCandidates(route(900.0, 1_000.0), TravelPreferences(maxWalkingMeters = 2_000))
+        assertTrue(plans.isNotEmpty())
+        assertTrue(plans.flatMap { it.legs }.any { it.source.contains("mock") })
+    }
+
 }

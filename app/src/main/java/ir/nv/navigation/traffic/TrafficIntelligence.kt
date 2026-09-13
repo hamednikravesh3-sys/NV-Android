@@ -5,7 +5,20 @@ import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
 
-enum class IncidentKind { ACCIDENT, ROAD_CLOSURE, CONSTRUCTION, EVENT, USER_REPORT }
+enum class IncidentKind {
+    TRAFFIC,
+    ACCIDENT,
+    ROAD_CLOSURE,
+    CONSTRUCTION,
+    STOPPED_VEHICLE,
+    FLOOD,
+    ICE,
+    FOG,
+    DANGEROUS_ROAD,
+    WEATHER_HAZARD,
+    EVENT,
+    USER_REPORT
+}
 
 data class TrafficIncident(
     val id: String,
@@ -54,8 +67,13 @@ class IncidentTrafficEngine {
         active(incidents, nowMillis).sumOf { incident ->
             when (incident.kind) {
                 IncidentKind.ROAD_CLOSURE -> 1.0
+                IncidentKind.FLOOD, IncidentKind.ICE, IncidentKind.WEATHER_HAZARD -> 0.80
                 IncidentKind.ACCIDENT -> 0.55
+                IncidentKind.DANGEROUS_ROAD -> 0.50
+                IncidentKind.FOG -> 0.45
                 IncidentKind.CONSTRUCTION -> 0.35
+                IncidentKind.STOPPED_VEHICLE -> 0.30
+                IncidentKind.TRAFFIC -> 0.28
                 IncidentKind.EVENT -> 0.25
                 IncidentKind.USER_REPORT -> 0.20
             } * incident.severity.coerceIn(1, 5)

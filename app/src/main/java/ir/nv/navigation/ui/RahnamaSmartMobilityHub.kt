@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.ElectricBolt
 import androidx.compose.material.icons.rounded.LocalTaxi
+import androidx.compose.material.icons.rounded.LocalParking
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Subway
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -53,7 +54,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.smart.SmartFeatureScreen
+import ir.nv.navigation.navigation.EvRoutePreferences
+import ir.nv.navigation.navigation.RouteProfile
+import ir.nv.navigation.navigation.TruckRestrictions
+import ir.nv.navigation.navigation.VehicleProfile
 import ir.nv.navigation.smart.SmartMobilityEngine
+import ir.nv.navigation.smart.TravelPreferences
+import ir.nv.navigation.smart.Urgency
 import ir.nv.navigation.ui.theme.NvColors
 import ir.nv.navigation.ui.theme.NvRadius
 import ir.nv.navigation.ui.theme.NvSpacing
@@ -72,9 +79,26 @@ fun RahnamaSmartMobilityHub(
     val engine = remember { SmartMobilityEngine() }
     var screen by remember { mutableStateOf<SmartFeatureScreen?>(null) }
     var lowData by remember { mutableStateOf(preferences.getBoolean("low_data", false)) }
-    var privacyMode by remember { mutableStateOf(preferences.getBoolean("privacy_mode", true)) }
     var ecoPriority by remember { mutableStateOf(preferences.getBoolean("eco_priority", false)) }
+    var urgency by remember {
+        mutableStateOf(runCatching { Urgency.valueOf(preferences.getString("urgency", Urgency.NORMAL.name) ?: Urgency.NORMAL.name) }.getOrDefault(Urgency.NORMAL))
+    }
+    var maxWalkingMeters by remember { mutableStateOf(preferences.getInt("max_walking_meters", 1500)) }
+    var maxTransfers by remember { mutableStateOf(preferences.getInt("max_transfers", 2)) }
+    var avoidCrowding by remember { mutableStateOf(preferences.getBoolean("avoid_crowding", false)) }
+    var accessibilityRequired by remember { mutableStateOf(preferences.getBoolean("accessibility_required", false)) }
+    var weatherSensitive by remember { mutableStateOf(preferences.getBoolean("weather_sensitive", false)) }
     var fuelPrice by remember { mutableStateOf(preferences.getString("fuel_price", "").orEmpty()) }
+    val travelPreferences = remember(urgency, maxWalkingMeters, maxTransfers, avoidCrowding, accessibilityRequired, weatherSensitive) {
+        TravelPreferences(
+            urgency = urgency,
+            maxWalkingMeters = maxWalkingMeters,
+            maxTransfers = maxTransfers,
+            avoidCrowding = avoidCrowding,
+            accessibilityRequired = accessibilityRequired,
+            weatherSensitive = weatherSensitive
+        ).normalized()
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -112,10 +136,10 @@ fun RahnamaSmartMobilityHub(
 
             when (val selected = screen) {
                 null -> SmartHubMenu(onOpen = { screen = it })
-                SmartFeatureScreen.CHAT -> SmartChatScreen(state, engine) { target -> screen = target }
+                SmartFeatureScreen.CHAT -> SmartChatScreen(state, engine, viewModel) { target -> screen = target }
                 SmartFeatureScreen.RUSH -> RushModeScreen(state, engine, viewModel)
-                SmartFeatureScreen.MULTIMODAL -> MultimodalScreen(state, engine)
-                SmartFeatureScreen.STATION_TRANSFER -> StationTransferScreen(engine)
+                SmartFeatureScreen.MULTIMODAL -> MultimodalScreen(state, engine, travelPreferences)
+                SmartFeatureScreen.STATION_TRANSFER -> StationTransferScreen(engine, travelPreferences)
                 SmartFeatureScreen.LIVE_METRO -> LiveMetroScreen(engine)
                 SmartFeatureScreen.TAXI -> TaxiCoordinationScreen(state, engine)
                 SmartFeatureScreen.ETA_CONFIDENCE -> EtaConfidenceScreen(state, engine)
@@ -123,20 +147,45 @@ fun RahnamaSmartMobilityHub(
                     fuelPrice = value.filter(Char::isDigit)
                     preferences.edit().putString("fuel_price", fuelPrice).apply()
                 }
-                SmartFeatureScreen.WALKING -> WalkingScreen(state, engine)
+                SmartFeatureScreen.WALKING -> WalkingScreen(state, engine, viewModel)
+                SmartFeatureScreen.PARKING -> ParkingScreen(state, viewModel)
                 SmartFeatureScreen.PREFERENCES -> SmartPreferencesScreen(
                     state = state,
                     viewModel = viewModel,
                     lowData = lowData,
-                    privacyMode = privacyMode,
+                    privacyMode = state.privacySettings.strictMode,
                     ecoPriority = ecoPriority,
+                    travelPreferences = travelPreferences,
+                    onUrgency = { value ->
+                        urgency = value
+                        preferences.edit().putString("urgency", value.name).apply()
+                    },
+                    onMaxWalkingMeters = { value ->
+                        maxWalkingMeters = value
+                        preferences.edit().putInt("max_walking_meters", value).apply()
+                    },
+                    onMaxTransfers = { value ->
+                        maxTransfers = value
+                        preferences.edit().putInt("max_transfers", value).apply()
+                    },
+                    onAvoidCrowding = { value ->
+                        avoidCrowding = value
+                        preferences.edit().putBoolean("avoid_crowding", value).apply()
+                    },
+                    onAccessibilityRequired = { value ->
+                        accessibilityRequired = value
+                        preferences.edit().putBoolean("accessibility_required", value).apply()
+                    },
+                    onWeatherSensitive = { value ->
+                        weatherSensitive = value
+                        preferences.edit().putBoolean("weather_sensitive", value).apply()
+                    },
                     onLowData = {
                         lowData = it
                         preferences.edit().putBoolean("low_data", it).apply()
                     },
                     onPrivacyMode = {
-                        privacyMode = it
-                        preferences.edit().putBoolean("privacy_mode", it).apply()
+                        viewModel.setStrictPrivacy(it)
                     },
                     onEcoPriority = {
                         ecoPriority = it
@@ -181,6 +230,7 @@ private fun SmartHubMenu(onOpen: (SmartFeatureScreen) -> Unit) {
 private fun SmartChatScreen(
     state: NvUiState,
     engine: SmartMobilityEngine,
+    viewModel: NvViewModel,
     onOpen: (SmartFeatureScreen) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
@@ -203,6 +253,29 @@ private fun SmartChatScreen(
         Text("تحلیل درخواست")
     }
     SmartInfoCard(reply.titleFa, reply.messageFa, NvColors.RouteBlue)
+    if (state.routeAlternatives.isNotEmpty()) {
+        Text("مسیرهای قابل انتخاب", fontWeight = FontWeight.Bold)
+        state.routeAlternatives.take(4).forEachIndexed { index, route ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { viewModel.selectRoute(index) },
+                color = NvColors.Navy850,
+                shape = RoundedCornerShape(NvRadius.Medium),
+                border = BorderStroke(1.dp, if (index == state.selectedRouteIndex) NvColors.Success else NvColors.DividerDark)
+            ) {
+                Row(Modifier.padding(NvSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("مسیر ${index + 1}", fontWeight = FontWeight.Black)
+                        Text(
+                            "${ceil(route.travelSeconds / 60.0).toInt()} دقیقه • %.1f km".format(route.distanceMeters / 1000.0),
+                            color = NvColors.TextSecondaryDark,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Text(if (index == state.selectedRouteIndex) "انتخاب‌شده" else "انتخاب", color = NvColors.RouteBlue)
+                }
+            }
+        }
+    }
     reply.suggestedScreen?.let { target ->
         OutlinedButton(onClick = { onOpen(target) }, modifier = Modifier.fillMaxWidth()) {
             Text("باز کردن ${target.titleFa}")
@@ -240,12 +313,21 @@ private fun RushModeScreen(state: NvUiState, engine: SmartMobilityEngine, viewMo
 }
 
 @Composable
-private fun MultimodalScreen(state: NvUiState, engine: SmartMobilityEngine) {
-    val plan = remember(state.route) { engine.fallbackMultimodal(state.route) }
-    if (!plan.available) {
-        SmartInfoCard("مسیر چندحالته آماده نیست", plan.warningFa.orEmpty(), NvColors.Warning)
+private fun MultimodalScreen(state: NvUiState, engine: SmartMobilityEngine, preferences: TravelPreferences) {
+    val plans = remember(state.route, preferences) { engine.multimodalCandidates(state.route, preferences) }
+    if (state.route == null) {
+        SmartInfoCard("مسیر چندحالته آماده نیست", "ابتدا مقصد و مسیر را مشخص کنید", NvColors.Warning)
         return
     }
+    if (plans.isEmpty()) {
+        SmartInfoCard(
+            "گزینه چندحالته معتبر پیدا نشد",
+            "حداکثر پیاده‌روی/تعداد تعویض یا providerهای مترو و تاکسی اجازه ساخت گزینه معتبر نمی‌دهند. ${engine.transitAvailability().messageFa}؛ ${engine.taxiAvailability().messageFa}",
+            NvColors.Warning
+        )
+        return
+    }
+    val plan = plans.first()
     plan.legs.forEach { leg ->
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -271,14 +353,18 @@ private fun MultimodalScreen(state: NvUiState, engine: SmartMobilityEngine) {
 }
 
 @Composable
-private fun StationTransferScreen(engine: SmartMobilityEngine) {
+private fun StationTransferScreen(engine: SmartMobilityEngine, preferences: TravelPreferences) {
     val availability = engine.transitAvailability()
     SmartInfoCard(
         "تعویض هوشمند ایستگاه",
         if (availability.available) "فید حمل‌ونقل عمومی فعال است و تعویض ایستگاه می‌تواند با زمان زنده رتبه‌بندی شود" else availability.messageFa,
         if (availability.available) NvColors.Success else NvColors.Warning
     )
-    Text("Adapter: ${availability.source}", color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall)
+    Text(
+        "Adapter: ${availability.source} • حداکثر پیاده ${preferences.maxWalkingMeters} متر • حداکثر ${preferences.maxTransfers} تعویض",
+        color = NvColors.TextSecondaryDark,
+        style = MaterialTheme.typography.labelSmall
+    )
 }
 
 @Composable
@@ -353,7 +439,9 @@ private fun EtaConfidenceScreen(state: NvUiState, engine: SmartMobilityEngine) {
         )
     )
     LinearProgressIndicator(progress = { result.confidence.toFloat() }, modifier = Modifier.fillMaxWidth())
+    val risk = remember(result, state.traffic) { engine.etaRisk(result, state.traffic?.delaySeconds) }
     SmartInfoCard(result.labelFa, "اطمینان از GPS، ترافیک زنده و ساختار مسیر محاسبه شده است", if (percent >= 82) NvColors.Success else NvColors.Info)
+    SmartInfoCard("ریسک ETA: ${risk.level.titleFa}", risk.reasonFa, if (risk.riskScore < .25) NvColors.Success else NvColors.Warning)
 }
 
 @Composable
@@ -393,7 +481,7 @@ private fun TimeCostScreen(
 }
 
 @Composable
-private fun WalkingScreen(state: NvUiState, engine: SmartMobilityEngine) {
+private fun WalkingScreen(state: NvUiState, engine: SmartMobilityEngine, viewModel: NvViewModel) {
     val route = state.route
     if (route == null) {
         SmartInfoCard("مسیریابی پیاده آماده نیست", "ابتدا مقصد و مسیر را مشخص کنید", NvColors.Warning)
@@ -408,10 +496,79 @@ private fun WalkingScreen(state: NvUiState, engine: SmartMobilityEngine) {
         )
     )
     SmartInfoCard(
-        "برآورد محلی، نه مسیر عابر دقیق",
-        "provider اختصاصی walking هنوز به موتور route متصل نشده است؛ بنابراین این صفحه زمان پیاده‌روی را از فاصله مسیر فعلی تخمین می‌زند و آن را زنده/دقیق برچسب نمی‌زند",
+        "برآورد محلی",
+        "برای مسیر واقعی پیاده، پروفایل Walking به موتور route ارسال می‌شود؛ برآورد بالا فقط مقایسه سریع است",
         NvColors.Warning
     )
+    Button(
+        onClick = {
+            viewModel.setVehicleProfile(VehicleProfile.WALKING)
+            viewModel.calculateRoute()
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) { Text("محاسبه مسیر واقعی پیاده") }
+}
+
+@Composable
+private fun ParkingScreen(state: NvUiState, viewModel: NvViewModel) {
+    if (state.destination == null && state.parkingFinalDestination == null) {
+        SmartInfoCard("مقصد مشخص نیست", "ابتدا مقصد نهایی را انتخاب کنید", NvColors.Warning)
+        return
+    }
+    if (state.parkingHandoffAvailable) {
+        SmartInfoCard(
+            "به پارکینگ رسیدید",
+            state.parkingFinalDestination?.let { "ادامه پیاده تا ${it.name}" } ?: "ادامه پیاده تا مقصد",
+            NvColors.Success
+        )
+        Button(onClick = viewModel::continueWalkingAfterParking, modifier = Modifier.fillMaxWidth()) {
+            Text("شروع ادامه مسیر پیاده")
+        }
+        OutlinedButton(onClick = viewModel::cancelParkingHandoff, modifier = Modifier.fillMaxWidth()) {
+            Text("لغو ادامه پیاده")
+        }
+        return
+    }
+    Button(
+        onClick = { viewModel.searchParkingNearDestination() },
+        enabled = !state.parkingSearchLoading,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(Icons.Rounded.LocalParking, contentDescription = null)
+        Spacer(Modifier.size(NvSpacing.Xs))
+        Text("جستجوی پارکینگ نزدیک مقصد")
+    }
+    if (state.parkingSearchLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    state.parkingOptions.forEach { option ->
+        Surface(
+            modifier = Modifier.fillMaxWidth().clickable { viewModel.routeToParking(option) },
+            color = NvColors.Navy850,
+            shape = RoundedCornerShape(NvRadius.Medium),
+            border = BorderStroke(1.dp, NvColors.DividerDark)
+        ) {
+            Row(Modifier.padding(NvSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.LocalParking, contentDescription = null, tint = NvColors.RouteBlue)
+                Spacer(Modifier.size(NvSpacing.Sm))
+                Column(Modifier.weight(1f)) {
+                    Text(option.place.name, fontWeight = FontWeight.Bold)
+                    val openText = when (option.place.isOpen) { true -> "باز"; false -> "بسته"; null -> "وضعیت نامشخص" }
+                    Text(
+                        "${option.walkingDistanceMeters.roundToInt()} متر پیاده • $openText",
+                        color = NvColors.TextSecondaryDark,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+                Text("مسیر", color = NvColors.RouteBlue)
+            }
+        }
+    }
+    if (state.parkingOptions.isNotEmpty()) {
+        Text(
+            "availability و قیمت فقط در صورت ارائه provider نمایش داده می‌شوند و در نبود داده جعل نمی‌شوند",
+            color = NvColors.TextSecondaryDark,
+            style = MaterialTheme.typography.labelSmall
+        )
+    }
 }
 
 @Composable
@@ -421,19 +578,176 @@ private fun SmartPreferencesScreen(
     lowData: Boolean,
     privacyMode: Boolean,
     ecoPriority: Boolean,
+    travelPreferences: TravelPreferences,
+    onUrgency: (Urgency) -> Unit,
+    onMaxWalkingMeters: (Int) -> Unit,
+    onMaxTransfers: (Int) -> Unit,
+    onAvoidCrowding: (Boolean) -> Unit,
+    onAccessibilityRequired: (Boolean) -> Unit,
+    onWeatherSensitive: (Boolean) -> Unit,
     onLowData: (Boolean) -> Unit,
     onPrivacyMode: (Boolean) -> Unit,
     onEcoPriority: (Boolean) -> Unit
-) {
+ ) {
+    Text("ترجیحات سفر", fontWeight = FontWeight.Black)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+        Urgency.entries.forEach { item ->
+            FilterChip(
+                selected = travelPreferences.urgency == item,
+                onClick = { onUrgency(item) },
+                label = { Text(urgencyTitle(item)) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+    Text("حداکثر پیاده‌روی: ${travelPreferences.maxWalkingMeters} متر", style = MaterialTheme.typography.labelMedium)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+        listOf(500, 1000, 1500, 3000).forEach { meters ->
+            FilterChip(
+                selected = travelPreferences.maxWalkingMeters == meters,
+                onClick = { onMaxWalkingMeters(meters) },
+                label = { Text(if (meters >= 1000) "${meters/1000}km" else "${meters}m") },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+    Text("حداکثر تعویض: ${travelPreferences.maxTransfers}", style = MaterialTheme.typography.labelMedium)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+        (0..3).forEach { transfers ->
+            FilterChip(
+                selected = travelPreferences.maxTransfers == transfers,
+                onClick = { onMaxTransfers(transfers) },
+                label = { Text(transfers.toString()) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+    PreferenceSwitch("پرهیز از شلوغی", "در رتبه‌بندی transfer، crowding شناخته‌شده جریمه می‌شود", travelPreferences.avoidCrowding, onAvoidCrowding)
+    PreferenceSwitch("دسترسی‌پذیری الزامی", "گزینه‌های شناخته‌شده غیرقابل‌دسترس حذف می‌شوند", travelPreferences.accessibilityRequired, onAccessibilityRequired)
+    PreferenceSwitch("حساس به آب‌وهوا", "برای تصمیم‌های چندحالته و پیشنهادها ذخیره می‌شود", travelPreferences.weatherSensitive, onWeatherSensitive)
+    Text("پروفایل مسیر", fontWeight = FontWeight.Black)
+    RouteProfile.entries.filter { it != RouteProfile.CUSTOM }.chunked(3).forEach { profiles ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+            profiles.forEach { profile ->
+                FilterChip(
+                    selected = state.routeProfile == profile,
+                    onClick = { viewModel.setRouteProfile(profile) },
+                    label = { Text(routeProfileTitle(profile), maxLines = 1) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            repeat(3 - profiles.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+    Text("وسیله نقلیه", fontWeight = FontWeight.Black)
+    VehicleProfile.entries.chunked(3).forEach { vehicles ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+            vehicles.forEach { vehicle ->
+                FilterChip(
+                    selected = state.vehicleProfile == vehicle,
+                    onClick = { viewModel.setVehicleProfile(vehicle) },
+                    label = { Text(vehicleProfileTitle(vehicle), maxLines = 1) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            repeat(3 - vehicles.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+    when (state.vehicleProfile) {
+        VehicleProfile.TRUCK -> TruckPreferencesEditor(state.truckRestrictions, viewModel)
+        VehicleProfile.EV -> EvPreferencesEditor(state.evRoutePreferences, viewModel)
+        else -> Unit
+    }
+    if (state.origin != null && state.destination != null) {
+        Button(onClick = viewModel::calculateRoute, modifier = Modifier.fillMaxWidth()) { Text("محاسبه مسیر با تنظیمات فعلی") }
+    }
     PreferenceSwitch("اولویت آفلاین", "در صورت نصب بسته، نقشه و مسیر آفلاین را ترجیح می‌دهد", state.preferOffline) {
         viewModel.setPreferOffline(it)
     }
     PreferenceSwitch("مصرف دیتای کمتر", "ترجیح محلی برای اجتناب از درخواست‌های غیرضروری در ابزارهای هوشمند", lowData, onLowData)
-    PreferenceSwitch("حریم خصوصی سخت‌گیرانه", "هیچ داده‌ای از این مرکز به provider خارجی ارسال نمی‌شود مگر provider صریحاً فعال باشد", privacyMode, onPrivacyMode)
+    PreferenceSwitch("حریم خصوصی سخت‌گیرانه", "قابلیت‌های اختیاری شبکه بدون رضایت صریح فعال نمی‌شوند", privacyMode, onPrivacyMode)
+    PreferenceSwitch("ارسال گزارش‌های مشارکتی", "گزارش محلی همیشه ممکن است؛ ارسال شبکه فقط با این رضایت و endpoint HTTPS", state.privacySettings.communityUploads) {
+        viewModel.setCommunityUploads(it)
+    }
+    PreferenceSwitch("همگام‌سازی ابری", "رضایت استفاده از Cloud Sync؛ خاموش به‌صورت پیش‌فرض", state.privacySettings.cloudSync) {
+        viewModel.setCloudSyncConsent(it)
+    }
+    PreferenceSwitch("تاریخچه موقعیت", "فقط رضایت را ذخیره می‌کند؛ جمع‌آوری تاریخچه در این نسخه پیاده نشده است", state.privacySettings.locationHistory) {
+        viewModel.setLocationHistoryConsent(it)
+    }
+    PreferenceSwitch("تحلیل استفاده", "فقط رضایت را ذخیره می‌کند؛ SDK تحلیلی در این نسخه وجود ندارد", state.privacySettings.analytics) {
+        viewModel.setAnalyticsConsent(it)
+    }
     PreferenceSwitch("اولویت اقتصادی", "برای رتبه‌بندی هوشمند آینده ذخیره می‌شود؛ موتور route فعلی همچنان منبع حقیقت مسیر است", ecoPriority, onEcoPriority)
     if (!state.offlineReady) {
         SmartInfoCard("بسته آفلاین نصب نیست", "برای فعال‌کردن اولویت آفلاین، بسته نقشه را از تنظیمات اصلی دانلود کنید", NvColors.Warning)
     }
+}
+
+@Composable
+private fun TruckPreferencesEditor(value: TruckRestrictions, viewModel: NvViewModel) {
+    Text("محدودیت‌های کامیون", fontWeight = FontWeight.Bold)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+        NumericPreferenceField("ارتفاع m", value.heightMeters) { viewModel.updateTruckRestrictions(value.copy(heightMeters = it)) }
+        NumericPreferenceField("وزن t", value.weightTons) { viewModel.updateTruckRestrictions(value.copy(weightTons = it)) }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+        NumericPreferenceField("عرض m", value.widthMeters) { viewModel.updateTruckRestrictions(value.copy(widthMeters = it)) }
+        NumericPreferenceField("طول m", value.lengthMeters) { viewModel.updateTruckRestrictions(value.copy(lengthMeters = it)) }
+    }
+    PreferenceSwitch("محموله خطرناک", "محدودیت hazmat به provider سازگار ارسال می‌شود", value.hazardousCargo) {
+        viewModel.updateTruckRestrictions(value.copy(hazardousCargo = it))
+    }
+}
+
+@Composable
+private fun EvPreferencesEditor(value: EvRoutePreferences, viewModel: NvViewModel) {
+    Text("تنظیمات خودرو برقی", fontWeight = FontWeight.Bold)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+        NumericPreferenceField("باتری %", value.batteryPercent.toDouble()) {
+            viewModel.updateEvRoutePreferences(value.copy(batteryPercent = (it ?: value.batteryPercent.toDouble()).roundToInt()))
+        }
+        NumericPreferenceField("برد km", value.estimatedRangeKm) {
+            viewModel.updateEvRoutePreferences(value.copy(estimatedRangeKm = it))
+        }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+        NumericPreferenceField("مصرف Wh/km", value.consumptionWhPerKm) {
+            viewModel.updateEvRoutePreferences(value.copy(consumptionWhPerKm = it))
+        }
+        NumericPreferenceField("حداقل مقصد %", value.minimumArrivalBatteryPercent.toDouble()) {
+            viewModel.updateEvRoutePreferences(value.copy(minimumArrivalBatteryPercent = (it ?: value.minimumArrivalBatteryPercent.toDouble()).roundToInt()))
+        }
+    }
+    var connectors by remember(value.connectorTypes) { mutableStateOf(value.connectorTypes.joinToString(",")) }
+    OutlinedTextField(
+        value = connectors,
+        onValueChange = { connectors = it },
+        label = { Text("کانکتورها (مثلاً CCS2,Type2)") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true
+    )
+    OutlinedButton(
+        onClick = {
+            viewModel.updateEvRoutePreferences(value.copy(connectorTypes = connectors.split(',').map(String::trim).filter(String::isNotEmpty).toSet()))
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) { Text("ثبت کانکتورها") }
+}
+
+@Composable
+private fun NumericPreferenceField(label: String, value: Double?, onChange: (Double?) -> Unit) {
+    var text by remember(value) { mutableStateOf(value?.toString().orEmpty()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { raw ->
+            text = raw.filter { it.isDigit() || it == '.' }
+            onChange(text.toDoubleOrNull())
+        },
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(0.5f),
+        singleLine = true
+    )
 }
 
 @Composable
@@ -491,6 +805,7 @@ private fun featureIcon(feature: SmartFeatureScreen): ImageVector = when (featur
     SmartFeatureScreen.ETA_CONFIDENCE -> Icons.Rounded.AccessTime
     SmartFeatureScreen.TIME_COST -> Icons.Rounded.DirectionsCar
     SmartFeatureScreen.WALKING -> Icons.Rounded.DirectionsWalk
+    SmartFeatureScreen.PARKING -> Icons.Rounded.LocalParking
     SmartFeatureScreen.PREFERENCES -> Icons.Rounded.Settings
 }
 
@@ -510,8 +825,39 @@ private fun featureSubtitle(feature: SmartFeatureScreen): String = when (feature
     SmartFeatureScreen.TAXI -> "Adapter قیمت/رزرو با حالت unavailable"
     SmartFeatureScreen.ETA_CONFIDENCE -> "ETA به‌همراه confidence و بازه خطا"
     SmartFeatureScreen.TIME_COST -> "زمان، فاصله، مصرف و هزینه تنظیم‌پذیر"
-    SmartFeatureScreen.WALKING -> "برآورد پیاده‌روی با اعلام سطح دقت"
-    SmartFeatureScreen.PREFERENCES -> "آفلاین، دیتا، حریم خصوصی و اقتصاد"
+    SmartFeatureScreen.WALKING -> "برآورد و مسیر واقعی با پروفایل Walking"
+    SmartFeatureScreen.PARKING -> "پارک نزدیک مقصد و ادامه مسیر پیاده"
+    SmartFeatureScreen.PREFERENCES -> "وسیله، پروفایل مسیر، آفلاین و حریم خصوصی"
+}
+
+private fun urgencyTitle(value: Urgency): String = when (value) {
+    Urgency.RELAXED -> "آرام"
+    Urgency.NORMAL -> "عادی"
+    Urgency.HURRY -> "عجله"
+}
+
+private fun routeProfileTitle(profile: RouteProfile): String = when (profile) {
+    RouteProfile.FASTEST -> "سریع"
+    RouteProfile.SHORTEST -> "کوتاه"
+    RouteProfile.LOW_TRAFFIC -> "کم‌ترافیک"
+    RouteProfile.ECO -> "اقتصادی"
+    RouteProfile.SAFE -> "ایمن"
+    RouteProfile.SCENIC -> "دیدنی"
+    RouteProfile.AVOID_TOLL -> "بدون عوارض"
+    RouteProfile.AVOID_HIGHWAY -> "بدون بزرگراه"
+    RouteProfile.AVOID_FERRY -> "بدون فری"
+    RouteProfile.CUSTOM -> "سفارشی"
+    RouteProfile.SMART -> "هوشمند"
+}
+
+private fun vehicleProfileTitle(profile: VehicleProfile): String = when (profile) {
+    VehicleProfile.CAR -> "خودرو"
+    VehicleProfile.MOTORCYCLE -> "موتور"
+    VehicleProfile.TRUCK -> "کامیون"
+    VehicleProfile.EV -> "برقی"
+    VehicleProfile.BICYCLE -> "دوچرخه"
+    VehicleProfile.WALKING -> "پیاده"
+    VehicleProfile.TRANSIT -> "عمومی"
 }
 
 private fun modeIcon(mode: ir.nv.navigation.smart.MobilityMode): ImageVector = when (mode) {
