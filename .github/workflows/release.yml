@@ -30,6 +30,7 @@ jobs:
       NV_CODE_REGISTRY_URL: ${{ secrets.NV_CODE_REGISTRY_URL }}
       NV_GOOGLE_MAPS_API_KEY: ${{ secrets.NV_GOOGLE_MAPS_API_KEY }}
       NV_VALHALLA_API_URL: ${{ secrets.NV_VALHALLA_API_URL }}
+      NV_COMMUNITY_REPORT_API_URL: ${{ secrets.NV_COMMUNITY_REPORT_API_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -116,7 +117,7 @@ jobs:
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "8.11.1"
 
       - name: Verify release keystore certificate
         shell: bash
@@ -133,7 +134,7 @@ jobs:
           test "$CERT" = "$NV_EXPECTED_CERT_SHA256" || { echo "Release keystore certificate does not match pinned production certificate"; exit 1; }
 
       - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Build signed release
         run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease
@@ -144,27 +145,29 @@ jobs:
           set -euo pipefail
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          ZIPALIGN="$ANDROID_HOME/build-tools/36.0.0/zipalign"
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee app-release-signature.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK" | tee app-release-zipalign.txt
           APK_CERT="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' app-release-signature.txt | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
           [[ "$APK_CERT" =~ ^[0-9A-F]{64}$ ]] || { echo "Could not read SHA-256 signing certificate from APK"; exit 1; }
           test "$APK_CERT" = "$NV_EXPECTED_CERT_SHA256" || { echo "Signed APK certificate does not match pinned production certificate"; exit 1; }
           "$AAPT" dump badging "$APK" | tee app-release-badging.txt
           grep -q "package: name='ir.nv.navigation'" app-release-badging.txt
-          grep -q "versionCode='18'" app-release-badging.txt
-          grep -q "versionName='0.17.0'" app-release-badging.txt
+          grep -q "versionCode='19'" app-release-badging.txt
+          grep -q "versionName='0.18.0'" app-release-badging.txt
           grep -q "sdkVersion:'29'" app-release-badging.txt
-          grep -q "targetSdkVersion:'35'" app-release-badging.txt
+          grep -q "targetSdkVersion:'36'" app-release-badging.txt
           shasum -a 256 "$APK" | tee app-release.apk.sha256
           APK_SHA256="$(awk '{print $1}' app-release.apk.sha256)"
           {
             echo "git_sha=$GITHUB_SHA"
             echo "package=ir.nv.navigation"
-            echo "version_code=18"
-            echo "version_name=0.17.0"
+            echo "version_code=19"
+            echo "version_name=0.18.0"
             echo "min_sdk=29"
-            echo "target_sdk=35"
+            echo "target_sdk=36"
             echo "signing_cert_sha256=$APK_CERT"
             echo "apk_sha256=$APK_SHA256"
           } > app-release-provenance.txt
@@ -174,10 +177,10 @@ jobs:
               "schema_version": 1,
               "git_sha": os.environ["GITHUB_SHA"],
               "package": "ir.nv.navigation",
-              "version_code": 18,
-              "version_name": "0.17.0",
+              "version_code": 19,
+              "version_name": "0.18.0",
               "min_sdk": 29,
-              "target_sdk": 35,
+              "target_sdk": 36,
               "signed": True,
               "signing_cert_sha256": os.environ["NV_EXPECTED_CERT_SHA256"],
           }
@@ -197,67 +200,44 @@ jobs:
           assert m["schema_version"] == 1
           assert m["git_sha"] == os.environ["GITHUB_SHA"]
           assert m["package"] == "ir.nv.navigation"
-          assert m["version_code"] == 18
-          assert m["version_name"] == "0.17.0"
+          assert m["version_code"] == 19
+          assert m["version_name"] == "0.18.0"
           assert m["min_sdk"] == 29
-          assert m["target_sdk"] == 35
+          assert m["target_sdk"] == 36
           assert m["signed"] is True
           assert m["signing_cert_sha256"] == os.environ["NV_EXPECTED_CERT_SHA256"]
           assert m["apk_sha256"] == digest
           PY
 
-      - name: Install and verify signed release on Android 10
+      - name: Install and verify signed release on Android 16
         uses: reactivecircus/android-emulator-runner@v2
         env:
           NV_VERIFY_PACKAGE: ir.nv.navigation
           NV_VERIFY_APK: app/build/outputs/apk/release/app-release.apk
+          NV_VERIFY_ACTIVITY: ir.nv.navigation.MainActivity
         with:
-          api-level: 29
+          api-level: 36
+          target: default
           arch: x86_64
           profile: pixel_2
+          cores: 2
           disable-animations: true
-          script: bash .github/scripts/verify-nv-launch.sh
-
-      - name: Upload signed Android 10 diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: NV-signed-release-diagnostics-android10
-          path: |
-            nv-launch-screen.png
-            nv-nearby-screen.png
-            nv-offline-screen.png
-            nv-pin-screen.png
-            nv-ui.xml
-            nv-window-state.txt
-            nv-activity-state.txt
-            nv-logcat.txt
-            nv-app-logcat.txt
-          if-no-files-found: warn
-
-      - name: Install and verify signed release on Android 15
-        uses: reactivecircus/android-emulator-runner@v2
-        env:
-          NV_VERIFY_PACKAGE: ir.nv.navigation
-          NV_VERIFY_APK: app/build/outputs/apk/release/app-release.apk
-        with:
-          api-level: 35
-          arch: x86_64
-          profile: pixel_2
-          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
           script: bash .github/scripts/verify-nv-launch-modern.sh
 
-      - name: Upload signed Android 15 diagnostics
+      - name: Upload signed Android 16 diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-signed-release-diagnostics-android15
+          name: NV-signed-release-diagnostics-android16
           path: |
             nv-modern-launch-screen.png
             nv-modern-window-state.txt
             nv-modern-activity-state.txt
             nv-modern-logcat.txt
             nv-modern-app-logcat.txt
+            nv-modern-ui.xml
           if-no-files-found: warn
 
       - name: Upload signed release bundle
@@ -269,6 +249,7 @@ jobs:
             app/build/outputs/apk/release/app-release.apk
             app-release.apk.sha256
             app-release-signature.txt
+            app-release-zipalign.txt
             app-release-badging.txt
             app-release-provenance.txt
             app-release-manifest.json
