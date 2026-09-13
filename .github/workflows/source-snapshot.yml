@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Archive source
         run: |
           set -euo pipefail
@@ -23,7 +25,8 @@ jobs:
             --exclude=.git \
             --exclude='**/build' \
             --exclude='**/.gradle' \
-            -czf NV-Android-source.tgz .
+            -czf /tmp/NV-Android-source.tgz .
+          mv /tmp/NV-Android-source.tgz ./NV-Android-source.tgz
       - name: Upload source snapshot
         uses: actions/upload-artifact@v4
         with:
