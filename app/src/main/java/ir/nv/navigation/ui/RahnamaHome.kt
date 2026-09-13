@@ -360,21 +360,35 @@ private fun RahnamaSearchBar(
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(horizontal = NvSpacing.Sm)
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = NvSpacing.Sm),
-                    horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = NvSpacing.Sm),
+                    verticalArrangement = Arrangement.spacedBy(NvSpacing.Xs)
                 ) {
-                    FilterChip(
-                        selected = selectedRadiusKm == null,
-                        onClick = { selectedRadiusKm = null },
-                        label = { Text("همه") }
-                    )
-                    listOf(5, 10, 25, 50, 100).forEach { radiusKm ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
                         FilterChip(
-                            selected = selectedRadiusKm == radiusKm,
-                            onClick = { selectedRadiusKm = radiusKm },
-                            label = { Text("$radiusKm کیلومتر") }
+                            selected = selectedRadiusKm == null,
+                            onClick = { selectedRadiusKm = null },
+                            label = { Text("همه") },
+                            modifier = Modifier.weight(1f)
                         )
+                        listOf(5, 10).forEach { radiusKm ->
+                            FilterChip(
+                                selected = selectedRadiusKm == radiusKm,
+                                onClick = { selectedRadiusKm = radiusKm },
+                                label = { Text("$radiusKm کیلومتر") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Xs)) {
+                        listOf(25, 50, 100).forEach { radiusKm ->
+                            FilterChip(
+                                selected = selectedRadiusKm == radiusKm,
+                                onClick = { selectedRadiusKm = radiusKm },
+                                label = { Text("$radiusKm کیلومتر") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
 
