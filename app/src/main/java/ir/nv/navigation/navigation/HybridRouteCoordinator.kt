@@ -17,6 +17,9 @@ class HybridRouteCoordinator(
         request: RouteRequest,
         context: RouteIntelligenceContext = RouteIntelligenceContext(request.profile)
     ): RoutePlan {
+        val effectiveContext = context.copy(
+            electricVehicle = context.electricVehicle || request.vehicleProfile == VehicleProfile.EV
+        )
         val primaryOffline = request.preferOffline || !request.onlineAvailable
         var fallbackUsed = false
         var warning: String? = null
@@ -43,7 +46,16 @@ class HybridRouteCoordinator(
             }
             else -> emptyList()
         }
-        val routes = resolvedRoutes.take(MAX_ROUTE_ALTERNATIVES)
+        val evRangeMeters = request.ev.normalized().usableRangeMeters()
+        val rangeFilteredRoutes = if (request.vehicleProfile == VehicleProfile.EV && evRangeMeters != null) {
+            resolvedRoutes.filter { it.distanceMeters <= evRangeMeters }
+        } else {
+            resolvedRoutes
+        }
+        if (resolvedRoutes.isNotEmpty() && rangeFilteredRoutes.isEmpty() && evRangeMeters != null) {
+            warning = "برد قابل‌استفاده باتری برای این مسیر کافی نیست؛ توقف شارژ یا مقصد نزدیک‌تر لازم است"
+        }
+        val routes = rangeFilteredRoutes.take(MAX_ROUTE_ALTERNATIVES)
 
         val source = when {
             routes.isEmpty() -> RouteSource.NONE
@@ -59,7 +71,7 @@ class HybridRouteCoordinator(
                     val traffic = if (source == RouteSource.ONLINE && request.onlineAvailable) {
                         runCatching { trafficProvider.traffic(route) }.getOrNull()
                     } else null
-                    val signals = runCatching { signalProvider.signals(route, context) }
+                    val signals = runCatching { signalProvider.signals(route, effectiveContext) }
                         .getOrDefault(RouteSignals())
                         .normalized()
                     traffic to signals
@@ -76,8 +88,8 @@ class HybridRouteCoordinator(
                 signals = enrichment?.second ?: RouteSignals()
             )
         }
-        val adaptiveRanked = ranker.rank(candidates, context)
-        val ranked = predictiveOptimizer?.optimize(adaptiveRanked, context) ?: adaptiveRanked
+        val adaptiveRanked = ranker.rank(candidates, effectiveContext)
+        val ranked = predictiveOptimizer?.optimize(adaptiveRanked, effectiveContext) ?: adaptiveRanked
         return RoutePlan(
             candidates = ranked,
             selectedIndex = if (ranked.isEmpty()) -1 else 0,
