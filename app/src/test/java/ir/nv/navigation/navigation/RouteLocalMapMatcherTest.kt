@@ -17,9 +17,11 @@ class RouteLocalMapMatcherTest {
 
     @Test fun snapsNearbySampleToRoute() {
         val sample = RawLocationSample(Coordinate(35.7050, 51.4003), 20.0, 0f, 12f, 1L)
-        val matched = assertNotNull(RouteLocalMapMatcher.match(route, sample)) as ir.nv.navigation.navigation.mapmatching.MatchedLocation
-        assertTrue(kotlin.math.abs(matched.coordinate.longitude - 51.4000) < .0001)
-        assertTrue(matched.confidence > .5)
+        val matched = RouteLocalMapMatcher.match(route, sample)
+        assertNotNull(matched)
+        val value = requireNotNull(matched)
+        assertTrue(kotlin.math.abs(value.coordinate.longitude - 51.4000) < .0001)
+        assertTrue(value.confidence > .5)
     }
 
     @Test fun refusesFarSample() {
