@@ -10,12 +10,60 @@ enum class RouteProfile {
     SHORTEST,
     LOW_TRAFFIC,
     ECO,
+    SAFE,
     SCENIC,
     AVOID_TOLL,
     AVOID_HIGHWAY,
     AVOID_FERRY,
     CUSTOM,
     SMART
+}
+
+enum class VehicleProfile {
+    CAR,
+    MOTORCYCLE,
+    TRUCK,
+    EV,
+    BICYCLE,
+    WALKING,
+    TRANSIT
+}
+
+data class TruckRestrictions(
+    val heightMeters: Double? = null,
+    val widthMeters: Double? = null,
+    val weightTons: Double? = null,
+    val lengthMeters: Double? = null,
+    val hazardousCargo: Boolean = false
+) {
+    fun normalized(): TruckRestrictions = copy(
+        heightMeters = heightMeters?.coerceIn(0.0, 6.0),
+        widthMeters = widthMeters?.coerceIn(0.0, 4.0),
+        weightTons = weightTons?.coerceIn(0.0, 80.0),
+        lengthMeters = lengthMeters?.coerceIn(0.0, 30.0)
+    )
+}
+
+data class EvRoutePreferences(
+    val batteryPercent: Int = 80,
+    val estimatedRangeKm: Double? = null,
+    val consumptionWhPerKm: Double? = null,
+    val minimumArrivalBatteryPercent: Int = 12,
+    val connectorTypes: Set<String> = emptySet()
+) {
+    fun normalized(): EvRoutePreferences = copy(
+        batteryPercent = batteryPercent.coerceIn(0, 100),
+        estimatedRangeKm = estimatedRangeKm?.coerceAtLeast(0.0),
+        consumptionWhPerKm = consumptionWhPerKm?.coerceAtLeast(0.0),
+        minimumArrivalBatteryPercent = minimumArrivalBatteryPercent.coerceIn(0, 100),
+        connectorTypes = connectorTypes.map(String::trim).filter(String::isNotEmpty).toSet()
+    )
+
+    fun usableRangeMeters(): Double? {
+        val range = estimatedRangeKm?.takeIf { it > 0.0 } ?: return null
+        val usableBattery = (batteryPercent - minimumArrivalBatteryPercent).coerceAtLeast(0)
+        return range * 1_000.0 * usableBattery / 100.0
+    }
 }
 
 data class CustomRoutePreferences(
@@ -43,10 +91,13 @@ data class RouteRequest(
     val origin: Coordinate,
     val destination: Coordinate,
     val profile: RouteProfile = RouteProfile.SMART,
+    val vehicleProfile: VehicleProfile = VehicleProfile.CAR,
     val preferOffline: Boolean = false,
     val onlineAvailable: Boolean = false,
     val offlineAvailable: Boolean = false,
-    val custom: CustomRoutePreferences = CustomRoutePreferences()
+    val custom: CustomRoutePreferences = CustomRoutePreferences(),
+    val truck: TruckRestrictions = TruckRestrictions(),
+    val ev: EvRoutePreferences = EvRoutePreferences()
 )
 
 data class RouteSignals(
