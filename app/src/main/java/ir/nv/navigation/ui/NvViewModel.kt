@@ -23,13 +23,8 @@ import ir.nv.navigation.location.NavigationFix
 import ir.nv.navigation.navigation.ContinuousRerouteEngine
 import ir.nv.navigation.navigation.ContinuousReroutePolicy
 import ir.nv.navigation.navigation.NvNavigationPlatform
-import ir.nv.navigation.navigation.OffRouteConfirmationGate
-import ir.nv.navigation.navigation.ArrivalConfirmationGate
 import ir.nv.navigation.navigation.RouteProfile
 import ir.nv.navigation.navigation.RouteRequest
-import ir.nv.navigation.navigation.VehicleProfile
-import ir.nv.navigation.navigation.TruckRestrictions
-import ir.nv.navigation.navigation.EvRoutePreferences
 import ir.nv.navigation.navigation.mapmatching.RawLocationSample
 import ir.nv.navigation.network.NetworkMonitor
 import ir.nv.navigation.online.OnlineNavigationService
@@ -101,10 +96,6 @@ data class NvUiState(
     val preferOffline: Boolean = false,
     val satelliteMode: Boolean = false,
     val routeSource: RouteSource = RouteSource.NONE,
-    val routeProfile: RouteProfile = RouteProfile.SMART,
-    val vehicleProfile: VehicleProfile = VehicleProfile.CAR,
-    val truckRestrictions: TruckRestrictions = TruckRestrictions(),
-    val evPreferences: EvRoutePreferences = EvRoutePreferences(),
     val trialState: TrialManager.State = TrialManager.State.Trial(30)
 )
 
@@ -157,8 +148,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
     private var navigationJob: Job? = null
     private var insightsRefreshJob: Job? = null
-    private val offRouteGate = OffRouteConfirmationGate()
-    private val arrivalGate = ArrivalConfirmationGate()
+    private var offRouteSamples = 0
     private var lastRerouteAt = 0L
     private var lastContinuousRerouteCheckAt = 0L
     private var previousTrafficDelaySeconds = 0.0
@@ -170,4 +160,736 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 mutableState.update { state ->
                     state.copy(
                         onlineAvailable = available,
-                 ²È="25•ÑÕÉ¸(€€€€€€€ô((€€€€€€€Ù…°¹½Ü€ôMåÍÑ•´¹ÕÉÉ•¹ÑQ¥µ•5¥±±¥Ì ¤(€€€€€€€Ù…°¹••‘Í%µµ•‘¥…Ñ•¡•¬€ô½¹™¥Éµ•‘=™™I½ÕÑ”(€€€€€€€Ù…°¹••‘ÍA•É¥½‘¥¡•¬€ô¹½Ü€´±…ÍÑ½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•¡•­Ð€øô=9Q%9U=UM}II=UQ}%9QIY1}5L(€€€€€€€¥˜€¡¹••‘Í%µµ•‘¥…Ñ•¡•¬ñð¹••‘ÍA•É¥½‘¥¡•¬¤ì(€€€€€€€€€€€±…ÍÑ½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•¡•­Ð€ô¹½Ü(€€€€€€€€€€€Ù…°É•É½ÕÑ•MÑ…Ñ”€ôµÕÑ…‰±•MÑ…Ñ”¹Ù…±Õ”(€€€€€€€€€€€Ù…°‘•ÍÑ¥¹…Ñ¥½¸€ôÉ•É½ÕÑ•MÑ…Ñ”¹‘•ÍÑ¥¹…Ñ¥½¸(€€€€€€€€€€€¥˜€¡‘•ÍÑ¥¹…Ñ¥½¸€„ô¹Õ±°€˜˜€¡É•É½ÕÑ•MÑ…Ñ”¹½¹±¥¹•Ù…¥±…‰±”ñðÉ•É½ÕÑ•MÑ…Ñ”¹½™™±¥¹•I•…‘ä¤¤ì(€€€€€€€€€€€€€€€Ù…°¡•¬€ôÉÕ¹…Ñ¡¥¹œì(€€€€€€€€€€€€€€€€€€€¹…Ù¥…Ñ¥½¹A±…Ñ™½É´¹½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•¹¥¹”¹¡•¬ (€€€€€€€€€€€€€€€€€€€€€€€½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•¹¥¹”¹¡•­I•ÅÕ•ÍÐ (€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÉÉ•¹ÑA½Í¥Ñ¥½¸€ô½½É‘¥¹…Ñ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€‘•ÍÑ¥¹…Ñ¥½¸€ô‘•ÍÑ¥¹…Ñ¥½¸¹½½É‘¥¹…Ñ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÉÉ•¹ÑI½ÕÑ”€ôÉ½ÕÑ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÉÉ•¹ÑI•µ…¥¹¥¹M•½¹‘Ì€ôÁÉ½É•ÍÌ¹É•µ…¥¹¥¹M•½¹‘Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÁÉ•Ù¥½ÕÍQÉ…™™¥•±…åM•½¹‘Ì€ôÁÉ•Ù¥½ÕÍQÉ…™™¥•±…åM•½¹‘Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹±¥¹•Ù…¥±…‰±”€ôÉ•É½ÕÑ•MÑ…Ñ”¹½¹±¥¹•Ù…¥±…‰±”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€½™™±¥¹•Ù…¥±…‰±”€ôÉ•É½ÕÑ•MÑ…Ñ”¹½™™±¥¹•I•…‘ä€˜˜É½ÕÑ•È€„ô¹Õ±°°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÁÉ•™•É=™™±¥¹”€ôÉ•É½ÕÑ•MÑ…Ñ”¹ÁÉ•™•É=™™±¥¹”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€±…ÍÑI•É½ÕÑ•5¥±±¥Ì€ô±…ÍÑI•É½ÕÑ•Ð°(€€€€€€€€€€€€€€€€€€€€€€€€€€€½™™I½ÕÑ”€ô¹••‘Í%µµ•‘¥…Ñ•¡•¬°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÕÉÉ•¹ÑI½ÕÑ•	±½­•€ô™…±Í”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÁÉ½™¥±”€ôÉ•É½ÕÑ•MÑ…Ñ”¹É½ÕÑ•AÉ½™¥±”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€Ù•¡¥±•AÉ½™¥±”€ôÉ•É½ÕÑ•MÑ…Ñ”¹Ù•¡¥±•AÉ½™¥±”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€ÑÉÕ¬€ôÉ•É½ÕÑ•MÑ…Ñ”¹ÑÉÕ­I•ÍÑÉ¥Ñ¥½¹Ì°(€€€€€€€€€€€€€€€€€€€€€€€€€€€•Ø€ôÉ•É½ÕÑ•MÑ…Ñ”¹•ÙAÉ•™•É•¹•Ì(€€€€€€€€€€€€€€€€€€€€€€€€¤(€€€€€€€€€€€€€€€€€€€€¤(€€€€€€€€€€€€€€€ô¹•Ñ=É9Õ±° ¤(€€€€€€€€€€€€€€€¥˜€¡¡•¬€„ô¹Õ±°¤ì(€€€€€€€€€€€€€€€€€€€ÁÉ•Ù¥½ÕÍQÉ…™™¥•±…åM•½¹‘Ì€ô¡•¬¹ÕÉÉ•¹ÑQÉ…™™¥•±…åM•½¹‘Ì(€€€€€€€€€€€€€€€€€€€¥˜€¡¡•¬¹‘•¥Í¥½¸¹Í¡½Õ±‘I•É½ÕÑ”€˜˜¡•¬¹É•Á±…•µ•¹Ð€„ô¹Õ±°¤ì(€€€€€€€€€€€€€€€€€€€€€€€…ÁÁ±å½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ”¡½½É‘¥¹…Ñ”°¡•¬¤(€€€€€€€€€€€€€€€€€€€€€€€±…ÍÑI•É½ÕÑ•Ð€ô¹½Ü(€€€€€€€€€€€€€€€€€€€€€€€½™™I½ÕÑ•…Ñ”¹É•Í•Ð ¤(€€€€€€€€€€€€€€€€€€€€€€€…ÉÉ¥Ù…±…Ñ”¹É•Í•Ð ¤(€€€€€€€€€€€€€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€€€€ô(€€€€€€€€€€€ô(€€€€€€€ô((€€€€€€€Ù…°Í¡½Õ±‘I•™É•Í¡%¹Í¥¡ÑÌ€ô±…ÍÑ%¹Í¥¡ÑÍI•µ…¥¹¥¹5•Ñ•ÉÌ¹¥Í9…8 ¤ñð(€€€€€€€€€€€±…ÍÑ%¹Í¥¡ÑÍI•µ…¥¹¥¹5•Ñ•ÉÌ€´ÁÉ½É•ÍÌ¹É•µ…¥¹¥¹¥ÍÑ…¹•5•Ñ•ÉÌ€øô%9M%!QM}IIM!}%MQ9}5QIL(€€€€€€€¥˜€¡Í¡½Õ±‘I•™É•Í¡%¹Í¥¡ÑÌ¤ì(€€€€€€€€€€€±…ÍÑ%¹Í¥¡ÑÍI•µ…¥¹¥¹5•Ñ•ÉÌ€ôÁÉ½É•ÍÌ¹É•µ…¥¹¥¹¥ÍÑ…¹•5•Ñ•ÉÌ(€€€€€€€€€€€I½ÕÑ•A½¥¹ÑM…µÁ±•È¹É•µ…¥¹¥¹I½ÕÑ”¡É½ÕÑ”°½½É‘¥¹…Ñ”¤ü¹±•ÐìÉ•µ…¥¹¥¹I½ÕÑ”€´ø(€€€€€€€€€€€€€€€¥¹Í¥¡ÑÍI•™É•Í¡)½ˆü¹…¹•° ¤(€€€€€€€€€€€€€€€¥¹Í¥¡ÑÍI•™É•Í¡)½ˆ€ôÙ¥•Ý5½‘•±M½Á”¹±…Õ¹ ì(€€€€€€€€€€€€€€€€€€€±½…‘I½ÕÑ•9½Ñ¥•Ì¡É•µ…¥¹¥¹I½ÕÑ”°É½ÕÑ”¤(€€€€€€€€€€€€€€€ô(€€€€€€€€€€€ô(€€€€€€€ô(€€€ô((€€€ÁÉ¥Ù…Ñ”ÍÕÍÁ•¹™Õ¸…ÁÁ±å½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ” (€€€€€€€½½É‘¥¹…Ñ”è½½É‘¥¹…Ñ”°(€€€€€€€¡•¬è½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•¹¥¹”¹I•ÍÕ±Ð(€€€€¤ì(€€€€€€€Ù…°…¹‘¥‘…Ñ”€ô¡•¬¹É•Á±…•µ•¹Ð€üèÉ•ÑÕÉ¸(€€€€€€€Ù…°É•Á±…•µ•¹Ð€ôI½ÕÑ•=É¥¥¹½¹¹•Ñ½È¹…ÑÑ… ¡½½É‘¥¹…Ñ”°…¹‘¥‘…Ñ”¹É½ÕÑ”¤(€€€€€€€Ù…°É•…Í½¸€ôÝ¡•¸€¡¡•¬¹‘•¥Í¥½¸¹É•…Í½¸¤ì(€€€€€€€€€€€½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•A½±¥ä¹I•…Í½¸¹=}I=UQ€´ø€‹b»bÇf#b°ƒbŸbÈƒfbÏn3bÄˆ(€€€€€€€€€€€½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•A½±¥ä¹I•…Í½¸¹	1=-€´ø€‹fbÏb¿f#b¿n0ƒfbÏn3bÄˆ(€€€€€€€€€€€½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•A½±¥ä¹I•…Í½¸¹QI%}%9IM€´ø€‹bŸfbËbŸn3bÐƒb«bÇbŸfn3j¤ˆ(€€€€€€€€€€€½¹Ñ¥¹Õ½ÕÍI•É½ÕÑ•A½±¥ä¹I•…Í½¸¹	QQI}I=UQ€´ø€‹fbÏn3bÄƒbÏbÇn3bçŠ3b«bÄˆ(€€€€€€€€€€€¹Õ±°€´ø€‹bÓbÇbŸn3bÜƒfbÏn3bÄˆ(€€€€€€€ô(€€€€€€€µÕÑ…‰±•MÑ…Ñ”¹ÕÁ‘…Ñ”ì(€€€€€€€€€€€¥Ð¹½Áä (€€€€€€€€€€€€€€€É½ÕÑ”€ôÉ•Á±…•µ•¹Ð°(€€€€€€€€€€€€€€€É½ÕÑ•±Ñ•É¹…Ñ¥Ù•Ì€ô±¥ÍÑ=˜¡É•Á±…•µ•¹Ð¤°(€€€€€€€€€€€€€€€Í•±•Ñ•‘I½ÕÑ•%¹‘•à€ô€À°(€€€€€€€€€€€€€€€É½ÕÑ•M½ÕÉ”€ô…¹‘¥‘…Ñ”¹Í½ÕÉ”°(€€€€€€€€€€€€€€€µ…¹•ÕÙ•É%¹‘•à€ô€À°(€€€€€€€€€€€€€€€‘¥ÍÑ…¹•Q½9•áÑ5…¹•ÕÙ•É5•Ñ•ÉÌ€ôÉ•Á±…•µ•¹Ð¹µ…¹•ÕÙ•ÉÌ¹™¥ÉÍÑ=É9Õ±° ¤ü¹‘¥ÍÑ…¹•5•Ñ•ÉÌ(€€€€€€€€€€€€€€€€€€€€üèÉ•Á±…•µ•¹Ð¹‘¥ÍÑ…¹•5•Ñ•ÉÌ°(€€€€€€€€€€€€€€€É•µ…¥¹¥¹¥ÍÑ…¹•5•Ñ•ÉÌ€ôÉ•Á±…•µ•¹Ð¹‘¥ÍÑ…¹•5•Ñ•ÉÌ°(€€€€€€€€€€€€€€€É•µ…¥¹¥¹M•½¹‘Ì€ôÉ•Á±…•µ•¹Ð¹ÑÉ…Ù•±M•½¹‘Ì°(€€€€€€€€€€€€€€€½™™I½ÕÑ”€ô™…±Í”°(€€€€€€€€€€€€€€€…µ•É…ÕÑ½µ…Ñ¥Œ€ôÑÉÕ”°(€€€€€€€€€€€€€€€™½±±½Ý9…Ù¥…Ñ¥½¸€ôÑÉÕ”°(€€€€€€€€€€€€€€€ÑÉ…™™¥Œ€ô…¹‘¥‘…Ñ”¹ÑÉ…™™¥Œ°(€€€€€€€€€€€€€€€ÑÉ…™™¥M•µ•¹ÑÌ€ô•µÁÑå1¥ÍÐ ¤°(€€€€€€€€€€€€€€€µ•ÍÍ…”€ô€‹fbÏn3bÄƒb£fŠ3b¿fn3f€‘É•…Í½¸ƒb£fn3ffƒbÓb¼ˆ(€€€€€€€€€€€€¤(€€€€€€€ô(€€€€€€€±…ÍÑ%¹Í¥¡ÑÍI•µ…¥¹¥¹5•Ñ•ÉÌ€ôÉ•Á±…•µ•¹Ð¹‘¥ÍÑ…¹•5•Ñ•ÉÌ(€€€€€€€±½…‘I½ÕÑ•9½Ñ¥•Ì¡É•Á±…•µ•¹Ð°É•Á±…•µ•¹Ð¤(€€€ô((€€€ÁÉ¥Ù…Ñ”ÍÕÍÁ•¹™Õ¸É•É½ÕÑ•É½´¡½½É‘¥¹…Ñ”è½½É‘¥¹…Ñ”¤ì(€€€€€€€Ù…°Í¹…ÁÍ¡½Ð€ôµÕÑ…‰±•MÑ…Ñ”¹Ù…±Õ”(€€€€€€€Ù…°‘•ÍÑ¥¹…Ñ¥½¸€ôÍ¹…ÁÍ¡½Ð¹‘•ÍÑ¥¹…Ñ¥½¸€üèÉ•ÑÕÉ¸(€€€€€€€Ù…°É•ÅÕ•ÍÐ€ôI½ÕÑ•I•ÅÕ•ÍÐ (€€€€€€€€€€€½É¥¥¸€ô½½É‘¥¹…Ñ”°(€€€€€€€€€€€‘•ÍÑ¥¹…Ñ¥½¸€ô‘•ÍÑ¥¹…Ñ¥½¸¹½½É‘¥¹…Ñ”°(€€€€€€€€€€€ÁÉ½™¥±”€ôÍ¹…ÁÍ¡½Ð¹É½ÕÑ•AÉ½™¥±”°(€€€€€€€€€€€Ù•¡¥±•AÉ½™¥±”€ôÍ¹…ÁÍ¡½Ð¹Ù•¡¥±•AÉ½™¥±”°(€€€€€€€€€€€ÁÉ•™•É=™™±¥¹”€ôÍ¹…ÁÍ¡½Ð¹ÁÉ•™•É=™™±¥¹”°(€€€€€€€€€€€½¹±¥¹•Ù…¥±…‰±”€ôÍ¹…ÁÍ¡½Ð¹½¹±¥¹•Ù…¥±…‰±”°(€€€€€€€€€€€½™™±¥¹•Ù…¥±…‰±”€ôÍ¹…ÁÍ¡½Ð¹½™™±¥¹•I•…‘ä€˜˜É½ÕÑ•È€„ô¹Õ±°°(€€€€€€€€€€€ÑÉÕ¬€ôÍ¹…ÁÍ¡½Ð¹ÑÉÕ­I•ÍÑÉ¥Ñ¥½¹Ì°(€€€€€€€€€€€•Ø€ôÍ¹…ÁÍ¡½Ð¹•ÙAÉ•™•É•¹•Ì(€€€€€€€€¤(€€€€€€€Ù…°Á±…¸€ôÉÕ¹…Ñ¡¥¹œì¹…Ù¥…Ñ¥½¹A±…Ñ™½É´¹É½ÕÑ•½½É‘¥¹…Ñ½È¹Á±…¸¡É•ÅÕ•ÍÐ¤ô¹•Ñ=É9Õ±° ¤€üèÉ•ÑÕÉ¸(€€€€€€€Ù…°…¹‘¥‘…Ñ”€ôÁ±…¸¹Í•±•Ñ•€üèÉ•ÑÕÉ¸(€€€€€€€Ù…°É•Á±…•µ•¹Ð€ôI½ÕÑ•=É¥¥¹½¹¹•Ñ½È¹…ÑÑ… ¡½½É‘¥¹…Ñ”°…¹‘¥‘…Ñ”¹É½ÕÑ”¤(€€€€€€€Ù…°…±Ñ•É¹…Ñ¥Ù•Ì€ôÁ±…¸¹…¹‘¥‘…Ñ•Ì¹µ…ÀìI½ÕÑ•=É¥¥¹½¹¹•Ñ½È¹…ÑÑ… ¡½½É‘¥¹…Ñ”°¥Ð¹É½ÕÑ”¤ô(€€€€€€€µÕÑ…‰±•MÑ…Ñ”¹ÕÁ‘…Ñ”ì(€€€€€€€€€€€¥Ð¹½Áä (€€€€€€€€€€€€€€€É½ÕÑ”€ôÉ•Á±…•µ•¹Ð°(€€€€€€€€€€€€€€€É½ÕÑ•±Ñ•É¹…Ñ¥Ù•Ì€ô…±Ñ•É¹…Ñ¥Ù•Ì°(€€€€€€€€€€€€€€€Í•±•Ñ•‘I½ÕÑ•%¹‘•à€ô€À°(€€€€€€€€€€€€€€€É½ÕÑ•M½ÕÉ”€ô…¹‘¥‘…Ñ”¹Í½ÕÉ”°(€€€€€€€€€€€€€€€µ…¹•ÕÙ•É%¹‘•à€ô€À°(€€€€€€€€€€€€€€€‘¥ÍÑ…¹•Q½9•áÑ5…¹•ÕÙ•É5•Ñ•ÉÌ€ôÉ•Á±…•µ•¹Ð¹µ…¹•ÕÙ•ÉÌ¹™¥ÉÍÑ=É9Õ±° ¤ü¹‘¥ÍÑ…¹•5•Ñ•ÉÌ(€€€€€€€€€€€€€€€€€€€€üèÉ•Á±…•µ•¹Ð¹‘¥ÍÑ…¹•5•Ñ•ÉÌ°(€€€€€€€€€€€€€€€É•µ…¥¹¥¹¥ÍÑ…¹•5•Ñ•ÉÌ€ôÉ•Á±…•µ•¹Ð¹‘¥ÍÑ…¹•5•Ñ•ÉÌ°(€€€€€€€€€€€€€€€É•µ…¥¹¥¹M•½¹‘Ì€ôÉ•Á±…•µ•¹Ð¹ÑÉ…Ù•±M•½¹‘Ì°(€€€€€€€€€€€€€€€½™™I½ÕÑ”€ô™…±Í”°(€€€€€€€€€€€€€€€…µ•É…ÕÑ½µ…Ñ¥Œ€ôÑÉÕ”°(€€€€€€€€€€€€€€€™½±±½Ý9…Ù¥…Ñ¥½¸€ôÑÉÕ”°(€€€€€€€€€€€€€€€ÑÉ…™™¥Œ€ô…¹‘¥‘…Ñ”¹ÑÉ…™™¥Œ°(€€€€€€€€€€€€€€€ÑÉ…™™¥M•µ•¹ÑÌ€ô•µÁÑå1¥ÍÐ ¤°(€€€€€€€€€€€€€€€µ•ÍÍ…”€ô¥˜€¡Á±…¸¹™…±±‰…­UÍ•¤ì(€€€€€€€€€€€€€€€€€€€€‹fbÏn3bÄƒb£bœƒff#fbçn3b¨ƒb³b¿n3b¼ƒf ƒffb£bäƒb³bŸn3j¿bËn3fƒbŸb×fbŸb´ƒbÓb¼ˆ(€€€€€€€€€€€€€€€ô•±Í”ì(€€€€€€€€€€€€€€€€€€€€‹fbÏn3bÄƒb£bœƒff#fbçn3b¨ƒb³b¿n3b¼ƒbŸb×fbŸb´ƒbÓb¼ˆ(€€€€€€€€€€€€€€€ô(€€€€€€€€€€€€¤(€€€€€€€ô(€€€€€€€±…ÍÑ%¹Í¥¡ÑÍI•µ…¥¹¥¹5•Ñ•ÉÌ€ôÉ•Á±…•µ•¹Ð¹‘¥ÍÑ…¹•5•Ñ•ÉÌ(€€€€€€€±½…‘I½ÕÑ•9½Ñ¥•Ì¡É•Á±…•µ•¹Ð°É•Á±…•µ•¹Ð¤(€€€ô((€€€½Ù•ÉÉ¥‘”™Õ¸½¹±•…É• ¤ì(€€€€€€€‘½Ý¹±½…‘5½¹¥Ñ½Èü¹…¹•° ¤(€€€€€€€Í•…É¡)½ˆü¹…¹•° ¤(€€€€€€€¹…Ù¥…Ñ¥½¹)½ˆü¹…¹•° ¤(€€€€€€€¥¹Í¥¡ÑÍI•™É•Í¡)½ˆü¹…¹•° ¤(€€€€€€€Á±…•Ìü¹±½Í” ¤(€€€€€€€É…Á ü¹±½Í” ¤(€€€€€€€¹•ÑÝ½É­5½¹¥Ñ½È¹±½Í” ¤(€€€€€€€ÍÕÁ•È¹½¹±•…É• ¤(€€€ô((€€€ÁÉ¥Ù…Ñ”½µÁ…¹¥½¸½‰©•Ðì(€€€€€€€½¹ÍÐÙ…°UII9Q}1=Q%=9}=€ô€´å|ÀÀÁ|ÀÀÁ|ÀÀÅ0(€€€€€€€½¹ÍÐÙ…°Y%}1=Q%=9}Q=Id€ô€‰‘•Ù¥”é±½…Ñ¥½¸ˆ(€€€€€€€½¹ÍÐÙ…°5%9}9Y%Q%=9}i==4€ô€ÄÔ(€€€€€€€½¹ÍÐÙ…°U1Q}9Y%Q%=9}i==4€ô€Äà(€€€€€€€½¹ÍÐÙ…°5a}9Y%Q%=9}i==4€ô€Ää(€€€€€€€½¹ÍÐÙ…°%9M%!QM}IIM!}%MQ9}5QIL€ô€É|ÔÀÀ¸À(€€€€€€€½¹ÍÐÙ…°=9Q%9U=UM}II=UQ}%9QIY1}5L€ô€ÌÁ|ÀÀÁ0(€€€€€€€½¹ÍÐÙ…°5%9}5A}5Q!}=9%9€ô€À¸ÌÔ(€€€ô)ô(
+                        message = when {
+                            !available && !state.offlineReady -> "Ø§ÛŒÙ†ØªØ±Ù†Øª Ù‚Ø·Ø¹ Ø§Ø³ØªØ› Ø¨Ø±Ø§ÛŒ Ø§Ø³ØªÙØ§Ø¯Ù‡ Ø¢ÙÙ„Ø§ÛŒÙ† Ù†Ù‚Ø´Ù‡ Ø§ÛŒØ±Ø§Ù† Ø±Ø§ Ø¯Ø§Ù†Ù„ÙˆØ¯ Ú©Ù†ÛŒØ¯"
+                            !available && state.offlineReady -> "Ø§ÛŒÙ†ØªØ±Ù†Øª Ù‚Ø·Ø¹ Ø´Ø¯Ø› NV Ø¨Ù‡â€ŒØµÙˆØ±Øª Ø®ÙˆØ¯Ú©Ø§Ø± Ø¢ÙÙ„Ø§ÛŒÙ† Ø´Ø¯"
+                            available && state.message?.startsWith("Ø§ÛŒÙ†ØªØ±Ù†Øª Ù‚Ø·Ø¹") == true -> null
+                            else -> state.message
+                        }
+                    )
+                }
+            }
+        }
+        if (packManager.isReady()) viewModelScope.launch { openDataPack() }
+        else if (packManager.status() !is IranPackManager.Status.NotStarted) monitorDownload()
+    }
+
+    fun startMapDownload() {
+        runCatching {
+            mutableState.update { it.copy(message = null) }
+            packManager.startDownload()
+            monitorDownload()
+        }.onFailure { error ->
+            mutableState.update {
+                it.copy(packStatus = IranPackManager.Status.Failed(error.message ?: "Ø´Ø±ÙˆØ¹ Ø¯Ø§Ù†Ù„ÙˆØ¯ Ù…Ù…Ú©Ù† Ù†Ø´Ø¯"))
+            }
+        }
+    }
+
+    fun retryDownload() {
+        mutableState.update { it.copy(message = null) }
+        packManager.retry()
+        monitorDownload()
+    }
+
+    fun cancelDownload() {
+        downloadMonitor?.cancel()
+        packManager.cancelDownload()
+        mutableState.update { it.copy(packStatus = IranPackManager.Status.NotStarted) }
+    }
+
+    fun deleteOfflineMap() {
+        downloadMonitor?.cancel()
+        places?.close(); places = null
+        graph?.close(); graph = null
+        router = null
+        packManager.deleteInstalledPack()
+        mutableState.update {
+            it.copy(
+                packStatus = IranPackManager.Status.NotStarted,
+                offlineReady = false,
+                preferOffline = false,
+                message = "Ù†Ù‚Ø´Ù‡ Ø¢ÙÙ„Ø§ÛŒÙ† Ø­Ø°Ù Ø´Ø¯"
+            )
+        }
+    }
+
+    fun setPreferOffline(value: Boolean) {
+        if (value && !packManager.isReady()) {
+            mutableState.update { it.copy(message = "Ø§Ø¨ØªØ¯Ø§ Ù†Ù‚Ø´Ù‡ Ø¢ÙÙ„Ø§ÛŒÙ† Ø±Ø§ Ø¯Ø§Ù†Ù„ÙˆØ¯ Ú©Ù†ÛŒØ¯") }
+        } else {
+            mutableState.update { it.copy(preferOffline = value, message = null) }
+        }
+    }
+
+    fun toggleSatelliteMode() {
+        mutableState.update { state ->
+            if (!state.onlineAvailable) {
+                state.copy(
+                    satelliteMode = false,
+                    message = "Ù†Ù…Ø§ÛŒ Ù…Ø§Ù‡ÙˆØ§Ø±Ù‡â€ŒØ§ÛŒ ÙÙ‚Ø· Ù‡Ù†Ú¯Ø§Ù… Ø§ØªØµØ§Ù„ Ø§ÛŒÙ†ØªØ±Ù†Øª Ø¯Ø± Ø¯Ø³ØªØ±Ø³ Ø§Ø³Øª"
+                )
+            } else {
+                val enabled = !state.satelliteMode
+                state.copy(
+                    satelliteMode = enabled,
+                    preferOffline = if (enabled) false else state.preferOffline,
+                    message = if (enabled) "Ù†Ù…Ø§ÛŒ Ù…Ø§Ù‡ÙˆØ§Ø±Ù‡â€ŒØ§ÛŒ ÙØ¹Ø§Ù„ Ø´Ø¯Ø› Ù…Ø³ÛŒØ±ÛŒØ§Ø¨ÛŒ Ù‡Ù…Ú†Ù†Ø§Ù† Ø§Ø² Ø¯Ø§Ø¯Ù‡ Ù…Ø¹Ø§Ø¨Ø± Ø§Ù†Ø¬Ø§Ù… Ù…ÛŒâ€ŒØ´ÙˆØ¯" else null
+                )
+            }
+        }
+    }
+
+    private fun monitorDownload() {
+        downloadMonitor?.cancel()
+        downloadMonitor = viewModelScope.launch {
+            while (isActive && !packManager.isReady()) {
+                val status = packManager.status()
+                mutableState.update { it.copy(packStatus = status) }
+                if (status is IranPackManager.Status.Installing) {
+                    val result = packManager.installDownloadedPack()
+                    if (result.isFailure) {
+                        mutableState.update {
+                            it.copy(packStatus = IranPackManager.Status.Failed(result.exceptionOrNull()?.message ?: "Ù†ØµØ¨ Ø¨Ø³ØªÙ‡ Ù†Ø§Ù…ÙˆÙÙ‚ Ø¨ÙˆØ¯"))
+                        }
+                        return@launch
+                    }
+                }
+                if (status is IranPackManager.Status.Failed) return@launch
+                delay(1_000)
+            }
+            if (packManager.isReady()) openDataPack()
+        }
+    }
+
+    fun refreshEntitlement(isPaid: Boolean) {
+        val entitlement = runCatching { trialManager.state(isPaid) }
+            .getOrDefault(TrialManager.State.Trial(30))
+        mutableState.update { it.copy(trialState = entitlement) }
+    }
+
+    fun updateOriginQuery(query: String) {
+        mutableState.update { it.copy(originQuery = query, origin = null) }
+        search(query, true)
+    }
+
+    fun updateDestinationQuery(query: String) {
+        mutableState.update { it.copy(destinationQuery = query, destination = null) }
+        search(query, false)
+    }
+
+    fun selectOrigin(place: Place) {
+        mutableState.update { it.copy(origin = place, originQuery = place.name, originSuggestions = emptyList()) }
+    }
+
+    fun selectDestination(place: Place) {
+        recentPlaces.record(place)
+        mutableState.update {
+            it.copy(
+                destination = place,
+                destinationQuery = place.name,
+                destinationSuggestions = emptyList(),
+                recentPlaces = recentPlaces.all()
+            )
+        }
+    }
+
+    fun selectRoute(index: Int) {
+        val selected = mutableState.value.routeAlternatives.getOrNull(index) ?: return
+        mutableState.update {
+            it.copy(
+                route = selected,
+                selectedRouteIndex = index,
+                maneuverIndex = 0,
+                distanceToNextManeuverMeters = selected.maneuvers.firstOrNull()?.distanceMeters ?: selected.distanceMeters,
+                remainingDistanceMeters = selected.distanceMeters,
+                remainingSeconds = selected.travelSeconds,
+                routeNotices = emptyList(),
+                routeInsightsLoading = true,
+                traffic = null,
+                trafficSegments = emptyList()
+            )
+        }
+        lastInsightsRemainingMeters = selected.distanceMeters
+        viewModelScope.launch { loadRouteNotices(selected, selected) }
+    }
+
+    fun swapEndpoints() {
+        mutableState.update { state ->
+            val origin = state.origin
+            val destination = state.destination
+            if (origin == null || destination == null) {
+                state.copy(message = "Ø§Ø¨ØªØ¯Ø§ Ù…Ø¨Ø¯Ø£ Ùˆ Ù…Ù‚ØµØ¯ Ø±Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†ÛŒØ¯")
+            } else {
+                state.copy(
+                    origin = destination,
+                    destination = origin,
+                    originQuery = destination.name,
+                    destinationQuery = origin.name,
+                    originSuggestions = emptyList(),
+                    destinationSuggestions = emptyList(),
+                    message = null
+                )
+            }
+        }
+    }
+
+    fun clearRoute() {
+        navigationJob?.cancel()
+        insightsRefreshJob?.cancel()
+        mutableState.update {
+            it.copy(
+                route = null,
+                routeAlternatives = emptyList(),
+                selectedRouteIndex = 0,
+                navigationActive = false,
+                maneuverIndex = 0,
+                offRoute = false,
+                routeSource = RouteSource.NONE,
+                routeNotices = emptyList(),
+                routeInsightsLoading = false,
+                traffic = null,
+                trafficSegments = emptyList()
+            )
+        }
+    }
+
+    fun startNavigation() {
+        val route = mutableState.value.route ?: return
+        if (!locationProvider.hasPermission()) {
+            mutableState.update { it.copy(message = "Ø¨Ø±Ø§ÛŒ Ø±Ø§Ù‡Ù†Ù…Ø§ÛŒ Ø²Ù†Ø¯Ù‡ØŒ Ø¯Ø³ØªØ±Ø³ÛŒ Ù…ÙˆÙ‚Ø¹ÛŒØª Ù…Ú©Ø§Ù†ÛŒ Ø±Ø§ ÙØ¹Ø§Ù„ Ú©Ù†ÛŒØ¯") }
+            return
+        }
+        navigationJob?.cancel()
+        offRouteSamples = 0
+        lastRerouteAt = 0L
+        lastContinuousRerouteCheckAt = 0L
+        previousTrafficDelaySeconds = mutableState.value.traffic?.delaySeconds ?: 0.0
+        lastInsightsRemainingMeters = route.distanceMeters
+        mutableState.update {
+            it.copy(
+                navigationActive = true,
+                navigationZoomLevel = DEFAULT_NAVIGATION_ZOOM,
+                cameraAutomatic = true,
+                followNavigation = true,
+                message = null,
+                remainingDistanceMeters = route.distanceMeters,
+                remainingSeconds = route.travelSeconds
+            )
+        }
+        navigationJob = viewModelScope.launch {
+            locationProvider.updates().collect { fix ->
+                updateNavigationProgress(fix)
+            }
+        }
+    }
+
+    fun stopNavigation() {
+        navigationJob?.cancel()
+        mutableState.update { it.copy(navigationActive = false) }
+    }
+
+    fun zoomNavigationIn() {
+        mutableState.update {
+            it.copy(
+                navigationZoomLevel = (it.navigationZoomLevel + 1).coerceAtMost(MAX_NAVIGATION_ZOOM),
+                cameraAutomatic = false,
+                followNavigation = true,
+                navigationRecenterToken = it.navigationRecenterToken + 1
+            )
+        }
+    }
+
+    fun zoomNavigationOut() {
+        mutableState.update {
+            it.copy(
+                navigationZoomLevel = (it.navigationZoomLevel - 1).coerceAtLeast(MIN_NAVIGATION_ZOOM),
+                cameraAutomatic = false,
+                followNavigation = true,
+                navigationRecenterToken = it.navigationRecenterToken + 1
+            )
+        }
+    }
+
+    fun recenterNavigation() {
+        mutableState.update {
+            it.copy(
+                navigationZoomLevel = DEFAULT_NAVIGATION_ZOOM,
+                cameraAutomatic = true,
+                followNavigation = true,
+                navigationRecenterToken = it.navigationRecenterToken + 1
+            )
+        }
+    }
+
+    fun pauseNavigationFollow() {
+        mutableState.update { state ->
+            if (!state.navigationActive || !state.followNavigation) state
+            else state.copy(followNavigation = false)
+        }
+    }
+
+    fun toggleVoice() {
+        mutableState.update { it.copy(voiceEnabled = !it.voiceEnabled) }
+    }
+
+    fun useCurrentLocationAsOrigin() {
+        if (!locationProvider.hasPermission()) {
+            mutableState.update { it.copy(message = "Ø¯Ø³ØªØ±Ø³ÛŒ Ù…ÙˆÙ‚Ø¹ÛŒØª Ù…Ú©Ø§Ù†ÛŒ Ø¯Ø§Ø¯Ù‡ Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª") }
+            return
+        }
+        viewModelScope.launch {
+            mutableState.update { it.copy(locating = true, message = null) }
+            val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
+            if (coordinate == null) {
+                mutableState.update { it.copy(locating = false, message = "Ù…ÙˆÙ‚Ø¹ÛŒØª ÙØ¹Ù„ÛŒ Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯Ø› GPS Ø±Ø§ Ø±ÙˆØ´Ù† Ú©Ù†ÛŒØ¯") }
+            } else {
+                val place = Place(
+                    code = CURRENT_LOCATION_CODE,
+                    name = "Ù…ÙˆÙ‚Ø¹ÛŒØª ÙØ¹Ù„ÛŒ Ù…Ù†",
+                    coordinate = coordinate,
+                    category = DEVICE_LOCATION_CATEGORY
+                )
+                mutableState.update {
+                    it.copy(
+                        locating = false,
+                        currentLocation = coordinate,
+                        origin = place,
+                        originQuery = place.name,
+                        originSuggestions = emptyList(),
+                        message = null
+                    )
+                }
+            }
+        }
+    }
+
+    fun savePersonalCode(place: Place, code: String) {
+        val result = personalPlaces.save(code, place.name, place.coordinate)
+        val cleanCode = ir.nv.navigation.data.PersonalCodeRules.normalize(code)
+        mutableState.update {
+            it.copy(
+                personalPlaces = personalPlaces.all(),
+                message = result.exceptionOrNull()?.message ?: "Ú©Ø¯ Ø´Ø®ØµÛŒ Â«$cleanCodeÂ» Ø°Ø®ÛŒØ±Ù‡ Ø´Ø¯"
+            )
+        }
+    }
+
+    fun deletePersonalCode(code: String) {
+        personalPlaces.delete(code)
+        mutableState.update {
+            it.copy(personalPlaces = personalPlaces.all(), message = "Ú©Ø¯ Ø´Ø®ØµÛŒ Ø­Ø°Ù Ø´Ø¯")
+        }
+    }
+
+    fun calculateRoute() {
+        val initialState = mutableState.value
+        val originSelection = initialState.origin
+        val destination = initialState.destination
+        if (originSelection == null) {
+            mutableState.update { it.copy(message = "Ø§Ø¨ØªØ¯Ø§ Ù…Ø¨Ø¯Ø£ Ø±Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†ÛŒØ¯") }
+            return
+        }
+        if (destination == null) {
+            mutableState.update { it.copy(message = "Ø§Ø¨ØªØ¯Ø§ Ù…Ù‚ØµØ¯ Ø±Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ù†ÛŒØ¯") }
+            return
+        }
+        val currentLocationOrigin = originSelection.category == DEVICE_LOCATION_CATEGORY
+        if (currentLocationOrigin && !locationProvider.hasPermission()) {
+            mutableState.update { it.copy(message = "Ø¨Ø±Ø§ÛŒ ØªØ¹ÛŒÛŒÙ† Ù…Ø¨Ø¯Ø£ØŒ Ø¯Ø³ØªØ±Ø³ÛŒ Ù…ÙˆÙ‚Ø¹ÛŒØª Ù…Ú©Ø§Ù†ÛŒ Ø±Ø§ ÙØ¹Ø§Ù„ Ú©Ù†ÛŒØ¯") }
+            return
+        }
+        viewModelScope.launch {
+            var origin = originSelection
+            if (currentLocationOrigin) {
+                mutableState.update { it.copy(routing = true, locating = true, message = "Ø¯Ø± Ø­Ø§Ù„ Ø¯Ø±ÛŒØ§ÙØª Ù…Ø¨Ø¯Ø£ Ø§Ø² GPSâ€¦") }
+                val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
+                if (coordinate == null) {
+                    mutableState.update {
+                        it.copy(routing = false, locating = false, message = "Ù…Ø¨Ø¯Ø£ Ø§Ø² GPS Ø¯Ø±ÛŒØ§ÙØª Ù†Ø´Ø¯Ø› GPS Ø±Ø§ Ø±ÙˆØ´Ù† Ú©Ù†ÛŒØ¯")
+                    }
+                    return@launch
+                }
+                origin = Place(
+                    code = CURRENT_LOCATION_CODE,
+                    name = "Ù…ÙˆÙ‚Ø¹ÛŒØª ÙØ¹Ù„ÛŒ Ù…Ù†",
+                    coordinate = coordinate,
+                    category = DEVICE_LOCATION_CATEGORY
+                )
+                mutableState.update {
+                    it.copy(
+                        locating = false,
+                        currentLocation = coordinate,
+                        origin = origin,
+                        originQuery = origin.name,
+                        originSuggestions = emptyList(),
+                        message = null
+                    )
+                }
+            } else {
+                mutableState.update { it.copy(routing = true, locating = false, message = null) }
+            }
+
+            val snapshot = mutableState.value
+            val request = RouteRequest(
+                origin = origin.coordinate,
+                destination = destination.coordinate,
+                profile = RouteProfile.SMART,
+                preferOffline = snapshot.preferOffline,
+                onlineAvailable = snapshot.onlineAvailable,
+                offlineAvailable = snapshot.offlineReady && router != null
+            )
+            val plan = runCatching { navigationPlatform.routeCoordinator.plan(request) }
+                .getOrElse { error ->
+                    mutableState.update {
+                        it.copy(routing = false, message = error.message ?: "Ù…Ø­Ø§Ø³Ø¨Ù‡ Ù…Ø³ÛŒØ± Ù†Ø§Ù…ÙˆÙÙ‚ Ø¨ÙˆØ¯")
+                    }
+                    return@launch
+                }
+            val candidates = plan.candidates
+            val results = candidates.map { RouteOriginConnector.attach(origin.coordinate, it.route) }
+            val result = results.firstOrNull()
+            val source = candidates.firstOrNull()?.source ?: RouteSource.NONE
+
+            mutableState.update {
+                it.copy(
+                    routing = false,
+                    route = result,
+                    routeAlternatives = results,
+                    selectedRouteIndex = 0,
+                    navigationActive = false,
+                    maneuverIndex = 0,
+                    distanceToNextManeuverMeters = result?.maneuvers?.firstOrNull()?.distanceMeters
+                        ?: result?.distanceMeters ?: 0.0,
+                    remainingDistanceMeters = result?.distanceMeters ?: 0.0,
+                    remainingSeconds = result?.travelSeconds ?: 0.0,
+                    offRoute = false,
+                    routeSource = source,
+                    routeNotices = emptyList(),
+                    routeInsightsLoading = result != null,
+                    traffic = candidates.firstOrNull()?.traffic,
+                    trafficSegments = emptyList(),
+                    message = when {
+                        result != null && plan.fallbackUsed && source == RouteSource.OFFLINE ->
+                            "Ø³Ø±ÙˆÛŒØ³ Ø¢Ù†Ù„Ø§ÛŒÙ† Ù¾Ø§Ø³Ø® Ù†Ø¯Ø§Ø¯Ø› Ù…Ø³ÛŒØ± Ø¨Ø§ Ø¯Ø§Ø¯Ù‡ Ø¢ÙÙ„Ø§ÛŒÙ† Ù…Ø­Ø§Ø³Ø¨Ù‡ Ø´Ø¯"
+                        result != null -> plan.warning
+                        !snapshot.onlineAvailable && !snapshot.offlineReady ->
+                            "Ø§ÛŒÙ†ØªØ±Ù†Øª Ø¯Ø± Ø¯Ø³ØªØ±Ø³ Ù†ÛŒØ³Øª Ùˆ Ù†Ù‚Ø´Ù‡ Ø¢ÙÙ„Ø§ÛŒÙ† Ø¯Ø§Ù†Ù„ÙˆØ¯ Ù†Ø´Ø¯Ù‡ Ø§Ø³Øª"
+                        plan.warning != null -> plan.warning
+                        else -> "Ø¨Ø±Ø§ÛŒ Ø§ÛŒÙ† Ø¯Ùˆ Ù†Ù‚Ø·Ù‡ Ù…Ø³ÛŒØ± Ù¾ÛŒØ¯Ø§ Ù†Ø´Ø¯"
+                    }
+                )
+            }
+            result?.let {
+                lastInsightsRemainingMeters = it.distanceMeters
+                loadRouteNotices(it, it)
+            }
+        }
+    }
+
+    private fun search(query: String, origin: Boolean) {
+        searchJob?.cancel()
+        if (query.trim().isEmpty()) {
+            mutableState.update {
+                if (origin) {
+                    it.copy(originSuggestions = emptyList(), originSearching = false, searchMessage = null)
+                } else {
+                    it.copy(destinationSuggestions = emptyList(), destinationSearching = false, searchMessage = null)
+                }
+            }
+            return
+        }
+        searchJob = viewModelScope.launch {
+            val immediate = withContext(Dispatchers.IO) {
+                hybridSearchEngine.searchDetailed(
+                    query = query,
+                    onlineAvailable = false,
+                    preferOffline = true
+                ).items
+            }
+            mutableState.update {
+                if (origin) {
+                    it.copy(originSuggestions = immediate, originSearching = false, searchMessage = null)
+                } else {
+                    it.copy(destinationSuggestions = immediate, destinationSearching = false, searchMessage = null)
+                }
+            }
+
+            val publicCode = PlaceCodes.publicCode(query)
+            val snapshot = mutableState.value
+            val needsOnline = query.trim().length >= 2 &&
+                (publicCode == null || PlaceCodes.onlineIdentity(publicCode) != null) &&
+                snapshot.onlineAvailable && !snapshot.preferOffline
+            if (!needsOnline) return@launch
+
+            delay(220)
+            mutableState.update {
+                if (origin) it.copy(originSearching = true) else it.copy(destinationSearching = true)
+            }
+            val detailed = withContext(Dispatchers.IO) {
+                hybridSearchEngine.searchDetailed(
+                    query = query,
+                    onlineAvailable = true,
+                    preferOffline = false
+                )
+            }
+            val activeQuery = if (origin) mutableState.value.originQuery else mutableState.value.destinationQuery
+            if (activeQuery != query) return@launch
+            val warning = if (detailed.onlineFailed && immediate.isEmpty()) {
+                "Ø¬Ø³Øªâ€ŒÙˆØ¬ÙˆÛŒ Ø¢Ù†Ù„Ø§ÛŒÙ† Ù¾Ø§Ø³Ø® Ù†Ø¯Ø§Ø¯Ø› Ø§ØªØµØ§Ù„ Ø§ÛŒÙ†ØªØ±Ù†Øª Ø±Ø§ Ø¨Ø±Ø±Ø³ÛŒ Ú©Ù†ÛŒØ¯"
+            } else null
+            mutableState.update {
+                if (origin) {
+                    it.copy(originSuggestions = detailed.items, originSearching = false, searchMessage = warning)
+                } else {
+                    it.copy(destinationSuggestions = detailed.items, destinationSearching = false, searchMessage = warning)
+                }
+            }
+        }
+    }
+
+    private fun combineSearchResults(values: List<Place>): List<Place> = values
+        .distinctBy {
+            Triple(
+                PersianText.normalize(it.name),
+                (it.coordinate.latitude * 1_000).toInt(),
+                (it.coordinate.longitude * 1_000).toInt()
+            )
+        }
+        .take(30)
+
+    private suspend fun openDataPack() = withContext(Dispatchers.IO) {
+        runCatching {
+            places?.close(); graph?.close()
+            places = PlaceRepository(packManager.placesFile)
+            graph = SqliteRoutingGraph(packManager.routingFile)
+            router = AStarRouter(requireNotNull(graph))
+        }.onSuccess {
+            mutableState.update { it.copy(packStatus = IranPackManager.Status.Ready, offlineReady = true) }
+        }.onFailure { error ->
+            mutableState.update { it.copy(packStatus = IranPackManager.Status.Failed(error.message ?: "Ø¯Ø§Ø¯Ù‡ Ù†Ø§Ù…Ø¹ØªØ¨Ø±"), offlineReady = false) }
+        }
+    }
+
+    fun mapFile() = packManager.mapFile
+
+    private suspend fun loadRouteNotices(route: Route, ownerRoute: Route) {
+        val onlineNow = networkMonitor.isOnline()
+        val (notices, trafficReport) = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val offlinePlaces = async { runCatching { places?.noticesAlong(route, 12).orEmpty() }.getOrDefault(emptyList()) }
+                val remotePlaces = async {
+                    if (onlineNow) runCatching { onlinePlaces.noticesAhead(route) }.getOrDefault(emptyList())
+                    else emptyList()
+                }
+                val weather = async {
+                    if (onlineNow) runCatching { weatherAlerts.alertsAhead(route) }.getOrDefault(emptyList())
+                    else emptyList()
+                }
+                val currentTraffic = async {
+                    if (onlineNow) runCatching { liveTraffic.report(route) }.getOrNull() else null
+                }
+                val merged = (weather.await() + offlinePlaces.await() + remotePlaces.await())
+                    .distinctBy { Triple(it.kind, it.title, it.distanceAheadMeters.toInt() / 250) }
+                    .sortedBy { it.distanceAheadMeters }
+                    .take(16)
+                merged to currentTraffic.await()
+            }
+        }
+        mutableState.update { state ->
+            if (state.route === ownerRoute) {
+                state.copy(
+                    routeNotices = notices,
+                    routeInsightsLoading = false,
+                    traffic = trafficReport?.summary,
+                    trafficSegments = trafficReport?.segments.orEmpty()
+                )
+            } else state
+        }
+    }
+
+    private suspend fun updateNavigationProgress(fix: NavigationFix) {
+        val matched = runCatching {
+            navigationPlatform.mapMatchingEngine.match(
+                RawLocationSample(
+                    coordinate = fix.coordinate,
+                    speedKmh = fix.speedKmh.toDouble(),
+                    bearingDegrees = fix.bearingDegrees,
+                    accuracyMeters = fix.accuracyMeters,
+                    timestampMillis = fix.timestampMillis
+                )
+            )
+        }.getOrNull()
+        val coordinate = matched?.takeIf { it.confidence >= MIN_MAP_MATCH_CONFIDENCE }?.coordinate ?: fix.coordinate
+        val snapshot = mutableState.value
+        val route = snapshot.route ?: return
+        val progress = RouteProgressEngine.calculate(route, coordinate) ?: return
+        mutableState.update {
+            it.copy(
+                currentLocation = coordinate,
+                speedKmh = fix.speedKmh.toInt().coerceIn(0, 240),
+                bearingDegrees = fix.bearingDegrees,
+                navigationZoomLevel = if (it.cameraAutomatic) {
+                    NavigationCameraPolicy.zoomLevel(fix.speedKmh.toInt(), progress.distanceToManeuverMeters)
+                } else it.navigationZoomLevel,
+                maneuverIndex = progress.maneuverIndex,
+                distanceToNextManeuverMeters = progress.distanceToManeuverMeters,
+                remainingDistanceMeters = progress.remainingDistanceMeters,
+                remainingSeconds = progress.remainingSeconds,
+                offRoute = progress.offRoute,
+                message = if (progress.offRoute) "Ø§Ø² Ù…Ø³ÛŒØ± Ø®Ø§Ø±Ø¬ Ø´Ø¯Ù‡â€ŒØ§ÛŒØ¯Ø› Ø¯Ø± Ø­Ø§Ù„ Ø¨Ø±Ø±Ø³ÛŒ Ù…Ø³ÛŒØ± Ø¬Ø¯ÛŒØ¯â€¦" else null
+            )
+        }
+
+        offRouteSamples = if (progress.offRoute) offRouteSamples + 1 else 0
+        val now = System.currentTimeMillis()
+        val needsImmediateCheck = offRouteSamples >= 3
+        val needsPeriodicCheck = now - lastContinuousRerouteCheckAt >= CONTINUOUS_REROUTE_INTERVAL_MS
+        if (needsImmediateCheck || needsPeriodicCheck) {
+            lastContinuousRerouteCheckAt = now
+            val rerouteState = mutableState.value
+            val destination = rerouteState.destination
+            if (destination != null && (rerouteState.onlineAvailable || rerouteState.offlineReady)) {
+                val check = runCatching {
+                    navigationPlatform.continuousRerouteEngine.check(
+                        ContinuousRerouteEngine.CheckRequest(
+                            currentPosition = coordinate,
+                            destination = destination.coordinate,
+                            currentRoute = route,
+                            currentRemainingSeconds = progress.remainingSeconds,
+                            previousTrafficDelaySeconds = previousTrafficDelaySeconds,
+                            onlineAvailable = rerouteState.onlineAvailable,
+                            offlineAvailable = rerouteState.offlineReady && router != null,
+                            preferOffline = rerouteState.preferOffline,
+                            lastRerouteMillis = lastRerouteAt,
+                            offRoute = needsImmediateCheck,
+                            currentRouteBlocked = false,
+                            profile = RouteProfile.SMART
+                        )
+                    )
+                }.getOrNull()
+                if (check != null) {
+                    previousTrafficDelaySeconds = check.currentTrafficDelaySeconds
+                    if (check.decision.shouldReroute && check.replacement != null) {
+                        applyContinuousReroute(coordinate, check)
+                        lastRerouteAt = now
+                        offRouteSamples = 0
+                        return
+                    }
+                }
+            }
+        }
+
+        val shouldRefreshInsights = lastInsightsRemainingMeters.isNaN() ||
+            lastInsightsRemainingMeters - progress.remainingDistanceMeters >= INSIGHTS_REFRESH_DISTANCE_METERS
+        if (shouldRefreshInsights) {
+            lastInsightsRemainingMeters = progress.remainingDistanceMeters
+            RoutePointSampler.remainingRoute(route, coordinate)?.let { remainingRoute ->
+                insightsRefreshJob?.cancel()
+                insightsRefreshJob = viewModelScope.launch {
+                    loadRouteNotices(remainingRoute, route)
+                }
+            }
+        }
+    }
+
+    private suspend fun applyContinuousReroute(
+        coordinate: Coordinate,
+        check: ContinuousRerouteEngine.Result
+    ) {
+        val candidate = check.replacement ?: return
+        val replacement = RouteOriginConnector.attach(coordinate, candidate.route)
+        val reason = when (check.decision.reason) {
+            ContinuousReroutePolicy.Reason.OFF_ROUTE -> "Ø®Ø±ÙˆØ¬ Ø§Ø² Ù…Ø³ÛŒØ±"
+            ContinuousReroutePolicy.Reason.BLOCKED -> "Ù…Ø³Ø¯ÙˆØ¯ÛŒ Ù…Ø³ÛŒØ±"
+            ContinuousReroutePolicy.Reason.TRAFFIC_INCREASE -> "Ø§ÙØ²Ø§ÛŒØ´ ØªØ±Ø§ÙÛŒÚ©"
+            ContinuousReroutePolicy.Reason.BETTER_ROUTE -> "Ù…Ø³ÛŒØ± Ø³Ø±ÛŒØ¹â€ŒØªØ±"
+            null -> "Ø´Ø±Ø§ÛŒØ· Ù…Ø³ÛŒØ±"
+        }
+        mutableState.update {
+            it.copy(
+                route = replacement,
+                routeAlternatives = listOf(replacement),
+                selectedRouteIndex = 0,
+                routeSource = candidate.source,
+                maneuverIndex = 0,
+                distanceToNextManeuverMeters = replacement.maneuvers.firstOrNull()?.distanceMeters
+                    ?: replacement.distanceMeters,
+                remainingDistanceMeters = replacement.distanceMeters,
+                remainingSeconds = replacement.travelSeconds,
+                offRoute = false,
+                cameraAutomatic = true,
+                followNavigation = true,
+                traffic = candidate.traffic,
+                trafficSegments = emptyList(),
+                message = "Ù…Ø³ÛŒØ± Ø¨Ù‡â€ŒØ¯Ù„ÛŒÙ„ $reason Ø¨Ù‡ÛŒÙ†Ù‡ Ø´Ø¯"
+            )
+        }
+        lastInsightsRemainingMeters = replacement.distanceMeters
+        loadRouteNotices(replacement, replacement)
+    }
+
+    private suspend fun rerouteFrom(coordinate: Coordinate) {
+        val snapshot = mutableState.value
+        val destination = snapshot.destination ?: return
+        val request = RouteRequest(
+            origin = coordinate,
+            destination = destination.coordinate,
+            profile = RouteProfile.SMART,
+            preferOffline = snapshot.preferOffline,
+            onlineAvailable = snapshot.onlineAvailable,
+            offlineAvailable = snapshot.offlineReady && router != null
+        )
+        val plan = runCatching { navigationPlatform.routeCoordinator.plan(request) }.getOrNull() ?: return
+        val candidate = plan.selected ?: return
+        val replacement = RouteOriginConnector.attach(coordinate, candidate.route)
+        val alternatives = plan.candidates.map { RouteOriginConnector.attach(coordinate, it.route) }
+        mutableState.update {
+            it.copy(
+                route = replacement,
+                routeAlternatives = alternatives,
+                selectedRouteIndex = 0,
+                routeSource = candidate.source,
+                maneuverIndex = 0,
+                distanceToNextManeuverMeters = replacement.maneuvers.firstOrNull()?.distanceMeters
+                    ?: replacement.distanceMeters,
+                remainingDistanceMeters = replacement.distanceMeters,
+                remainingSeconds = replacement.travelSeconds,
+                offRoute = false,
+                cameraAutomatic = true,
+                followNavigation = true,
+                traffic = candidate.traffic,
+                trafficSegments = emptyList(),
+                message = if (plan.fallbackUsed) {
+                    "Ù…Ø³ÛŒØ± Ø¨Ø§ Ù…ÙˆÙ‚Ø¹ÛŒØª Ø¬Ø¯ÛŒØ¯ Ùˆ Ù…Ù†Ø¨Ø¹ Ø¬Ø§ÛŒÚ¯Ø²ÛŒÙ† Ø§ØµÙ„Ø§Ø­ Ø´Ø¯"
+                } else {
+                    "Ù…Ø³ÛŒØ± Ø¨Ø§ Ù…ÙˆÙ‚Ø¹ÛŒØª Ø¬Ø¯ÛŒØ¯ Ø§ØµÙ„Ø§Ø­ Ø´Ø¯"
+                }
+            )
+        }
+        lastInsightsRemainingMeters = replacement.distanceMeters
+        loadRouteNotices(replacement, replacement)
+    }
+
+    override fun onCleared() {
+        downloadMonitor?.cancel()
+        searchJob?.cancel()
+        navigationJob?.cancel()
+        insightsRefreshJob?.cancel()
+        places?.close()
+        graph?.close()
+        networkMonitor.close()
+        super.onCleared()
+    }
+
+    private companion object {
+        const val CURRENT_LOCATION_CODE = -9_000_000_001L
+        const val DEVICE_LOCATION_CATEGORY = "device:location"
+        const val MIN_NAVIGATION_ZOOM = 15
+        const val DEFAULT_NAVIGATION_ZOOM = 18
+        const val MAX_NAVIGATION_ZOOM = 19
+        const val INSIGHTS_REFRESH_DISTANCE_METERS = 2_500.0
+        const val CONTINUOUS_REROUTE_INTERVAL_MS = 30_000L
+        const val MIN_MAP_MATCH_CONFIDENCE = 0.35
+    }
+}
