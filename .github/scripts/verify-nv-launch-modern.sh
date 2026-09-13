@@ -24,6 +24,38 @@ dump_ui() {
   local out="${1:-nv-modern-ui.xml}"
   adb shell uiautomator dump /sdcard/nv-modern-ui.xml >/dev/null 2>&1 || true
   adb pull /sdcard/nv-modern-ui.xml "$out" >/dev/null 2>&1 || true
+  [[ -s "$out" ]] || return 1
+
+  # Android emulator infrastructure can occasionally surface a launcher/Quickstep ANR
+  # above the app even though NV itself is healthy. Dismiss only external system ANRs,
+  # then re-dump the app UI. Never mask an NV ANR.
+  if grep -Eiq "(isn't responding|is not responding)" "$out" && ! grep -Eiq "NV (isn't|is not) responding" "$out"; then
+    local xy
+    xy="$(UI_DUMP="$out" python3 - <<'PY2'
+import os,re,sys,xml.etree.ElementTree as ET
+try:
+    root=ET.parse(os.environ['UI_DUMP']).getroot()
+except Exception:
+    sys.exit(1)
+for wanted in ('Wait', 'OK'):
+    for n in root.iter('node'):
+        if n.attrib.get('text') == wanted or n.attrib.get('content-desc') == wanted:
+            m=re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', n.attrib.get('bounds',''))
+            if m:
+                x1,y1,x2,y2=map(int,m.groups()); print((x1+x2)//2,(y1+y2)//2); sys.exit(0)
+sys.exit(1)
+PY2
+)" || true
+    if [[ -n "$xy" ]]; then
+      read -r x y <<<"$xy"
+      adb_shell input tap "$x" "$y" >/dev/null 2>&1 || true
+    else
+      adb_shell input keyevent 4 >/dev/null 2>&1 || true
+    fi
+    sleep 2
+    adb shell uiautomator dump /sdcard/nv-modern-ui.xml >/dev/null 2>&1 || true
+    adb pull /sdcard/nv-modern-ui.xml "$out" >/dev/null 2>&1 || true
+  fi
   [[ -s "$out" ]]
 }
 
