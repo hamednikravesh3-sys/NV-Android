@@ -6,6 +6,7 @@ import ir.nv.navigation.core.RouteManeuver
 import ir.nv.navigation.navigation.RouteProfile
 import ir.nv.navigation.navigation.RouteProvider
 import ir.nv.navigation.navigation.RouteRequest
+import ir.nv.navigation.navigation.VehicleProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -30,13 +31,16 @@ class ValhallaRouteProvider(
     private val routeUrl = endpoint.trim().trimEnd('/') + "/route"
 
     override suspend fun routes(request: RouteRequest): List<Route> = withContext(Dispatchers.IO) {
+        val costing = costingFor(request.vehicleProfile)
         val payload = JSONObject()
             .put("locations", JSONArray().put(location(request.origin)).put(location(request.destination)))
-            .put("costing", "auto")
-            .put("costing_options", JSONObject().put("auto", costingOptions(request)))
+            .put("costing", costing)
             .put("units", "kilometers")
             .put("alternates", 3)
             .put("directions_options", JSONObject().put("units", "kilometers"))
+        costingOptions(request, costing)?.let { options ->
+            payload.put("costing_options", JSONObject().put(costing, options))
+        }
 
         val httpRequest = Request.Builder().url(routeUrl)
             .post(payload.toString().toRequestBody(JSON_MEDIA))
@@ -48,20 +52,49 @@ class ValhallaRouteProvider(
         }
     }
 
-    private fun costingOptions(request: RouteRequest): JSONObject {
+    private fun costingFor(vehicleProfile: VehicleProfile): String = when (vehicleProfile) {
+        VehicleProfile.CAR, VehicleProfile.EV -> "auto"
+        VehicleProfile.MOTORCYCLE -> "motorcycle"
+        VehicleProfile.TRUCK -> "truck"
+        VehicleProfile.BICYCLE -> "bicycle"
+        VehicleProfile.WALKING -> "pedestrian"
+        VehicleProfile.TRANSIT -> "multimodal"
+    }
+
+    private fun costingOptions(request: RouteRequest, costing: String): JSONObject? {
+        if (costing == "multimodal") return null
         val custom = request.custom
         val options = JSONObject()
         val avoidToll = request.profile == RouteProfile.AVOID_TOLL || (request.profile == RouteProfile.CUSTOM && custom.avoidToll)
         val avoidHighway = request.profile == RouteProfile.AVOID_HIGHWAY || (request.profile == RouteProfile.CUSTOM && custom.avoidHighway)
         val avoidFerry = request.profile == RouteProfile.AVOID_FERRY || (request.profile == RouteProfile.CUSTOM && custom.avoidFerry)
-        options.put("use_tolls", if (avoidToll) 0.0 else 0.5)
-        options.put("use_highways", if (avoidHighway) 0.0 else if (request.profile == RouteProfile.FASTEST) 0.85 else 0.5)
         options.put("use_ferry", if (avoidFerry) 0.0 else 0.5)
+
+        if (costing in setOf("auto", "motorcycle", "truck")) {
+            options.put("use_tolls", if (avoidToll) 0.0 else 0.5)
+            options.put(
+                "use_highways",
+                when {
+                    avoidHighway -> 0.0
+                    request.profile == RouteProfile.FASTEST -> 0.85
+                    request.profile == RouteProfile.SAFE -> 0.35
+                    else -> 0.5
+                }
+            )
+        }
         when (request.profile) {
             RouteProfile.SHORTEST -> options.put("shortest", true)
             RouteProfile.ECO -> options.put("use_highways", 0.35).put("use_tolls", 0.25)
             RouteProfile.SCENIC -> options.put("use_highways", 0.2)
             else -> Unit
+        }
+        if (costing == "truck") {
+            val truck = request.truck.normalized()
+            truck.heightMeters?.takeIf { it > 0.0 }?.let { options.put("height", it) }
+            truck.widthMeters?.takeIf { it > 0.0 }?.let { options.put("width", it) }
+            truck.weightTons?.takeIf { it > 0.0 }?.let { options.put("weight", it) }
+            truck.lengthMeters?.takeIf { it > 0.0 }?.let { options.put("length", it) }
+            if (truck.hazardousCargo) options.put("hazmat", true)
         }
         return options
     }
