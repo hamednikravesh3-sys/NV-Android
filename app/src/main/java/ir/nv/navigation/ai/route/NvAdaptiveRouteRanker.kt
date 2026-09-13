@@ -26,6 +26,7 @@ class NvAdaptiveRouteRanker : RouteRanker {
         val distanceRange = Range.of(raw.map { it.distance })
         val energyRange = Range.of(raw.map { it.energy })
         val weights = weightsFor(context)
+        val riskMultiplier = if (context.profile == RouteProfile.SAFE) 1.75 else 1.0
 
         return raw.map { row ->
             val signals = row.candidate.signals.normalized()
@@ -42,11 +43,13 @@ class NvAdaptiveRouteRanker : RouteRanker {
                 }
             }
 
-            addSignal(signals.roadQualityPenalty, ROAD_QUALITY_WEIGHT)
-            addSignal(signals.accidentRiskPenalty, ACCIDENT_RISK_WEIGHT)
-            addSignal(signals.weatherPenalty, WEATHER_WEIGHT)
-            addSignal(signals.restrictionPenalty, RESTRICTION_WEIGHT)
-            row.candidate.route.roadQualityScore?.let { addSignal(1.0 - it.coerceIn(0.0, 1.0), ROAD_QUALITY_WEIGHT) }
+            addSignal(signals.roadQualityPenalty, ROAD_QUALITY_WEIGHT * riskMultiplier)
+            addSignal(signals.accidentRiskPenalty, ACCIDENT_RISK_WEIGHT * riskMultiplier)
+            addSignal(signals.weatherPenalty, WEATHER_WEIGHT * riskMultiplier)
+            addSignal(signals.restrictionPenalty, RESTRICTION_WEIGHT * riskMultiplier)
+            row.candidate.route.roadQualityScore?.let {
+                addSignal(1.0 - it.coerceIn(0.0, 1.0), ROAD_QUALITY_WEIGHT * riskMultiplier)
+            }
 
             row.candidate.copy(score = score / activeWeight.coerceAtLeast(1e-9))
         }.sortedBy { it.score }
@@ -58,6 +61,7 @@ class NvAdaptiveRouteRanker : RouteRanker {
             RouteProfile.SHORTEST -> Weights(0.20, 0.10, 0.65, 0.05)
             RouteProfile.LOW_TRAFFIC -> Weights(0.35, 0.50, 0.10, 0.05)
             RouteProfile.ECO -> Weights(0.25, 0.10, 0.15, 0.50)
+            RouteProfile.SAFE -> Weights(0.38, 0.24, 0.23, 0.15)
             RouteProfile.SCENIC -> Weights(0.30, 0.10, 0.25, 0.35)
             RouteProfile.AVOID_TOLL,
             RouteProfile.AVOID_HIGHWAY,
