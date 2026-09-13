@@ -212,6 +212,9 @@ jobs:
             nv-modern-logcat.txt
             nv-modern-app-logcat.txt
             nv-modern-ui.xml
+            nv-modern-nearby-ui.xml
             nv-modern-search-ui.xml
             nv-modern-route-ui.xml
+            nv-modern-comparison-ui.xml
+            nv-modern-emergency-ui.xml
           if-no-files-found: warn
