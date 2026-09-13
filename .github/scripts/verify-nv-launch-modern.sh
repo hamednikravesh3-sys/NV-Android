@@ -192,8 +192,9 @@ done
 tap_text 'تأیید مسیر انتخاب‌شده' || { echo "NV could not confirm the selected route comparison result"; exit 1; }
 sleep 1
 
-# Screen 12: SOS/emergency entry must be reachable without a network request and expose
-# the configured Iran emergency services plus the nearby-center action.
+# Screen 12: SOS/emergency entry must be reachable without a network request. Validate
+# the service cards in the initial viewport first, then scroll to prove the nearby-center
+# action is reachable rather than assuming every control is simultaneously composed.
 tap_text 'SOS و خدمات اضطراری' || { echo "NV Android 16 could not open SOS and emergency services"; exit 1; }
 EMERGENCY_READY=0
 for _ in $(seq 1 15); do
@@ -202,13 +203,22 @@ for _ in $(seq 1 15); do
      ui_has 'اورژانس پزشکی' nv-modern-emergency-ui.xml && ui_has '115' nv-modern-emergency-ui.xml && \
      ui_has 'پلیس' nv-modern-emergency-ui.xml && ui_has '110' nv-modern-emergency-ui.xml && \
      ui_has 'آتش‌نشانی' nv-modern-emergency-ui.xml && ui_has '125' nv-modern-emergency-ui.xml && \
-     ui_has 'امداد و نجات' nv-modern-emergency-ui.xml && ui_has '112' nv-modern-emergency-ui.xml && \
-     ui_has 'یافتن نزدیک‌ترین اورژانس پزشکی' nv-modern-emergency-ui.xml; then
+     ui_has 'امداد و نجات' nv-modern-emergency-ui.xml && ui_has '112' nv-modern-emergency-ui.xml; then
     EMERGENCY_READY=1; break
   fi
   sleep 1
 done
-[[ "$EMERGENCY_READY" -eq 1 ]] || { echo "NV Android 16 emergency overlay did not expose expected SOS services"; exit 1; }
+[[ "$EMERGENCY_READY" -eq 1 ]] || { echo "NV Android 16 emergency overlay did not expose expected SOS service cards"; exit 1; }
+
+EMERGENCY_NEARBY_READY=0
+for _ in $(seq 1 5); do
+  if dump_ui nv-modern-emergency-ui.xml && ui_has 'یافتن نزدیک‌ترین اورژانس پزشکی' nv-modern-emergency-ui.xml; then
+    EMERGENCY_NEARBY_READY=1; break
+  fi
+  swipe_up || true
+  sleep 1
+done
+[[ "$EMERGENCY_NEARBY_READY" -eq 1 ]] || { echo "NV Android 16 emergency nearby-center action is not reachable"; exit 1; }
 tap_text 'بستن' || adb_shell input keyevent 4 >/dev/null 2>&1 || true
 sleep 1
 
