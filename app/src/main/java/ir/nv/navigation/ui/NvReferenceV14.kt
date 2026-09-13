@@ -12,17 +12,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.nv.navigation.core.Place
-import ir.nv.navigation.online.OnlinePlacesService
 import ir.nv.navigation.places.NearbyCategory
-import ir.nv.navigation.places.NearbyPlaceProvider
 import ir.nv.navigation.places.NearbyScope
+import ir.nv.navigation.places.NearbySearchCoordinator
 import ir.nv.navigation.places.NearbySearchRequest
 import ir.nv.navigation.places.PlaceSearchContext
-import ir.nv.navigation.places.UnifiedPlaceRepository
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvColors
 import ir.nv.navigation.ui.theme.NvRadius
@@ -99,14 +98,10 @@ private fun RahnamaNearbyDialog(
     onDismiss: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val onlineService = remember { OnlinePlacesService() }
-    val repository = remember(onlineService) {
-        UnifiedPlaceRepository(
-            textSearch = { _, _, _, _ -> emptyList() },
-            onlineNearby = NearbyPlaceProvider { center, category, radiusMeters, limit ->
-                onlineService.searchNearby(center, category.query, radiusMeters, limit)
-            }
-        )
+    val androidContext = LocalContext.current.applicationContext
+    val nearbyCoordinator = remember(androidContext) { NearbySearchCoordinator(androidContext) }
+    DisposableEffect(nearbyCoordinator) {
+        onDispose { nearbyCoordinator.close() }
     }
     var radiusKm by remember { mutableIntStateOf(5) }
     var nearbyScope by remember { mutableStateOf(NearbyScope.AROUND_ME) }
@@ -153,7 +148,7 @@ private fun RahnamaNearbyDialog(
         loading = true
         coroutineScope.launch {
             val value = runCatching {
-                repository.nearby(
+                nearbyCoordinator.nearby(
                     NearbySearchRequest(
                         category = resolvedCategory,
                         scope = nearbyScope,
