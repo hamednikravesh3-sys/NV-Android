@@ -33,7 +33,7 @@ import androidx.lifecycle.ViewModelProvider
 import ir.nv.navigation.core.RouteNotice
 import ir.nv.navigation.navigation.service.NvNavigationService
 import ir.nv.navigation.ui.NvQrScannerOverlay
-import ir.nv.navigation.ui.NvReferenceV16
+import ir.nv.navigation.ui.NvReferenceV17
 import ir.nv.navigation.ui.NvViewModel
 import ir.nv.navigation.ui.RahnamaRouteComparisonFeature
 import ir.nv.navigation.ui.theme.AppThemeMode
@@ -145,7 +145,7 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 NvTheme(darkTheme = darkMode) {
                     Box(Modifier.fillMaxSize()) {
-                        NvReferenceV16(
+                        NvReferenceV17(
                             darkMode = darkMode,
                             themeMode = themeMode,
                             onThemeModeChange = { selected ->
