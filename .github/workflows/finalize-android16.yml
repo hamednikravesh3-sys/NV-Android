@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Apply verified final Android 16 patch
+      - name: Apply verified final Android 16 source patch
         shell: bash
         run: |
           set -euo pipefail
@@ -45,14 +45,21 @@ jobs:
           git apply --check /tmp/rahnama-final.patch
           git apply /tmp/rahnama-final.patch
 
-          rm -rf .github/final-patch-v2
-          rm -f .github/patches/android16-finalization.b64.*
-
           git diff --check
           python -m unittest discover -s tools -p 'test_*.py'
           node --test backend/nv-code-registry/worker.test.mjs
           node --test backend/cloud-sync/worker.test.mjs
 
+          # GitHub Actions tokens cannot update workflow files for this app.
+          # They were validated above and are applied separately via the authorized connector.
+          git checkout HEAD -- .github/workflows/android.yml .github/workflows/release.yml
+
+          rm -rf .github/final-patch-v2
+          rm -f .github/patches/android16-finalization.b64.*
+          find tools -type d -name __pycache__ -prune -exec rm -rf {} +
+          find tools -type f -name '*.pyc' -delete
+
+          git diff --check
           git config user.name "rahnama-android16-bot"
           git config user.email "actions@users.noreply.github.com"
           git add -A
