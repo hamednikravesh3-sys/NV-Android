@@ -5,6 +5,7 @@ import ir.nv.navigation.core.RoadEdge
 import ir.nv.navigation.core.Route
 import ir.nv.navigation.navigation.CustomRoutePreferences
 import ir.nv.navigation.navigation.RouteProfile
+import ir.nv.navigation.navigation.VehicleProfile
 import java.util.PriorityQueue
 import kotlin.math.asin
 import kotlin.math.cos
@@ -19,34 +20,36 @@ class AStarRouter(private val graph: RoutingGraph) {
     private data class Previous(val state: State, val edge: RoadEdge)
 
     fun route(origin: Coordinate, destination: Coordinate): Route? =
-        route(origin, destination, RouteProfile.SMART)
+        route(origin, destination, RouteProfile.SMART, vehicleProfile = VehicleProfile.CAR)
 
     fun route(
         origin: Coordinate,
         destination: Coordinate,
         profile: RouteProfile,
-        custom: CustomRoutePreferences = CustomRoutePreferences()
-    ): Route? = routeAvoiding(origin, destination, emptySet(), profile, custom.normalized())
+        custom: CustomRoutePreferences = CustomRoutePreferences(),
+        vehicleProfile: VehicleProfile = VehicleProfile.CAR
+    ): Route? = routeAvoiding(origin, destination, emptySet(), profile, custom.normalized(), vehicleProfile)
 
     fun routes(origin: Coordinate, destination: Coordinate, limit: Int = 3): List<Route> =
-        routes(origin, destination, RouteProfile.SMART, CustomRoutePreferences(), limit)
+        routes(origin, destination, RouteProfile.SMART, CustomRoutePreferences(), VehicleProfile.CAR, limit)
 
     fun routes(
         origin: Coordinate,
         destination: Coordinate,
         profile: RouteProfile,
         custom: CustomRoutePreferences = CustomRoutePreferences(),
+        vehicleProfile: VehicleProfile = VehicleProfile.CAR,
         limit: Int = 4
     ): List<Route> {
         val normalized = custom.normalized()
-        val primary = routeAvoiding(origin, destination, emptySet(), profile, normalized) ?: return emptyList()
+        val primary = routeAvoiding(origin, destination, emptySet(), profile, normalized, vehicleProfile) ?: return emptyList()
         if (limit <= 1 || primary.edgeIds.size < 2) return listOf(primary)
         val attempts = (limit * 2).coerceAtMost(MAX_ALTERNATIVE_ATTEMPTS)
         val avoidIndices = (1..attempts).map {
             (primary.edgeIds.size * it / (attempts + 1)).coerceIn(0, primary.edgeIds.lastIndex)
         }.distinct()
         val candidates = avoidIndices.mapNotNull { index ->
-            routeAvoiding(origin, destination, setOf(primary.edgeIds[index]), profile, normalized)
+            routeAvoiding(origin, destination, setOf(primary.edgeIds[index]), profile, normalized, vehicleProfile)
         }.filter { it.travelSeconds <= primary.travelSeconds * MAX_ALTERNATIVE_TIME_FACTOR }
             .distinctBy(Route::edgeIds)
             .sortedBy { routeObjectiveScore(it, profile, normalized) }
@@ -58,7 +61,8 @@ class AStarRouter(private val graph: RoutingGraph) {
         destination: Coordinate,
         bannedEdgeIds: Set<Long>,
         profile: RouteProfile,
-        custom: CustomRoutePreferences
+        custom: CustomRoutePreferences,
+        vehicleProfile: VehicleProfile
     ): Route? {
         val startNode = graph.nearestNode(origin) ?: return null
         val goalNode = graph.nearestNode(destination) ?: return null
@@ -66,37 +70,45 @@ class AStarRouter(private val graph: RoutingGraph) {
         val frontier = PriorityQueue<QueueEntry>()
         val best = mutableMapOf(start to 0.0)
         val previous = mutableMapOf<State, Previous>()
-        frontier += QueueEntry(start, heuristic(startNode, goalNode, profile, custom))
+        frontier += QueueEntry(start, heuristic(startNode, goalNode, profile, custom, vehicleProfile))
         var goal: State? = null
         while (frontier.isNotEmpty()) {
             val current = frontier.remove().state
             val currentCost = best[current] ?: continue
             if (current.nodeId == goalNode) { goal = current; break }
             for (edge in graph.outgoing(current.nodeId)) {
-                if (edge.id in bannedEdgeIds || excluded(edge, profile, custom)) continue
+                if (edge.id in bannedEdgeIds || excluded(edge, profile, custom, vehicleProfile)) continue
                 if (!graph.isTurnAllowed(current.nodeId, current.incomingEdgeId, edge.id)) continue
                 val next = State(edge.toNode, edge.id)
-                val nextCost = currentCost + edgeObjectiveCost(edge, profile, custom)
+                val nextCost = currentCost + edgeObjectiveCost(edge, profile, custom, vehicleProfile)
                 if (nextCost < (best[next] ?: Double.POSITIVE_INFINITY)) {
                     best[next] = nextCost
                     previous[next] = Previous(current, edge)
-                    frontier += QueueEntry(next, nextCost + heuristic(edge.toNode, goalNode, profile, custom))
+                    frontier += QueueEntry(next, nextCost + heuristic(edge.toNode, goalNode, profile, custom, vehicleProfile))
                 }
             }
         }
-        return goal?.let { reconstruct(start, it, previous) }
+        return goal?.let { reconstruct(start, it, previous, vehicleProfile) }
     }
 
-    private fun excluded(edge: RoadEdge, profile: RouteProfile, custom: CustomRoutePreferences): Boolean = when (profile) {
-        RouteProfile.AVOID_TOLL -> edge.toll
-        RouteProfile.AVOID_HIGHWAY -> edge.isHighway
-        RouteProfile.AVOID_FERRY -> edge.ferry
-        RouteProfile.CUSTOM -> (custom.avoidToll && edge.toll) || (custom.avoidHighway && edge.isHighway) || (custom.avoidFerry && edge.ferry)
-        else -> false
+    private fun excluded(
+        edge: RoadEdge,
+        profile: RouteProfile,
+        custom: CustomRoutePreferences,
+        vehicleProfile: VehicleProfile
+    ): Boolean {
+        if (vehicleProfile in setOf(VehicleProfile.WALKING, VehicleProfile.BICYCLE) && edge.isHighway) return true
+        return when (profile) {
+            RouteProfile.AVOID_TOLL -> edge.toll
+            RouteProfile.AVOID_HIGHWAY -> edge.isHighway
+            RouteProfile.AVOID_FERRY -> edge.ferry
+            RouteProfile.CUSTOM -> (custom.avoidToll && edge.toll) || (custom.avoidHighway && edge.isHighway) || (custom.avoidFerry && edge.ferry)
+            else -> false
+        }
     }
 
-    private fun edgeObjectiveCost(edge: RoadEdge, profile: RouteProfile, custom: CustomRoutePreferences): Double {
-        val travel = edge.travelSeconds.coerceAtLeast(MIN_EDGE_SECONDS)
+    private fun edgeObjectiveCost(edge: RoadEdge, profile: RouteProfile, custom: CustomRoutePreferences, vehicleProfile: VehicleProfile): Double {
+        val travel = edgeTravelSeconds(edge, vehicleProfile).coerceAtLeast(MIN_EDGE_SECONDS)
         val distance = edge.distanceMeters.coerceAtLeast(0.0)
         val distanceSeconds = distance / REFERENCE_SPEED_METERS_PER_SECOND
         val speed = (distance / travel).coerceIn(0.0, MAX_EXPECTED_SPEED_METERS_PER_SECOND)
@@ -122,13 +134,14 @@ class AStarRouter(private val graph: RoutingGraph) {
         RouteProfile.FASTEST -> Weights(0.82, 0.10, 0.05, 0.03)
         RouteProfile.SHORTEST -> Weights(0.18, 0.72, 0.05, 0.05)
         RouteProfile.ECO -> Weights(0.30, 0.10, 0.52, 0.08)
+        RouteProfile.SAFE -> Weights(0.38, 0.10, 0.12, 0.40)
         RouteProfile.SCENIC -> Weights(0.30, 0.15, 0.15, 0.40)
         RouteProfile.LOW_TRAFFIC -> Weights(0.70, 0.12, 0.10, 0.08)
         RouteProfile.CUSTOM -> Weights(custom.timeWeight, custom.distanceWeight, custom.energyWeight, custom.roadQualityWeight)
         else -> Weights(0.60, 0.18, 0.14, 0.08)
     }
 
-    private fun reconstruct(start: State, goal: State, previous: Map<State, Previous>): Route {
+    private fun reconstruct(start: State, goal: State, previous: Map<State, Previous>, vehicleProfile: VehicleProfile): Route {
         val edges = mutableListOf<RoadEdge>()
         var cursor = goal
         while (cursor != start) {
@@ -139,7 +152,7 @@ class AStarRouter(private val graph: RoutingGraph) {
         edges.reverse()
         val nodeIds = buildList { add(start.nodeId); edges.forEach { add(it.toNode) } }
         val totalDistance = edges.sumOf { it.distanceMeters }
-        val totalSeconds = edges.sumOf { it.travelSeconds }
+        val totalSeconds = edges.sumOf { edgeTravelSeconds(it, vehicleProfile) }
         val quality = if (edges.isEmpty()) null else edges.sumOf { it.roadQualityScore * it.distanceMeters } / totalDistance.coerceAtLeast(1.0)
         val avgSpeed = totalDistance / totalSeconds.coerceAtLeast(1.0)
         val energyIndex = (totalDistance / 1_000.0) * (1.0 + ENERGY_SPEED_FACTOR *
@@ -158,10 +171,32 @@ class AStarRouter(private val graph: RoutingGraph) {
         )
     }
 
-    private fun heuristic(from: Long, to: Long, profile: RouteProfile, custom: CustomRoutePreferences): Double {
+    private fun heuristic(
+        from: Long,
+        to: Long,
+        profile: RouteProfile,
+        custom: CustomRoutePreferences,
+        vehicleProfile: VehicleProfile
+    ): Double {
         val distance = haversine(graph.coordinate(from), graph.coordinate(to))
         val w = weights(profile, custom)
-        return w.time * distance / MAX_EXPECTED_SPEED_METERS_PER_SECOND + w.distance * distance / REFERENCE_SPEED_METERS_PER_SECOND
+        val speed = modeSpeedMetersPerSecond(vehicleProfile)
+        return w.time * distance / speed + w.distance * distance / REFERENCE_SPEED_METERS_PER_SECOND
+    }
+
+    private fun edgeTravelSeconds(edge: RoadEdge, vehicleProfile: VehicleProfile): Double = when (vehicleProfile) {
+        VehicleProfile.WALKING -> edge.distanceMeters / WALKING_SPEED_METERS_PER_SECOND
+        VehicleProfile.BICYCLE -> edge.distanceMeters / BICYCLE_SPEED_METERS_PER_SECOND
+        else -> edge.travelSeconds
+    }
+
+    private fun modeSpeedMetersPerSecond(vehicleProfile: VehicleProfile): Double = when (vehicleProfile) {
+        VehicleProfile.WALKING -> WALKING_SPEED_METERS_PER_SECOND
+        VehicleProfile.BICYCLE -> BICYCLE_SPEED_METERS_PER_SECOND
+        VehicleProfile.MOTORCYCLE -> 27.78
+        VehicleProfile.TRUCK -> 22.22
+        VehicleProfile.TRANSIT -> 16.67
+        VehicleProfile.CAR, VehicleProfile.EV -> MAX_EXPECTED_SPEED_METERS_PER_SECOND
     }
 
     private fun haversine(a: Coordinate, b: Coordinate): Double {
@@ -175,6 +210,8 @@ class AStarRouter(private val graph: RoutingGraph) {
         const val EARTH_RADIUS_METERS = 6_371_000.0
         const val MAX_EXPECTED_SPEED_METERS_PER_SECOND = 55.56
         const val REFERENCE_SPEED_METERS_PER_SECOND = 13.89
+        const val WALKING_SPEED_METERS_PER_SECOND = 1.35
+        const val BICYCLE_SPEED_METERS_PER_SECOND = 4.5
         const val MIN_EDGE_SECONDS = 0.1
         const val BASE_ENERGY_EQUIVALENT_SECONDS_PER_KM = 45.0
         const val ENERGY_SPEED_FACTOR = 0.35
