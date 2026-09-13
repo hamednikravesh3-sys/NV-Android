@@ -138,14 +138,26 @@ tap_text 'بستن' || adb_shell input keyevent 4 >/dev/null 2>&1 || true
 sleep 1
 
 # Search is deterministic through IranCityIndex and does not depend on a geocoder.
+# The same active search surface must expose Smart Search and the exact product radius set.
 tap_search
 adb_shell input text karaj >/dev/null
 SEARCH_READY=0
 for _ in $(seq 1 30); do
-  if dump_ui nv-modern-search-ui.xml && ui_has 'کرج' nv-modern-search-ui.xml; then SEARCH_READY=1; break; fi
+  if dump_ui nv-modern-search-ui.xml && \
+     ui_has 'کرج' nv-modern-search-ui.xml && \
+     ui_has 'جستجوی هوشمند' nv-modern-search-ui.xml && \
+     ui_has 'شعاع جستجو' nv-modern-search-ui.xml && \
+     ui_has 'همه' nv-modern-search-ui.xml && \
+     ui_has '5 کیلومتر' nv-modern-search-ui.xml && \
+     ui_has '10 کیلومتر' nv-modern-search-ui.xml && \
+     ui_has '25 کیلومتر' nv-modern-search-ui.xml && \
+     ui_has '50 کیلومتر' nv-modern-search-ui.xml && \
+     ui_has '100 کیلومتر' nv-modern-search-ui.xml; then
+    SEARCH_READY=1; break
+  fi
   sleep 1
 done
-[[ "$SEARCH_READY" -eq 1 ]] || { echo "NV Android 16 Home search did not return built-in Karaj result"; exit 1; }
+[[ "$SEARCH_READY" -eq 1 ]] || { echo "NV Android 16 Smart Search did not expose Karaj and the exact radius controls"; exit 1; }
 tap_text 'کرج' || { echo "NV could not select the Karaj search result"; exit 1; }
 
 ROUTE_READY=0
@@ -230,4 +242,4 @@ grep -q "$PACKAGE" nv-modern-activity-state.txt || { echo "NV MainActivity missi
 ! grep -E "ANR in ${PACKAGE//./\\.}([[:space:]]|$)" nv-modern-logcat.txt || { echo "NV ANR detected"; exit 1; }
 
 trap - EXIT
-echo "NV Android 16 GPS, Nearby, search, route, comparison, and SOS verification passed for $PACKAGE (pid=$PID)"
+echo "NV Android 16 GPS, Nearby, Smart Search/radius, route, comparison, and SOS verification passed for $PACKAGE (pid=$PID)"
