@@ -636,8 +636,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             "پیاده", "سریع ترین", "سریع‌ترین", "بهترین مسیر", "از اینجا", "از موقعیت من"
         )
         removable.forEach { clean = clean.replace(it, " ", ignoreCase = true) }
-        clean = clean.replace(Regex("\s+"), " ").trim()
-        clean = clean.replace(Regex("^(به|تا|سمت)\s+"), "").trim()
+        clean = clean.replace(Regex("\\s+"), " ").trim()
+        clean = clean.replace(Regex("^(به|تا|سمت)\\s+"), "").trim()
         return clean.ifBlank { input.trim() }
     }
 
