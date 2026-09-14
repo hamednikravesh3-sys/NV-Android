@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -37,6 +38,7 @@ fun NvReferenceV17(
 ) {
     val state by viewModel.state.collectAsState()
     var smartOpen by remember { mutableStateOf(false) }
+    var codePickerOpen by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         NvReferenceV16(
@@ -67,6 +69,27 @@ fun NvReferenceV17(
                     )
                 }
             }
+
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 16.dp, bottom = 310.dp)
+                    .size(54.dp)
+                    .clickable { codePickerOpen = true },
+                shape = CircleShape,
+                color = NvColors.Navy900.copy(alpha = .96f),
+                border = BorderStroke(2.dp, NvColors.RouteBlue.copy(alpha = .85f)),
+                shadowElevation = 12.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.PinDrop,
+                        contentDescription = "تعریف کد روی نقشه",
+                        tint = NvColors.RouteBlue,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
         }
     }
 
@@ -75,6 +98,14 @@ fun NvReferenceV17(
             state = state,
             viewModel = viewModel,
             onDismiss = { smartOpen = false }
+        )
+    }
+
+    if (codePickerOpen) {
+        RahnamaCodePickerOverlay(
+            state = state,
+            viewModel = viewModel,
+            onDismiss = { codePickerOpen = false }
         )
     }
 }
