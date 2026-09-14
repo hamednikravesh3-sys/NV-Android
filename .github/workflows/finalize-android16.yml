@@ -21,41 +21,39 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Apply verified final Android 16 source patch
+      - name: Apply verified real-device feedback patch
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ ! -f .github/final-patch-v2/READY ]]; then
-            echo "Final patch is not armed; nothing to do."
+          if [[ ! -f .github/feedback-fix-v1/READY ]]; then
+            echo "Feedback patch is not armed; nothing to do."
             exit 0
           fi
 
-          for i in 00 01 02 03 04 05 06 07 08; do
-            test -s ".github/final-patch-v2/part.${i}"
+          for i in 00 01; do
+            test -s ".github/feedback-fix-v1/part.${i}"
           done
 
-          cat .github/final-patch-v2/part.{00,01,02,03,04,05,06,07,08} > /tmp/rahnama-final.patch.xz.b64
-          echo "8659121b1bce23447280c245e4fec3f47198e0f5ded74d23942944589ba3c650  /tmp/rahnama-final.patch.xz.b64" | sha256sum -c -
+          cat .github/feedback-fix-v1/part.{00,01} > /tmp/rahnama-feedback.patch.xz.b64
+          echo "e463243cc786a4033dd647e2cd849c2251f9bcfaaa0baab49cb3ebefc852811e  /tmp/rahnama-feedback.patch.xz.b64" | sha256sum -c -
 
-          base64 --decode /tmp/rahnama-final.patch.xz.b64 > /tmp/rahnama-final.patch.xz
-          xz -dc /tmp/rahnama-final.patch.xz > /tmp/rahnama-final.patch
-          echo "781162da104d30b7e393802fd69577adee649f0f37e8e3914cfd7e36d2c9894e  /tmp/rahnama-final.patch" | sha256sum -c -
+          base64 --decode /tmp/rahnama-feedback.patch.xz.b64 > /tmp/rahnama-feedback.patch.xz
+          xz -dc /tmp/rahnama-feedback.patch.xz > /tmp/rahnama-feedback.patch
+          echo "d036126c4e0380e5082237c612d11ee0bf3ffe4615ece60457109cd720224cca  /tmp/rahnama-feedback.patch" | sha256sum -c -
 
-          git apply --check /tmp/rahnama-final.patch
-          git apply /tmp/rahnama-final.patch
+          git apply --check /tmp/rahnama-feedback.patch
+          git apply /tmp/rahnama-feedback.patch
 
           git diff --check
           python -m unittest discover -s tools -p 'test_*.py'
           node --test backend/nv-code-registry/worker.test.mjs
           node --test backend/cloud-sync/worker.test.mjs
 
-          # GitHub Actions tokens cannot update workflow files for this app.
-          # They were validated above and are applied separately via the authorized connector.
+          # Workflow files are updated separately by the authorized connector.
           git checkout HEAD -- .github/workflows/android.yml .github/workflows/release.yml
 
-          rm -rf .github/final-patch-v2
-          rm -f .github/patches/android16-finalization.b64.*
+          rm -rf .github/feedback-fix-v1
           find tools -type d -name __pycache__ -prune -exec rm -rf {} +
           find tools -type f -name '*.pyc' -delete
 
@@ -65,9 +63,9 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "No finalization changes to commit."
+            echo "No feedback changes to commit."
             exit 0
           fi
 
-          git commit -m "Complete Android 16 finalization"
+          git commit -m "Fix real-device location, code picker, SOS, chat and offline maps"
           git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
