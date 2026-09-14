@@ -36,11 +36,11 @@ jobs:
           done
 
           cat .github/feedback-fix-v1/part.{00,01} > /tmp/rahnama-feedback.patch.xz.b64
-          echo "e463243cc786a4033dd647e2cd849c2251f9bcfaaa0baab49cb3ebefc852811e  /tmp/rahnama-feedback.patch.xz.b64" | sha256sum -c -
+          echo "f86aa8b8a70bbdc5eaa0e97dc4a1b70f2576ba60fbbe4fa05f3dd0f772a42129  /tmp/rahnama-feedback.patch.xz.b64" | sha256sum -c -
 
           base64 --decode /tmp/rahnama-feedback.patch.xz.b64 > /tmp/rahnama-feedback.patch.xz
           xz -dc /tmp/rahnama-feedback.patch.xz > /tmp/rahnama-feedback.patch
-          echo "d036126c4e0380e5082237c612d11ee0bf3ffe4615ece60457109cd720224cca  /tmp/rahnama-feedback.patch" | sha256sum -c -
+          echo "175e1e2d617536b7e72046132a55efef04118fab041d714d57f37ae77af29de5  /tmp/rahnama-feedback.patch" | sha256sum -c -
 
           git apply --check /tmp/rahnama-feedback.patch
           git apply /tmp/rahnama-feedback.patch
