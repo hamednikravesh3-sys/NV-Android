@@ -21,51 +21,42 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Apply verified real-device feedback patch
+      - name: Finalize source safely
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ ! -f .github/feedback-fix-v1/READY ]]; then
-            echo "Feedback patch is not armed; nothing to do."
-            exit 0
-          fi
-
-          for i in 00 01; do
-            test -s ".github/feedback-fix-v1/part.${i}"
-          done
-
-          cat .github/feedback-fix-v1/part.{00,01} > /tmp/rahnama-feedback.patch.xz.b64
-          echo "f86aa8b8a70bbdc5eaa0e97dc4a1b70f2576ba60fbbe4fa05f3dd0f772a42129  /tmp/rahnama-feedback.patch.xz.b64" | sha256sum -c -
-
-          base64 --decode /tmp/rahnama-feedback.patch.xz.b64 > /tmp/rahnama-feedback.patch.xz
-          xz -dc /tmp/rahnama-feedback.patch.xz > /tmp/rahnama-feedback.patch
-          echo "175e1e2d617536b7e72046132a55efef04118fab041d714d57f37ae77af29de5  /tmp/rahnama-feedback.patch" | sha256sum -c -
-
-          git apply --check /tmp/rahnama-feedback.patch
-          git apply /tmp/rahnama-feedback.patch
+          # Repair the two Kotlin regex escapes found by the real Android compiler.
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt')
+          s = p.read_text(encoding='utf-8')
+          before = s
+          s = s.replace('Regex("\\s+")', 'Regex("\\\\s+")')
+          s = s.replace('Regex("^(به|تا|سمت)\\s+")', 'Regex("^(به|تا|سمت)\\\\s+")')
+          p.write_text(s, encoding='utf-8')
+          if s == before:
+              print('Regex escape fix already applied or pattern not present.')
+          else:
+              print('Applied Kotlin regex escape fix.')
+          PY
 
           git diff --check
           python -m unittest discover -s tools -p 'test_*.py'
           node --test backend/nv-code-registry/worker.test.mjs
           node --test backend/cloud-sync/worker.test.mjs
 
-          # Workflow files are updated separately by the authorized connector.
-          git checkout HEAD -- .github/workflows/android.yml .github/workflows/release.yml
-
-          rm -rf .github/feedback-fix-v1
           find tools -type d -name __pycache__ -prune -exec rm -rf {} +
           find tools -type f -name '*.pyc' -delete
 
-          git diff --check
           git config user.name "rahnama-android16-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add -A
+          git add app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt
 
           if git diff --cached --quiet; then
-            echo "No feedback changes to commit."
+            echo "No source fix to commit."
             exit 0
           fi
 
-          git commit -m "Fix real-device location, code picker, SOS, chat and offline maps"
+          git commit -m "Fix Kotlin regex escapes in smart chat destination parser"
           git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
