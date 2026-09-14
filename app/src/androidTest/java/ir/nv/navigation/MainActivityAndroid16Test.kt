@@ -2,6 +2,7 @@ package ir.nv.navigation
 
 import android.Manifest
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.view.View
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -37,9 +38,9 @@ class MainActivityAndroid16Test {
         packageName: String,
         permission: String
     ) {
-        instrumentation.uiAutomation
+        val output = instrumentation.uiAutomation
             .executeShellCommand("pm grant $packageName $permission")
-            .use { it.readBytes() }
+        ParcelFileDescriptor.AutoCloseInputStream(output).use { it.readBytes() }
         instrumentation.waitForIdleSync()
     }
 }
