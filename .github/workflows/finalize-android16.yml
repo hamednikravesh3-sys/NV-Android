@@ -6,57 +6,29 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   finalize:
-    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Checkout PR head
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Finalize source safely
+      - name: Verify finalized source
         shell: bash
         run: |
           set -euo pipefail
-
-          # Repair the two Kotlin regex escapes found by the real Android compiler.
           python - <<'PY'
           from pathlib import Path
           p = Path('app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt')
           s = p.read_text(encoding='utf-8')
-          before = s
-          s = s.replace('Regex("\\s+")', 'Regex("\\\\s+")')
-          s = s.replace('Regex("^(به|تا|سمت)\\s+")', 'Regex("^(به|تا|سمت)\\\\s+")')
-          p.write_text(s, encoding='utf-8')
-          if s == before:
-              print('Regex escape fix already applied or pattern not present.')
-          else:
-              print('Applied Kotlin regex escape fix.')
+          assert 'Regex("\\\\s+")' in s, 'Kotlin whitespace regex escape is not finalized'
+          assert 'Regex("^(به|تا|سمت)\\\\s+")' in s, 'Kotlin prefix regex escape is not finalized'
+          print('Finalized Kotlin regex escapes verified.')
           PY
-
           git diff --check
           python -m unittest discover -s tools -p 'test_*.py'
           node --test backend/nv-code-registry/worker.test.mjs
           node --test backend/cloud-sync/worker.test.mjs
-
-          find tools -type d -name __pycache__ -prune -exec rm -rf {} +
-          find tools -type f -name '*.pyc' -delete
-
-          git config user.name "rahnama-android16-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt
-
-          if git diff --cached --quiet; then
-            echo "No source fix to commit."
-            exit 0
-          fi
-
-          git commit -m "Fix Kotlin regex escapes in smart chat destination parser"
-          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
