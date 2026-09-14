@@ -29,6 +29,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
@@ -44,7 +48,6 @@ jobs:
       - name: Install Android 16 SDK without deprecated tools package
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Lint test and build APKs
