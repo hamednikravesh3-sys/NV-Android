@@ -155,8 +155,8 @@ jobs:
           test "$APK_CERT" = "$NV_EXPECTED_CERT_SHA256" || { echo "Signed APK certificate does not match pinned production certificate"; exit 1; }
           "$AAPT" dump badging "$APK" | tee app-release-badging.txt
           grep -q "package: name='ir.nv.navigation'" app-release-badging.txt
-          grep -q "versionCode='19'" app-release-badging.txt
-          grep -q "versionName='0.18.0'" app-release-badging.txt
+          grep -q "versionCode='20'" app-release-badging.txt
+          grep -q "versionName='0.18.1'" app-release-badging.txt
           grep -q "sdkVersion:'29'" app-release-badging.txt
           grep -q "targetSdkVersion:'36'" app-release-badging.txt
           shasum -a 256 "$APK" | tee app-release.apk.sha256
@@ -164,8 +164,8 @@ jobs:
           {
             echo "git_sha=$GITHUB_SHA"
             echo "package=ir.nv.navigation"
-            echo "version_code=19"
-            echo "version_name=0.18.0"
+            echo "version_code=20"
+            echo "version_name=0.18.1"
             echo "min_sdk=29"
             echo "target_sdk=36"
             echo "signing_cert_sha256=$APK_CERT"
@@ -177,8 +177,8 @@ jobs:
               "schema_version": 1,
               "git_sha": os.environ["GITHUB_SHA"],
               "package": "ir.nv.navigation",
-              "version_code": 19,
-              "version_name": "0.18.0",
+              "version_code": 20,
+              "version_name": "0.18.1",
               "min_sdk": 29,
               "target_sdk": 36,
               "signed": True,
@@ -200,8 +200,8 @@ jobs:
           assert m["schema_version"] == 1
           assert m["git_sha"] == os.environ["GITHUB_SHA"]
           assert m["package"] == "ir.nv.navigation"
-          assert m["version_code"] == 19
-          assert m["version_name"] == "0.18.0"
+          assert m["version_code"] == 20
+          assert m["version_name"] == "0.18.1"
           assert m["min_sdk"] == 29
           assert m["target_sdk"] == 36
           assert m["signed"] is True
