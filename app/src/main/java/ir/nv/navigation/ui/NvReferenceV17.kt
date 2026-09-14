@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,14 @@ fun NvReferenceV17(
     val state by viewModel.state.collectAsState()
     var smartOpen by remember { mutableStateOf(false) }
     var codePickerOpen by remember { mutableStateOf(false) }
+
+    // If Location permission was already granted, acquire a fresh fix immediately on
+    // entering the active home shell. This avoids requiring a second tap on "موقعیت من"
+    // and lets Android 16/emulator GPS fixes flow into the same source of truth used by
+    // routing, Nearby, Smart Chat and the map marker.
+    LaunchedEffect(viewModel) {
+        if (state.currentLocation == null) viewModel.useCurrentLocationAsOrigin()
+    }
 
     Box(Modifier.fillMaxSize()) {
         NvReferenceV16(
