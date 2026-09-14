@@ -131,7 +131,11 @@ fun RahnamaHomeScreen(
                 )
                 when {
                     state.locating -> RahnamaStatusChip(Icons.Rounded.MyLocation, "در حال یافتن موقعیت", NvColors.Warning)
-                    state.currentLocation != null -> RahnamaStatusChip(Icons.Rounded.MyLocation, "موقعیت فعال", NvColors.Success)
+                    state.currentLocation != null -> RahnamaStatusChip(
+                        Icons.Rounded.MyLocation,
+                        state.locationAccuracyMeters?.let { "موقعیت ±${it.toInt()} متر" } ?: "موقعیت فعال",
+                        NvColors.Success
+                    )
                 }
                 if (state.routing) RahnamaStatusChip(Icons.Rounded.Route, "در حال محاسبه مسیر", NvColors.Warning)
             }
@@ -233,6 +237,19 @@ fun RahnamaHomeScreen(
                         }
                     )
                 }
+                Text("نقشه‌های آفلاین منطقه‌ای", color = NvColors.TextSecondaryDark)
+                ProvinceDownloadOverlay(
+                    iranPackStatus = state.packStatus,
+                    onStartIranDownload = viewModel::startMapDownload,
+                    onRetryIranDownload = viewModel::retryDownload,
+                    onCancelIranDownload = viewModel::cancelDownload,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "از این بخش می‌توانید بسته هر استان را جداگانه دریافت کنید؛ شهرستان‌های هر استان داخل همان بسته استانی قرار می‌گیرند.",
+                    color = NvColors.TextSecondaryDark,
+                    style = MaterialTheme.typography.labelSmall
+                )
                 Button(onClick = { viewModel.toggleSatelliteMode() }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.SatelliteAlt, contentDescription = null)
                     Spacer(Modifier.width(NvSpacing.Sm))

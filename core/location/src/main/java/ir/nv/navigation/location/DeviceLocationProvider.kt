@@ -69,7 +69,9 @@ class DeviceLocationProvider(private val context: Context) {
                 val accepted = location
                     ?.takeIf { it.hasAccuracy() }
                     ?.takeIf { System.currentTimeMillis() - it.time <= MAX_CURRENT_FIX_AGE_MS }
-                    ?.takeIf { it.accuracy <= currentAccuracyLimit() }
+                    // Do not report "GPS off" merely because the first fix is still coarse.
+                    // Home can use this fresh fallback immediately while updates() keeps refining it.
+                    ?.takeIf { it.accuracy <= acquisitionFallbackAccuracyLimit() }
                 if (continuation.isActive) continuation.resume(accepted?.toCoordinate())
             }
 
@@ -184,6 +186,9 @@ class DeviceLocationProvider(private val context: Context) {
 
     private fun currentAccuracyLimit(): Float =
         if (hasFinePermission()) MAX_CURRENT_LOCATION_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
+
+    private fun acquisitionFallbackAccuracyLimit(): Float =
+        if (hasFinePermission()) ABSOLUTE_MAX_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
 
     private fun Location.toCoordinate() = Coordinate(latitude, longitude)
 

@@ -12,8 +12,8 @@ class Android16CompletionTest(unittest.TestCase):
         text = read('app/build.gradle.kts')
         self.assertRegex(text, r'compileSdk\s*=\s*36')
         self.assertRegex(text, r'targetSdk\s*=\s*36')
-        self.assertRegex(text, r'versionCode\s*=\s*19')
-        self.assertIn('versionName = "0.18.0"', text)
+        self.assertRegex(text, r'versionCode\s*=\s*20')
+        self.assertIn('versionName = "0.18.1"', text)
         self.assertIn('COMMUNITY_REPORT_API_URL', text)
 
     def test_ci_exercises_android16_instrumentation_and_16k_alignment(self):
@@ -33,8 +33,8 @@ class Android16CompletionTest(unittest.TestCase):
         self.assertIn('platforms;android-36', text)
         self.assertIn('build-tools;36.0.0', text)
         self.assertRegex(text, r'api-level:\s*36')
-        self.assertIn("versionCode='19'", text)
-        self.assertIn("versionName='0.18.0'", text)
+        self.assertIn("versionCode='20'", text)
+        self.assertIn("versionName='0.18.1'", text)
         self.assertNotRegex(text, r'android-35|build-tools;35|api-level:\s*35')
 
     def test_navigation_gates_and_vehicle_constraints_are_integrated(self):
@@ -102,6 +102,34 @@ class Android16CompletionTest(unittest.TestCase):
         ctor = engine_ctor.group(1)
         self.assertIn('UnavailableTransitRealtimeProvider', ctor)
         self.assertIn('UnavailableTaxiProvider', ctor)
+
+
+    def test_real_world_feedback_fixes_are_wired_to_active_shell(self):
+        vm = read('app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt')
+        home = read('app/src/main/java/ir/nv/navigation/ui/RahnamaHome.kt')
+        v14 = read('app/src/main/java/ir/nv/navigation/ui/NvReferenceV14.kt')
+        v16 = read('app/src/main/java/ir/nv/navigation/ui/NvReferenceV16.kt')
+        smart_ui = read('app/src/main/java/ir/nv/navigation/ui/RahnamaSmartMobilityHub.kt')
+        smart = read('app/src/main/java/ir/nv/navigation/smart/SmartMobility.kt')
+        self.assertIn('locationFailureMessage()', vm)
+        self.assertIn('isLocationEnabled()', vm)
+        self.assertNotIn('موقعیت فعلی پیدا نشد؛ GPS را روشن کنید', vm)
+        self.assertIn('ensureHomeLocationTracking()', vm)
+        self.assertIn('تعریف کد مکان روی نقشه', v14)
+        self.assertIn('NvCodePickerMap', v14)
+        self.assertIn('text = "SOS"', v16)
+        self.assertIn('ProvinceDownloadOverlay(', home)
+        self.assertIn('شهرستان‌های هر استان', home)
+        self.assertIn('planJourneyFromChat(query)', smart_ui)
+        self.assertIn('fun planJourneyFromChat(', vm)
+        self.assertIn('fun chatJourneyPlan(', smart)
+        self.assertIn('رزرو تاکسی/اسنپ متصل نیست', smart)
+
+    def test_location_provider_accepts_fresh_coarse_fix_then_refines(self):
+        location = read('core/location/src/main/java/ir/nv/navigation/location/DeviceLocationProvider.kt')
+        self.assertIn('acquisitionFallbackAccuracyLimit()', location)
+        self.assertIn('ABSOLUTE_MAX_ACCURACY_METERS', location)
+        self.assertIn('fun updates(): Flow<NavigationFix>', location)
 
 if __name__ == '__main__':
     unittest.main()

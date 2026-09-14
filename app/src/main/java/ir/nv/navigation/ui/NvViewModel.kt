@@ -110,6 +110,8 @@ data class NvUiState(
     val voiceEnabled: Boolean = true,
     val locating: Boolean = false,
     val currentLocation: Coordinate? = null,
+    val smartJourneyPlanning: Boolean = false,
+    val smartJourneyStatus: String? = null,
     val speedKmh: Int = 0,
     val bearingDegrees: Float = 0f,
     val navigationZoomLevel: Int = 18,
@@ -195,6 +197,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private var downloadMonitor: Job? = null
     private var searchJob: Job? = null
     private var navigationJob: Job? = null
+    private var homeLocationJob: Job? = null
     private var insightsRefreshJob: Job? = null
     private val offRouteConfirmationGate = OffRouteConfirmationGate()
     private val arrivalConfirmationGate = ArrivalConfirmationGate()
@@ -516,16 +519,139 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update { it.copy(voiceEnabled = !it.voiceEnabled) }
     }
 
+    private fun locationFailureMessage(): String = when {
+        !locationProvider.hasPermission() -> "دسترسی موقعیت مکانی داده نشده است"
+        !locationProvider.isLocationEnabled() -> "سرویس موقعیت مکانی دستگاه خاموش است؛ Location را از تنظیمات دستگاه روشن کنید"
+        !locationProvider.hasFinePermission() -> "موقعیت تقریبی فعال است؛ برای دقت بیشتر، مجوز «موقعیت دقیق» را برای راهنما فعال کنید"
+        else -> "Location روشن است اما هنوز GPS به دقت مناسب نرسیده؛ چند لحظه صبر کنید یا نزدیک فضای باز بروید"
+    }
+
+    private fun ensureHomeLocationTracking() {
+        if (!locationProvider.hasPermission() || homeLocationJob?.isActive == true) return
+        homeLocationJob = viewModelScope.launch {
+            runCatching {
+                locationProvider.updates().collect { fix ->
+                    mutableState.update { state ->
+                        val movingOrigin = state.origin?.category == DEVICE_LOCATION_CATEGORY
+                        val updatedOrigin = if (movingOrigin) {
+                            state.origin?.copy(coordinate = fix.coordinate)
+                        } else state.origin
+                        state.copy(
+                            currentLocation = fix.coordinate,
+                            locationAccuracyMeters = fix.accuracyMeters.takeIf { it.isFinite() },
+                            origin = updatedOrigin,
+                            locating = false,
+                            message = if (state.message?.startsWith("Location روشن است") == true ||
+                                state.message?.contains("GPS") == true) null else state.message
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Chat entry point: current device position is always the implicit origin.
+     * The user only describes where/how they want to travel; no origin/destination form is required.
+     */
+    fun planJourneyFromChat(rawQuery: String) {
+        val query = rawQuery.trim()
+        if (query.isBlank()) return
+        if (!locationProvider.hasPermission()) {
+            mutableState.update { it.copy(smartJourneyStatus = "برای شروع مسیر از موقعیت فعلی، مجوز Location را بدهید", message = locationFailureMessage()) }
+            return
+        }
+        ensureHomeLocationTracking()
+        viewModelScope.launch {
+            mutableState.update { it.copy(smartJourneyPlanning = true, smartJourneyStatus = "در حال تشخیص مقصد و دریافت موقعیت فعلی…", message = null) }
+            val coordinate = withTimeoutOrNull(15_000L) { locationProvider.currentLocation() }
+                ?: mutableState.value.currentLocation
+            if (coordinate == null) {
+                val failure = locationFailureMessage()
+                mutableState.update { it.copy(smartJourneyPlanning = false, smartJourneyStatus = failure, message = failure) }
+                return@launch
+            }
+
+            val destinationText = extractChatDestination(query)
+            val snapshot = mutableState.value
+            val candidates = withContext(Dispatchers.IO) {
+                hybridSearchEngine.search(
+                    query = destinationText,
+                    onlineAvailable = snapshot.onlineAvailable,
+                    preferOffline = snapshot.preferOffline,
+                    limit = 8
+                )
+            }
+            val destination = candidates.firstOrNull()
+            if (destination == null) {
+                mutableState.update {
+                    it.copy(
+                        smartJourneyPlanning = false,
+                        currentLocation = coordinate,
+                        smartJourneyStatus = "مقصد «$destinationText» پیدا نشد؛ نام مکان یا کد NV را دقیق‌تر بنویسید"
+                    )
+                }
+                return@launch
+            }
+
+            val origin = Place(
+                code = CURRENT_LOCATION_CODE,
+                name = "موقعیت فعلی من",
+                coordinate = coordinate,
+                category = DEVICE_LOCATION_SNAPSHOT_CATEGORY
+            )
+            val requestedVehicle = when {
+                query.contains("پیاده") -> VehicleProfile.WALKING
+                query.contains("دوچرخه") -> VehicleProfile.BICYCLE
+                query.contains("موتور") -> VehicleProfile.MOTORCYCLE
+                else -> VehicleProfile.CAR
+            }
+            recentPlaces.record(destination)
+            mutableState.update {
+                it.copy(
+                    currentLocation = coordinate,
+                    origin = origin,
+                    originQuery = origin.name,
+                    destination = destination,
+                    destinationQuery = destination.name,
+                    originSuggestions = emptyList(),
+                    destinationSuggestions = emptyList(),
+                    recentPlaces = recentPlaces.all(),
+                    vehicleProfile = requestedVehicle,
+                    smartJourneyPlanning = false,
+                    smartJourneyStatus = "مقصد ${destination.name} تشخیص داده شد؛ برنامه سفر از موقعیت فعلی در حال ساخته‌شدن است",
+                    message = null
+                )
+            }
+            calculateRoute()
+        }
+    }
+
+    private fun extractChatDestination(input: String): String {
+        var clean = PersianText.normalize(input)
+        val removable = listOf(
+            "لطفا", "لطفاً", "میخوام", "می خوام", "می‌خوام", "میخواهم", "می خواهم", "می‌خواهم",
+            "منو ببر", "مرا ببر", "ببر منو", "مسیر بده", "مسیریابی کن", "راه رو نشون بده", "راه را نشان بده",
+            "با اسنپ", "اسنپ", "با تاکسی", "تاکسی", "با مترو", "مترو", "با اتوبوس", "اتوبوس",
+            "پیاده", "سریع ترین", "سریع‌ترین", "بهترین مسیر", "از اینجا", "از موقعیت من"
+        )
+        removable.forEach { clean = clean.replace(it, " ", ignoreCase = true) }
+        clean = clean.replace(Regex("\s+"), " ").trim()
+        clean = clean.replace(Regex("^(به|تا|سمت)\s+"), "").trim()
+        return clean.ifBlank { input.trim() }
+    }
+
     fun routeFromCurrentLocationTo(destination: Place, vehicleProfile: VehicleProfile = mutableState.value.vehicleProfile) {
         if (!locationProvider.hasPermission()) {
             mutableState.update { it.copy(message = "برای مسیریابی از موقعیت فعلی، دسترسی موقعیت مکانی را فعال کنید") }
             return
         }
+        ensureHomeLocationTracking()
         viewModelScope.launch {
             mutableState.update { it.copy(locating = true, routing = true, message = "در حال دریافت موقعیت فعلی…") }
             val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
             if (coordinate == null) {
-                mutableState.update { it.copy(locating = false, routing = false, message = "موقعیت فعلی پیدا نشد؛ GPS را بررسی کنید") }
+                mutableState.update { it.copy(locating = false, routing = false, message = locationFailureMessage()) }
                 return@launch
             }
             val origin = Place(
@@ -558,14 +684,16 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun useCurrentLocationAsOrigin() {
         if (!locationProvider.hasPermission()) {
-            mutableState.update { it.copy(message = "دسترسی موقعیت مکانی داده نشده است") }
+            mutableState.update { it.copy(message = locationFailureMessage()) }
             return
         }
+        ensureHomeLocationTracking()
         viewModelScope.launch {
             mutableState.update { it.copy(locating = true, message = null) }
             val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
+                ?: mutableState.value.currentLocation
             if (coordinate == null) {
-                mutableState.update { it.copy(locating = false, message = "موقعیت فعلی پیدا نشد؛ GPS را روشن کنید") }
+                mutableState.update { it.copy(locating = false, message = locationFailureMessage()) }
             } else {
                 val place = Place(
                     code = CURRENT_LOCATION_CODE,
@@ -580,7 +708,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                         origin = place,
                         originQuery = place.name,
                         originSuggestions = emptyList(),
-                        message = null
+                        message = if (!locationProvider.hasFinePermission()) locationFailureMessage() else null
                     )
                 }
             }
@@ -629,7 +757,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
                 if (coordinate == null) {
                     mutableState.update {
-                        it.copy(routing = false, locating = false, message = "مبدأ از GPS دریافت نشد؛ GPS را روشن کنید")
+                        it.copy(routing = false, locating = false, message = locationFailureMessage())
                     }
                     return@launch
                 }

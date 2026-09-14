@@ -461,6 +461,59 @@ class SmartMobilityEngine(
         }
     }
 
+    /**
+     * Builds a chat-facing plan without pretending that unavailable providers are live.
+     * Exact metro/station legs are only emitted when a real transit provider is connected.
+     * Otherwise long trips fall back to an explicitly non-bookable taxi/ride-hail estimate.
+     */
+    fun chatJourneyPlan(route: Route, query: String): MultimodalPlan {
+        val distance = route.distanceMeters.coerceAtLeast(0.0)
+        val asksWalk = query.contains("پیاده")
+        val asksMetro = query.contains("مترو") || query.contains("قطار شهری")
+        val asksTaxi = query.contains("تاکسی") || query.contains("اسنپ")
+
+        if (asksWalk || distance <= 1_500.0) {
+            val walk = walking(distance)
+            return MultimodalPlan(
+                available = true,
+                legs = listOf(MultimodalLeg(MobilityMode.WALK, "پیاده تا مقصد", distance, walk.travelSeconds, false, walk.source)),
+                totalSeconds = walk.travelSeconds,
+                warningFa = if (walk.exactRoute) null else "مسیر پیاده فعلاً برآورد محلی است"
+            )
+        }
+
+        if (asksMetro && transitProvider.availability.available) {
+            val station = transitProvider.nearbyStationStatus().firstOrNull()
+            if (station != null) {
+                val accessMeters = minOf(700.0, distance * .12)
+                val egressMeters = minOf(700.0, distance * .12)
+                val railMeters = (distance - accessMeters - egressMeters).coerceAtLeast(0.0)
+                val wait = (station.nextArrivalMinutes ?: 12).coerceAtLeast(0) * 60.0
+                val legs = listOf(
+                    MultimodalLeg(MobilityMode.WALK, "پیاده تا ایستگاه مناسب", accessMeters, accessMeters / WALKING_SPEED_MPS, false, "local-estimate"),
+                    MultimodalLeg(MobilityMode.METRO, "مترو • ${station.lineName}", railMeters, route.travelSeconds * .65 + wait, station.live, station.source),
+                    MultimodalLeg(MobilityMode.WALK, "پیاده از ایستگاه تا مقصد", egressMeters, egressMeters / WALKING_SPEED_MPS, false, "local-estimate")
+                )
+                return MultimodalPlan(true, legs, legs.sumOf { it.travelSeconds }, if (station.live) null else "زمان مترو زنده نیست")
+            }
+        }
+
+        val accessMeters = minOf(350.0, distance * .08)
+        val rideMeters = (distance - accessMeters).coerceAtLeast(0.0)
+        val taxi = taxiProvider.takeIf { it.availability.available }?.estimate(rideMeters)
+        val rideSeconds = taxi?.etaMinutes?.times(60.0)?.plus(route.travelSeconds) ?: route.travelSeconds
+        val rideTitle = if (asksTaxi || distance > 1_500.0) "تاکسی/اسنپ تا مقصد" else "خودرو تا مقصد"
+        val legs = buildList {
+            if (accessMeters >= 80.0) add(MultimodalLeg(MobilityMode.WALK, "پیاده تا نقطه سوارشدن", accessMeters, accessMeters / WALKING_SPEED_MPS, false, "local-estimate"))
+            add(MultimodalLeg(MobilityMode.TAXI, rideTitle, rideMeters, rideSeconds, false, taxi?.source ?: "local-non-bookable-estimate"))
+        }
+        val providerWarning = buildList {
+            if (!taxiProvider.availability.available) add("رزرو تاکسی/اسنپ متصل نیست؛ بخش خودرویی فقط برآورد مسیر است")
+            if (asksMetro && !transitProvider.availability.available) add("برای تعیین ایستگاه و خط مترو، feed حمل‌ونقل عمومی واقعی هنوز متصل نیست؛ مترو جعل نشده و گزینه خودرویی جایگزین شده است")
+        }.takeIf { it.isNotEmpty() }?.joinToString("؛ ")
+        return MultimodalPlan(true, legs, legs.sumOf { it.travelSeconds }, providerWarning)
+    }
+
     fun dynamicRerouteDecision(
         delayIncreaseSeconds: Double,
         crowdingPercent: Int?,

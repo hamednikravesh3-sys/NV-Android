@@ -7,9 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Emergency
-import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -19,7 +17,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ir.nv.navigation.navigation.VehicleProfile
 import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvColors
@@ -59,11 +59,11 @@ fun NvReferenceV16(
                 shadowElevation = 12.dp
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.Emergency,
-                        contentDescription = "SOS و خدمات اضطراری",
-                        tint = NvColors.TextPrimaryDark,
-                        modifier = Modifier.size(30.dp)
+                    Text(
+                        text = "SOS",
+                        color = NvColors.TextPrimaryDark,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 15.sp
                     )
                 }
             }

@@ -16,8 +16,8 @@ android {
         applicationId = "ir.nv.navigation"
         minSdk = 29
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.18.0"
+        versionCode = 20
+        versionName = "0.18.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "IRAN_PACK_URL", "\"https://github.com/hamednikravesh3-sys/NV-Android/releases/download/map-v1/iran.nvpack\"")

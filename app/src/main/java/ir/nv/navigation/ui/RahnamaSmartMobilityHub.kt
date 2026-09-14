@@ -247,12 +247,23 @@ private fun SmartChatScreen(
         placeholder = { Text("مثلاً سریع‌ترین مسیر چیست؟") },
         minLines = 2
     )
-    Button(onClick = { submittedQuery = query }, enabled = query.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+    Button(
+        onClick = {
+            submittedQuery = query
+            viewModel.planJourneyFromChat(query)
+        },
+        enabled = query.isNotBlank() && !state.smartJourneyPlanning,
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
         Spacer(Modifier.size(NvSpacing.Xs))
-        Text("تحلیل درخواست")
+        Text(if (state.smartJourneyPlanning) "در حال ساخت مسیر…" else "تشخیص مقصد و ساخت مسیر از موقعیت من")
     }
-    SmartInfoCard(reply.titleFa, reply.messageFa, NvColors.RouteBlue)
+    if (state.smartJourneyPlanning) LinearProgressIndicator(Modifier.fillMaxWidth())
+    state.smartJourneyStatus?.let { SmartInfoCard("دستیار مسیر", it, NvColors.RouteBlue) }
+    if (submittedQuery.isNotBlank() && state.smartJourneyStatus == null) {
+        SmartInfoCard(reply.titleFa, reply.messageFa, NvColors.RouteBlue)
+    }
     if (state.routeAlternatives.isNotEmpty()) {
         Text("مسیرهای قابل انتخاب", fontWeight = FontWeight.Bold)
         state.routeAlternatives.take(4).forEachIndexed { index, route ->
@@ -274,6 +285,37 @@ private fun SmartChatScreen(
                     Text(if (index == state.selectedRouteIndex) "انتخاب‌شده" else "انتخاب", color = NvColors.RouteBlue)
                 }
             }
+        }
+    }
+    state.route?.let { route ->
+        val autoPlan = remember(route, submittedQuery) { engine.chatJourneyPlan(route, submittedQuery) }
+        Text("برنامه پیشنهادی دستیار", fontWeight = FontWeight.Bold)
+        autoPlan.legs.forEachIndexed { index, leg ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = NvColors.Navy850,
+                shape = RoundedCornerShape(NvRadius.Medium),
+                border = BorderStroke(1.dp, NvColors.DividerDark)
+            ) {
+                Row(Modifier.padding(NvSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(modeIcon(leg.mode), contentDescription = null, tint = NvColors.Success)
+                    Spacer(Modifier.size(NvSpacing.Sm))
+                    Column(Modifier.weight(1f)) {
+                        Text("${index + 1}. ${leg.titleFa}", fontWeight = FontWeight.Bold)
+                        Text(
+                            "${ceil(leg.travelSeconds / 60.0).toInt()} دقیقه • %.1f km • ${if (leg.live) "زنده" else "برآورد"}".format(leg.distanceMeters / 1000.0),
+                            color = NvColors.TextSecondaryDark,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+        }
+        autoPlan.warningFa?.let { SmartInfoCard("وضعیت سرویس‌ها", it, NvColors.Warning) }
+        Button(onClick = viewModel::startNavigation, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
+            Spacer(Modifier.size(NvSpacing.Xs))
+            Text("شروع راهنمایی مسیر")
         }
     }
     reply.suggestedScreen?.let { target ->
