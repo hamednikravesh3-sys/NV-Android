@@ -28,22 +28,18 @@ jobs:
           p = Path('app/src/main/java/ir/nv/navigation/ui/NvApp.kt')
           s = p.read_text(encoding='utf-8')
           marker = 'LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }'
+          anchor = '    DisposableEffect(billing) { onDispose { billing.close() } }\n    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }\n'
+          replacement = '    DisposableEffect(billing) { onDispose { billing.close() } }\n    // Start consuming device fixes immediately when location permission is already available.\n    LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }\n    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }\n'
           if marker not in s:
-              old = '''    DisposableEffect(billing) { onDispose { billing.close() } }
-    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }
-'''
-              new = '''    DisposableEffect(billing) { onDispose { billing.close() } }
-    // Start consuming device fixes immediately when location permission is already available.
-    LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }
-    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }
-'''
-              if s.count(old) != 1:
+              if s.count(anchor) != 1:
                   raise SystemExit('Expected NvApp startup anchor exactly once; refusing unsafe edit')
-              p.write_text(s.replace(old, new, 1), encoding='utf-8')
+              p.write_text(s.replace(anchor, replacement, 1), encoding='utf-8')
           assert marker in p.read_text(encoding='utf-8')
           PY
           git diff --check
           python -m unittest discover -s tools -p 'test_*.py'
+          node --test backend/nv-code-registry/worker.test.mjs
+          node --test backend/cloud-sync/worker.test.mjs
 
       - name: Commit source fix
         shell: bash
