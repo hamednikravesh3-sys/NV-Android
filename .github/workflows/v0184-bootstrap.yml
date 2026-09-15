@@ -28,10 +28,22 @@ jobs:
           cat > /tmp/v0184-chunks.sha256 <<'EOF'
           3357a3bb2ec70a468ff0e4403e84cb6793b6e0c798ab34cb3c875634e5ff3347  .integration/v0184b64.part.00
           9f613d6f0b3306855bc9ae8f5c3f9f53aac12f9698f0c09f82e7f81c05d9e383  .integration/v0184b64.part.01
-          db3403de4ce7722406c8b71da59c42b426178bebdba99736bebe69346b6176d6  .integration/v0184b64.part.02
+          31732132b522ccca819306a6c1b6009a8dbacf62608562d6ab9d4713ca1cac4d  .integration/v0184b64.part.02a
+          20b79af7099721afc7f295e4e1ce90b20a463390f268f880ea01d83ab0747b5f  .integration/v0184b64.part.02b
+          af8cbb3feed7e363457f12b2d551923b8bfd79f68c523015865651579c0e3332  .integration/v0184b64.part.02c
+          e35d329e95967687cdc760f18c742ef309c576330ec96edc7adac07d27f12495  .integration/v0184b64.part.02d
+          bace4338eb74fbffeadcc98db49fb4b77a870adc7b64b8d325c562aa2882ecca  .integration/v0184b64.part.02e
+          02e6143712b2887e2d6ffb00b4c037458dc5e8663768d0ac45a3a2fb3c09ce67  .integration/v0184b64.part.02f
+          beca4ffd0bc0a15c414255f6e151376d9573d25aa8eca031a49b73145bb4b5fb  .integration/v0184b64.part.02g
           9eb7a23f8822855c94077db568eb0745375f444ffc797e0d76c47357c87168f1  .integration/v0184b64.part.03
           077a02823200d84acb0a776861daf4677851cebc0a8debda847ded50da56ceb1  .integration/v0184b64.part.04
-          7bb8161d210d944a50323019aaa06f07885ede4e97cd60a26a23f0c4e957c69e  .integration/v0184b64.part.05
+          4c462d7793993e425089817824b7a010d36dc3cd4cb994b2bd95d96df4538344  .integration/v0184b64.part.05a
+          520b288cff1465f185769be4e52796431cc424907876039dc227518a334c5e24  .integration/v0184b64.part.05b
+          0070a76a38f4060ba4485dbf7cc43d1ebd39422069a79112a975ebd83058b7de  .integration/v0184b64.part.05c
+          dd45848bf1f32086bec9746346e080efc9ae63dce5bf24134f5eebae70f5f7af  .integration/v0184b64.part.05d
+          a725256a1c0ca4a2dd8592712c2eedd1617658029dfdbb968afddf835bf882d9  .integration/v0184b64.part.05e
+          8b84ee0d9376ef22217db9ce1749afed558816197cfd5ec32a8cce17dc0bac31  .integration/v0184b64.part.05f
+          8faedda780d923f02313194f76ccf4a8e2271b56a586997e8d0ebb9b949d4320  .integration/v0184b64.part.05g
           ee6979e44cb01e1afeab7970dc954b02310258eacf21cf5b31452ab875318aa8  .integration/v0184b64.part.06
           EOF
           sha256sum -c /tmp/v0184-chunks.sha256
@@ -42,6 +54,8 @@ jobs:
           echo '8a7bdf2d48e1cfbf252a3c883a729315ab7e0375efb1c4c4676d2d9e2f16dd78  /tmp/v0184.patch' | sha256sum -c -
           git apply --check -p1 /tmp/v0184.patch
           git apply -p1 /tmp/v0184.patch
+          sed -i 's/assert m\["version_code"\] == 22/assert m["version_code"] == 23/' .github/workflows/release.yml
+          grep -Fq 'assert m["version_code"] == 23' .github/workflows/release.yml
           rm -rf .integration
           rm -f .github/workflows/v0184-bootstrap.yml
           git config user.name "NV Integration Bot"
