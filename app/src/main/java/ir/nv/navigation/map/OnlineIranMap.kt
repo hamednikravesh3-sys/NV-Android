@@ -736,8 +736,10 @@ private class VectorMapHolder(context: Context) {
         if (!followLocation && !mustRecenter) return
         if (!navigationActive && !mustRecenter) {
             val cameraTarget = readyMap.cameraPosition.target
-            val cameraCoordinate = Coordinate(cameraTarget.latitude, cameraTarget.longitude)
-            if (coordinateDistanceMeters(cameraCoordinate, location) < HOME_CAMERA_JITTER_METERS) return
+            if (cameraTarget != null) {
+                val cameraCoordinate = Coordinate(cameraTarget.latitude, cameraTarget.longitude)
+                if (coordinateDistanceMeters(cameraCoordinate, location) < HOME_CAMERA_JITTER_METERS) return
+            }
         }
         lastRecenterToken = navigationRecenterToken
         val position = CameraPosition.Builder()
