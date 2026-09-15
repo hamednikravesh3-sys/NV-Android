@@ -6,51 +6,29 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   finalize:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout source branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: nv-persian-rtl-master-spec
-          fetch-depth: 0
 
-      - name: Apply location startup fix once
+      - name: Verify finalized source
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          p = Path('app/src/main/java/ir/nv/navigation/ui/NvApp.kt')
+          p = Path('app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt')
           s = p.read_text(encoding='utf-8')
-          marker = 'LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }'
-          anchor = '    DisposableEffect(billing) { onDispose { billing.close() } }\n    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }\n'
-          replacement = '    DisposableEffect(billing) { onDispose { billing.close() } }\n    // Start consuming device fixes immediately when location permission is already available.\n    LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }\n    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }\n'
-          if marker not in s:
-              if s.count(anchor) != 1:
-                  raise SystemExit('Expected NvApp startup anchor exactly once; refusing unsafe edit')
-              p.write_text(s.replace(anchor, replacement, 1), encoding='utf-8')
-          assert marker in p.read_text(encoding='utf-8')
+          assert 'Regex("\\\\s+")' in s, 'Kotlin whitespace regex escape is not finalized'
+          assert 'Regex("^(به|تا|سمت)\\\\s+")' in s, 'Kotlin prefix regex escape is not finalized'
+          print('Finalized Kotlin regex escapes verified.')
           PY
           git diff --check
           python -m unittest discover -s tools -p 'test_*.py'
           node --test backend/nv-code-registry/worker.test.mjs
           node --test backend/cloud-sync/worker.test.mjs
-
-      - name: Commit source fix
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- app/src/main/java/ir/nv/navigation/ui/NvApp.kt; then
-            echo 'Source fix already present.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/java/ir/nv/navigation/ui/NvApp.kt
-          git commit -m 'fix: start location tracking on app launch'
-          git push origin HEAD:nv-persian-rtl-master-spec
