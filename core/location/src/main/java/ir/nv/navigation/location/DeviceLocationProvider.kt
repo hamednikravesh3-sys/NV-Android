@@ -244,22 +244,22 @@ class DeviceLocationProvider(private val context: Context) {
     private fun normalizeBearing(value: Float): Float = ((value % 360f) + 360f) % 360f
 
     private companion object {
-        const val LOCATION_COLLECTION_WINDOW_MS = 15_000L
-        const val TARGET_ACCURACY_METERS = 5f
-        const val EXCELLENT_ACCURACY_METERS = 3f
-        const val ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS = 6f
-        const val MAX_CURRENT_LOCATION_ACCURACY_METERS = 10f
-        const val GOOD_NAVIGATION_ACCURACY_METERS = 10f
-        const val MAX_NAVIGATION_ACCURACY_METERS = 12f
-        const val ABSOLUTE_MAX_ACCURACY_METERS = 35f
+        const val LOCATION_COLLECTION_WINDOW_MS = 5_000L
+        const val TARGET_ACCURACY_METERS = 10f
+        const val EXCELLENT_ACCURACY_METERS = 6f
+        const val ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS = 20f
+        const val MAX_CURRENT_LOCATION_ACCURACY_METERS = 60f
+        const val GOOD_NAVIGATION_ACCURACY_METERS = 20f
+        const val MAX_NAVIGATION_ACCURACY_METERS = 65f
+        const val ABSOLUTE_MAX_ACCURACY_METERS = 120f
         const val COARSE_TARGET_ACCURACY_METERS = 1_500f
         const val COARSE_EXCELLENT_ACCURACY_METERS = 800f
         const val MAX_COARSE_LOCATION_ACCURACY_METERS = 5_000f
-        const val FRESH_SAMPLE_AGE_MS = 5_000L
-        const val MAX_CURRENT_FIX_AGE_MS = 10_000L
-        const val MAX_LAST_KNOWN_AGE_MS = 12_000L
+        const val FRESH_SAMPLE_AGE_MS = 8_000L
+        const val MAX_CURRENT_FIX_AGE_MS = 15_000L
+        const val MAX_LAST_KNOWN_AGE_MS = 30_000L
         const val MAX_SAMPLE_AGE_MS = 2 * 60 * 1_000L
-        const val RECENT_LOCATION_MS = 10_000L
+        const val RECENT_LOCATION_MS = 30_000L
         const val FUTURE_TIMESTAMP_TOLERANCE_MS = 2_000L
         const val FUSED_PROVIDER_NAME = "fused"
         const val NAVIGATION_UPDATE_MS = 500L

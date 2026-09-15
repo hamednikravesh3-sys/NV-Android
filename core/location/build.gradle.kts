@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "ir.nv.navigation.core.location"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig { minSdk = 29 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

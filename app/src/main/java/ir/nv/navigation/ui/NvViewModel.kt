@@ -1444,7 +1444,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         const val INSIGHTS_REFRESH_DISTANCE_METERS = 2_500.0
         const val CONTINUOUS_REROUTE_INTERVAL_MS = 30_000L
         const val MIN_MAP_MATCH_CONFIDENCE = 0.35
-        const val HOME_LOCATION_ACCURACY_METERS = 12f
-        const val HOME_ACCURACY_DEGRADATION_METERS = 4f
+        const val HOME_LOCATION_ACCURACY_METERS = 60f
+        const val HOME_ACCURACY_DEGRADATION_METERS = 8f
     }
 }

@@ -225,9 +225,10 @@ private class VectorMapHolder(context: Context) {
         val routesChanged = routes != renderedRoutes || selectedRouteIndex != renderedSelectedRoute
         val trafficChanged = trafficSegments != renderedTraffic
         val placesChanged = nextPlaces != renderedPlaces
+        val bearingChanged = navigationActive && bearingDegrees != this.bearingDegrees
         val locationChanged = currentLocation != this.currentLocation ||
             navigationActive != this.navigationActive ||
-            bearingDegrees != this.bearingDegrees
+            bearingChanged
         val guidanceChanged = routesChanged ||
             maneuverIndex != this.maneuverIndex ||
             distanceToManeuverMeters != this.distanceToManeuverMeters ||
@@ -238,7 +239,7 @@ private class VectorMapHolder(context: Context) {
             navigationActive != this.navigationActive ||
             navigationZoomLevel != this.navigationZoomLevel ||
             navigationRecenterToken != this.navigationRecenterToken ||
-            bearingDegrees != this.bearingDegrees
+            bearingChanged
         val styleChanged = appliedDarkMode != darkMode || appliedSatelliteMode != satelliteMode
 
         renderedRoutes = routes
@@ -296,7 +297,7 @@ private class VectorMapHolder(context: Context) {
         if (loadedStyle.getLayer(BUILDING_LAYER_ID) != null || loadedStyle.getSource(OPEN_MAP_TILES_SOURCE) == null) return
         val buildings = FillExtrusionLayer(BUILDING_LAYER_ID, OPEN_MAP_TILES_SOURCE).apply {
             sourceLayer = "building"
-            minZoom = 15f
+            minZoom = 17.5f
             setFilter(
                 Expression.all(
                     Expression.has("render_height"),
@@ -733,6 +734,11 @@ private class VectorMapHolder(context: Context) {
         val location = currentLocation ?: return
         val mustRecenter = navigationRecenterToken != lastRecenterToken
         if (!followLocation && !mustRecenter) return
+        if (!navigationActive && !mustRecenter) {
+            val cameraTarget = readyMap.cameraPosition.target
+            val cameraCoordinate = Coordinate(cameraTarget.latitude, cameraTarget.longitude)
+            if (coordinateDistanceMeters(cameraCoordinate, location) < HOME_CAMERA_JITTER_METERS) return
+        }
         lastRecenterToken = navigationRecenterToken
         val position = CameraPosition.Builder()
             .target(LatLng(location.latitude, location.longitude))
@@ -891,16 +897,17 @@ private class VectorMapHolder(context: Context) {
         const val MAX_ROUTE_LAYERS = 8
         const val MAX_TRAFFIC_LAYERS = 12
         const val MAX_CODE_LABELS = 12
-        const val CAMERA_ANIMATION_MS = 420
+        const val CAMERA_ANIMATION_MS = 180
         const val SIGNAL_BLINK_INTERVAL_MS = 500L
         const val ARROW_VISIBLE_DISTANCE_METERS = 140.0
         const val SIGNAL_START_DISTANCE_METERS = 70.0
         const val MAX_ANIMATED_JUMP_METERS = 120.0
+        const val HOME_CAMERA_JITTER_METERS = 8.0
         const val INDICATOR_AMBER = 0xFFFFAB00.toInt()
         val IRAN_CENTER = LatLng(32.4279, 53.6880)
         const val IRAN_OVERVIEW_ZOOM = 5.2
         const val HOME_ZOOM = 16.5
-        const val BROWSE_TILT = 42.0
-        const val NAVIGATION_TILT = 58.0
+        const val BROWSE_TILT = 0.0
+        const val NAVIGATION_TILT = 52.0
     }
 }
