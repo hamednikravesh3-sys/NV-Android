@@ -63,8 +63,8 @@ jobs:
           BADGING="$("$AAPT" dump badging "$RELEASE_APK")"
           echo "$BADGING" > nv-release-badging.txt
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
-          echo "$BADGING" | grep -q "versionCode='21'"
-          echo "$BADGING" | grep -q "versionName='0.18.2'"
+          echo "$BADGING" | grep -q "versionCode='23'"
+          echo "$BADGING" | grep -q "versionName='0.18.4'"
           echo "$BADGING" | grep -q "sdkVersion:'29'"
           echo "$BADGING" | grep -q "targetSdkVersion:'36'"
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$RELEASE_APK" > nv-release-zipalign.txt
@@ -73,8 +73,8 @@ jobs:
           {
             echo "git_sha=$GITHUB_SHA"
             echo "package=ir.nv.navigation"
-            echo "version_code=21"
-            echo "version_name=0.18.2"
+            echo "version_code=23"
+            echo "version_name=0.18.4"
             echo "min_sdk=29"
             echo "target_sdk=36"
             cat nv-release-sha256.txt
@@ -85,8 +85,8 @@ jobs:
               "schema_version": 1,
               "artifact_kind": "unsigned-release-validation",
               "package": "ir.nv.navigation",
-              "version_code": 21,
-              "version_name": "0.18.2",
+              "version_code": 23,
+              "version_name": "0.18.4",
               "min_sdk": 29,
               "target_sdk": 36,
               "git_sha": os.environ["GITHUB_SHA"],
@@ -105,8 +105,8 @@ jobs:
               "schema_version": 1,
               "artifact_kind": "unsigned-release-validation",
               "package": "ir.nv.navigation",
-              "version_code": 21,
-              "version_name": "0.18.2",
+              "version_code": 23,
+              "version_name": "0.18.4",
               "min_sdk": 29,
               "target_sdk": 36,
               "git_sha": os.environ["GITHUB_SHA"],
@@ -142,8 +142,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$OUTPUT_APK" > nv-android16-zipalign.txt
           BADGING="$("$AAPT" dump badging "$OUTPUT_APK")"
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
-          echo "$BADGING" | grep -q "versionCode='21'"
-          echo "$BADGING" | grep -q "versionName='0.18.2'"
+          echo "$BADGING" | grep -q "versionCode='23'"
+          echo "$BADGING" | grep -q "versionName='0.18.4'"
           shasum -a 256 "$OUTPUT_APK" > nv-android16-apk-sha256.txt
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
