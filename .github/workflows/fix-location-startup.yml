@@ -1,0 +1,63 @@
+name: Fix Android 16 location startup
+
+on:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+
+permissions:
+  contents: write
+
+jobs:
+  patch-location-startup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nv-persian-rtl-master-spec
+          fetch-depth: 0
+
+      - name: Start location acquisition on app launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/src/main/java/ir/nv/navigation/ui/NvApp.kt')
+          text = p.read_text(encoding='utf-8')
+          marker = 'LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }'
+          if marker in text:
+              print('Location startup fix already present; no source change needed.')
+          else:
+              old = '''    DisposableEffect(billing) { onDispose { billing.close() } }
+    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }
+'''
+              new = '''    DisposableEffect(billing) { onDispose { billing.close() } }
+    // A navigation app must begin consuming location as soon as permission is available.
+    // Returning users should not have to tap the location button before GPS updates start.
+    LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }
+    LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }
+'''
+              if text.count(old) != 1:
+                  raise SystemExit('Refusing to patch NvApp.kt: expected startup anchor exactly once')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+              print('Applied location startup fix.')
+          PY
+
+          grep -Fq 'LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }' app/src/main/java/ir/nv/navigation/ui/NvApp.kt
+          python -m unittest discover -s tools -p 'test_*.py'
+
+      - name: Commit source fix once
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/src/main/java/ir/nv/navigation/ui/NvApp.kt; then
+            echo 'No source change to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/ir/nv/navigation/ui/NvApp.kt
+          git commit -m 'fix: start location tracking on app launch'
+          git push origin HEAD:nv-persian-rtl-master-spec
