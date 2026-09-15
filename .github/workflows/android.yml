@@ -12,53 +12,10 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply_feedback:
-    name: Apply real-device feedback patch
-    runs-on: ubuntu-latest
-    outputs:
-      applied: ${{ steps.patch.outputs.applied }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - id: patch
-        name: Apply staged v0.18.1 source patch once
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "applied=false" >> "$GITHUB_OUTPUT"
-          if [[ ! -f .github/feedback-fix-v1/READY ]]; then
-            echo "Feedback patch already applied."
-            exit 0
-          fi
-          cat .github/feedback-fix-v1/part.{00,01} > /tmp/rahnama-feedback.patch.xz.b64
-          echo "f86aa8b8a70bbdc5eaa0e97dc4a1b70f2576ba60fbbe4fa05f3dd0f772a42129  /tmp/rahnama-feedback.patch.xz.b64" | sha256sum -c -
-          base64 --decode /tmp/rahnama-feedback.patch.xz.b64 > /tmp/rahnama-feedback.patch.xz
-          xz -dc /tmp/rahnama-feedback.patch.xz > /tmp/rahnama-feedback.patch
-          echo "175e1e2d617536b7e72046132a55efef04118fab041d714d57f37ae77af29de5  /tmp/rahnama-feedback.patch" | sha256sum -c -
-          git apply --check /tmp/rahnama-feedback.patch
-          git apply /tmp/rahnama-feedback.patch
-          git checkout HEAD -- .github/workflows/android.yml .github/workflows/release.yml
-          rm -rf .github/feedback-fix-v1
-          git diff --check
-          python -m unittest discover -s tools -p 'test_*.py'
-          node --test backend/nv-code-registry/worker.test.mjs
-          node --test backend/cloud-sync/worker.test.mjs
-          git config user.name "rahnama-android16-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A
-          git commit -m "Fix real-device location, code picker, SOS, chat and offline maps"
-          git push origin "HEAD:${{ github.event.pull_request.head.ref || github.ref_name }}"
-          echo "applied=true" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: apply_feedback
-    if: needs.apply_feedback.outputs.applied != 'true'
     runs-on: macos-15-intel
     timeout-minutes: 60
     steps:
@@ -76,6 +33,8 @@ jobs:
           node --test backend/nv-code-registry/worker.test.mjs
           node --test backend/cloud-sync/worker.test.mjs
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
@@ -84,6 +43,7 @@ jobs:
       - name: Android lint, unit tests and debug/release APKs
         env:
           NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
+          NV_CODE_REGISTRY_URL: ${{ secrets.NV_CODE_REGISTRY_URL }}
         run: |
           gradle --no-daemon \
             :app:lintDebug \
@@ -103,8 +63,8 @@ jobs:
           BADGING="$("$AAPT" dump badging "$RELEASE_APK")"
           echo "$BADGING" > nv-release-badging.txt
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
-          echo "$BADGING" | grep -q "versionCode='20'"
-          echo "$BADGING" | grep -q "versionName='0.18.1'"
+          echo "$BADGING" | grep -q "versionCode='21'"
+          echo "$BADGING" | grep -q "versionName='0.18.2'"
           echo "$BADGING" | grep -q "sdkVersion:'29'"
           echo "$BADGING" | grep -q "targetSdkVersion:'36'"
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$RELEASE_APK" > nv-release-zipalign.txt
@@ -113,8 +73,8 @@ jobs:
           {
             echo "git_sha=$GITHUB_SHA"
             echo "package=ir.nv.navigation"
-            echo "version_code=20"
-            echo "version_name=0.18.1"
+            echo "version_code=21"
+            echo "version_name=0.18.2"
             echo "min_sdk=29"
             echo "target_sdk=36"
             cat nv-release-sha256.txt
@@ -125,8 +85,8 @@ jobs:
               "schema_version": 1,
               "artifact_kind": "unsigned-release-validation",
               "package": "ir.nv.navigation",
-              "version_code": 20,
-              "version_name": "0.18.1",
+              "version_code": 21,
+              "version_name": "0.18.2",
               "min_sdk": 29,
               "target_sdk": 36,
               "git_sha": os.environ["GITHUB_SHA"],
@@ -145,8 +105,8 @@ jobs:
               "schema_version": 1,
               "artifact_kind": "unsigned-release-validation",
               "package": "ir.nv.navigation",
-              "version_code": 20,
-              "version_name": "0.18.1",
+              "version_code": 21,
+              "version_name": "0.18.2",
               "min_sdk": 29,
               "target_sdk": 36,
               "git_sha": os.environ["GITHUB_SHA"],
@@ -182,8 +142,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$OUTPUT_APK" > nv-android16-zipalign.txt
           BADGING="$("$AAPT" dump badging "$OUTPUT_APK")"
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
-          echo "$BADGING" | grep -q "versionCode='20'"
-          echo "$BADGING" | grep -q "versionName='0.18.1'"
+          echo "$BADGING" | grep -q "versionCode='21'"
+          echo "$BADGING" | grep -q "versionName='0.18.2'"
           shasum -a 256 "$OUTPUT_APK" > nv-android16-apk-sha256.txt
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -226,6 +186,8 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
