@@ -6,8 +6,9 @@ import androidx.compose.runtime.getValue
 import ir.nv.navigation.ui.theme.AppThemeMode
 
 /**
- * Product-architecture shell: keeps the validated V14 home/nearby flow while replacing
- * the legacy V8 active-navigation presentation with Rahnama screen 5/6.
+ * Product-architecture shell: keeps the validated V14 home/nearby flow and uses
+ * the live-driving surface while navigation is active. The driving surface renders
+ * only the committed route; rerouting remains owned by NvViewModel.
  */
 @Composable
 fun NvReferenceV15(
@@ -18,7 +19,7 @@ fun NvReferenceV15(
 ) {
     val state by viewModel.state.collectAsState()
     if (state.navigationActive) {
-        RahnamaNavigationScreen(
+        RahnamaLiveDrivingScreen(
             darkMode = darkMode,
             viewModel = viewModel
         )
