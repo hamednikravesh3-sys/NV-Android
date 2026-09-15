@@ -1,0 +1,59 @@
+name: v0.18.4 Compile Fix
+
+on:
+  push:
+    branches: [chatgpt/v0.18.4-integrated]
+    paths:
+      - '.compile-fix-trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v0184-compile-fix
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fix nullable vehicle animation source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('app/src/main/java/ir/nv/navigation/map/OnlineIranMap.kt')
+          text = path.read_text(encoding='utf-8')
+          old = '''        if (!shouldAnimate) {
+              vehicleAnimator?.cancel()
+              renderedVehicleLocation = target
+              renderedVehicleBearing = targetBearing
+              applyVehicleFrame(target, targetBearing)
+          } else {
+              animateVehicle(from, target, renderedVehicleBearing, targetBearing)
+          }'''
+          new = '''        if (!shouldAnimate || from == null) {
+              vehicleAnimator?.cancel()
+              renderedVehicleLocation = target
+              renderedVehicleBearing = targetBearing
+              applyVehicleFrame(target, targetBearing)
+          } else {
+              animateVehicle(from, target, renderedVehicleBearing, targetBearing)
+          }'''
+          if old not in text:
+              raise SystemExit('Expected renderLocation block was not found exactly once')
+          if text.count(old) != 1:
+              raise SystemExit('Expected renderLocation block is not unique')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          git diff --check
+          git diff -- app/src/main/java/ir/nv/navigation/map/OnlineIranMap.kt
+          git config user.name 'NV Compile Fix Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java/ir/nv/navigation/map/OnlineIranMap.kt
+          git commit -m 'Fix nullable vehicle animation source [v0184 compile fix]'
+          git push origin HEAD:chatgpt/v0.18.4-integrated
