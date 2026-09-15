@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.PinDrop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -26,9 +25,9 @@ import ir.nv.navigation.ui.theme.AppThemeMode
 import ir.nv.navigation.ui.theme.NvColors
 
 /**
- * Product shell for screens 1-22. V16 remains the validated navigation/SOS base;
- * this layer adds the smart mobility center for screens 13-22 without replacing
- * routing/location sources of truth.
+ * Active product shell. The old separate "define code" entry is intentionally gone:
+ * code allocation now lives inside the QR surface. Smart navigation opens a direct,
+ * functional destination assistant rather than the disconnected feature showcase.
  */
 @Composable
 fun NvReferenceV17(
@@ -39,12 +38,7 @@ fun NvReferenceV17(
 ) {
     val state by viewModel.state.collectAsState()
     var smartOpen by remember { mutableStateOf(false) }
-    var codePickerOpen by remember { mutableStateOf(false) }
 
-    // If Location permission was already granted, acquire a fresh fix immediately on
-    // entering the active home shell. This avoids requiring a second tap on "موقعیت من"
-    // and lets Android 16/emulator GPS fixes flow into the same source of truth used by
-    // routing, Nearby, Smart Chat and the map marker.
     LaunchedEffect(viewModel) {
         if (state.currentLocation == null) viewModel.useCurrentLocationAsOrigin()
     }
@@ -72,29 +66,8 @@ fun NvReferenceV17(
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Rounded.AutoAwesome,
-                        contentDescription = "مرکز هوشمند راهنما",
+                        contentDescription = "دستیار هوشمند مسیر",
                         tint = NvColors.TextPrimaryDark,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 16.dp, bottom = 310.dp)
-                    .size(54.dp)
-                    .clickable { codePickerOpen = true },
-                shape = CircleShape,
-                color = NvColors.Navy900.copy(alpha = .96f),
-                border = BorderStroke(2.dp, NvColors.RouteBlue.copy(alpha = .85f)),
-                shadowElevation = 12.dp
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.PinDrop,
-                        contentDescription = "تعریف کد روی نقشه",
-                        tint = NvColors.RouteBlue,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -103,18 +76,10 @@ fun NvReferenceV17(
     }
 
     if (smartOpen) {
-        RahnamaSmartMobilityHub(
+        RahnamaSmartRouteAssistant(
             state = state,
             viewModel = viewModel,
             onDismiss = { smartOpen = false }
-        )
-    }
-
-    if (codePickerOpen) {
-        RahnamaCodePickerOverlay(
-            state = state,
-            viewModel = viewModel,
-            onDismiss = { codePickerOpen = false }
         )
     }
 }
