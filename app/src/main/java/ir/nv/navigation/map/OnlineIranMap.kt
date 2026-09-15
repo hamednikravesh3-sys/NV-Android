@@ -507,7 +507,7 @@ private class VectorMapHolder(context: Context) {
         val shouldAnimate = animate && navigationActive && from != null &&
             coordinateDistanceMeters(from, target) <= MAX_ANIMATED_JUMP_METERS
 
-        if (!shouldAnimate) {
+        if (!shouldAnimate || from == null) {
             vehicleAnimator?.cancel()
             renderedVehicleLocation = target
             renderedVehicleBearing = targetBearing
