@@ -66,11 +66,12 @@ class DeviceLocationProvider(private val context: Context) {
                 completed = true
                 manager.removeUpdates(listener)
                 handler.removeCallbacksAndMessages(null)
+                // A loose/coarse fix must never be presented as the user's exact point.
+                // If Android cannot produce a fine enough fix in the collection window,
+                // return null and let the UI keep acquiring instead of accepting a 20-100m drift.
                 val accepted = location
                     ?.takeIf { it.hasAccuracy() }
                     ?.takeIf { System.currentTimeMillis() - it.time <= MAX_CURRENT_FIX_AGE_MS }
-                    // Do not report "GPS off" merely because the first fix is still coarse.
-                    // Home can use this fresh fallback immediately while updates() keeps refining it.
                     ?.takeIf { it.accuracy <= acquisitionFallbackAccuracyLimit() }
                 if (continuation.isActive) continuation.resume(accepted?.toCoordinate())
             }
@@ -118,8 +119,15 @@ class DeviceLocationProvider(private val context: Context) {
             override fun onLocationChanged(location: Location) {
                 if (!isUsable(location) || !location.hasAccuracy()) return
                 val accuracy = location.accuracy
-                val navigationAccuracyLimit = if (hasFinePermission()) MAX_NAVIGATION_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
-                if (accuracy > navigationAccuracyLimit && bestRecentAccuracy <= GOOD_NAVIGATION_ACCURACY_METERS) return
+                val navigationAccuracyLimit = if (hasFinePermission()) {
+                    MAX_NAVIGATION_ACCURACY_METERS
+                } else {
+                    MAX_COARSE_LOCATION_ACCURACY_METERS
+                }
+                // Do not let an initial weak fix move the vehicle marker tens of metres.
+                // Navigation uses only fixes inside the hard accuracy gate and the
+                // route-local map matcher then places the vehicle on the driven road.
+                if (accuracy > navigationAccuracyLimit) return
                 bestRecentAccuracy = minOf(bestRecentAccuracy * 1.08f, accuracy)
                 trySend(location.toNavigationFix(sensorFusion.snapshot()))
             }
@@ -134,7 +142,7 @@ class DeviceLocationProvider(private val context: Context) {
             }
         activeProviders().forEach { provider ->
             runCatching {
-                manager.requestLocationUpdates(provider, 1_000L, 1f, listener, Looper.getMainLooper())
+                manager.requestLocationUpdates(provider, NAVIGATION_UPDATE_MS, NAVIGATION_MIN_DISTANCE_METERS, listener, Looper.getMainLooper())
             }
         }
         awaitClose {
@@ -152,8 +160,9 @@ class DeviceLocationProvider(private val context: Context) {
     private fun locationScore(location: Location): Double {
         val accuracyPenalty = if (location.hasAccuracy()) location.accuracy.toDouble() else 1_000.0
         val ageSeconds = ((System.currentTimeMillis() - location.time).coerceAtLeast(0L) / 1000.0)
-        val gpsBonus = if (location.provider == LocationManager.GPS_PROVIDER && hasFinePermission()) -25.0 else 0.0
-        return accuracyPenalty + ageSeconds * 0.5 + gpsBonus
+        // Accuracy wins. Do not prefer a worse GPS-provider point over a materially
+        // better fused fix merely because of the provider name.
+        return accuracyPenalty + ageSeconds * 0.5
     }
 
     private fun isUsable(location: Location): Boolean {
@@ -168,9 +177,9 @@ class DeviceLocationProvider(private val context: Context) {
     private fun activeProviders(): List<String> {
         val enabled = runCatching { manager.getProviders(true) }.getOrDefault(emptyList())
         return buildList {
+            if (FUSED_PROVIDER_NAME in enabled) add(FUSED_PROVIDER_NAME)
             if (hasFinePermission() && LocationManager.GPS_PROVIDER in enabled) add(LocationManager.GPS_PROVIDER)
             if (LocationManager.NETWORK_PROVIDER in enabled) add(LocationManager.NETWORK_PROVIDER)
-            if (FUSED_PROVIDER_NAME in enabled) add(FUSED_PROVIDER_NAME)
             if (LocationManager.PASSIVE_PROVIDER in enabled) add(LocationManager.PASSIVE_PROVIDER)
         }.distinct()
     }
@@ -188,7 +197,7 @@ class DeviceLocationProvider(private val context: Context) {
         if (hasFinePermission()) MAX_CURRENT_LOCATION_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
 
     private fun acquisitionFallbackAccuracyLimit(): Float =
-        if (hasFinePermission()) ABSOLUTE_MAX_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
+        if (hasFinePermission()) MAX_CURRENT_LOCATION_ACCURACY_METERS else MAX_COARSE_LOCATION_ACCURACY_METERS
 
     private fun Location.toCoordinate() = Coordinate(latitude, longitude)
 
@@ -232,24 +241,26 @@ class DeviceLocationProvider(private val context: Context) {
     private fun normalizeBearing(value: Float): Float = ((value % 360f) + 360f) % 360f
 
     private companion object {
-        const val LOCATION_COLLECTION_WINDOW_MS = 8_000L
-        const val TARGET_ACCURACY_METERS = 18f
-        const val EXCELLENT_ACCURACY_METERS = 10f
-        const val ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS = 35f
-        const val MAX_CURRENT_LOCATION_ACCURACY_METERS = 55f
-        const val GOOD_NAVIGATION_ACCURACY_METERS = 35f
-        const val MAX_NAVIGATION_ACCURACY_METERS = 90f
-        const val ABSOLUTE_MAX_ACCURACY_METERS = 250f
+        const val LOCATION_COLLECTION_WINDOW_MS = 12_000L
+        const val TARGET_ACCURACY_METERS = 8f
+        const val EXCELLENT_ACCURACY_METERS = 5f
+        const val ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS = 12f
+        const val MAX_CURRENT_LOCATION_ACCURACY_METERS = 18f
+        const val GOOD_NAVIGATION_ACCURACY_METERS = 15f
+        const val MAX_NAVIGATION_ACCURACY_METERS = 35f
+        const val ABSOLUTE_MAX_ACCURACY_METERS = 60f
         const val COARSE_TARGET_ACCURACY_METERS = 1_500f
         const val COARSE_EXCELLENT_ACCURACY_METERS = 800f
         const val MAX_COARSE_LOCATION_ACCURACY_METERS = 5_000f
-        const val FRESH_SAMPLE_AGE_MS = 8_000L
-        const val MAX_CURRENT_FIX_AGE_MS = 15_000L
-        const val MAX_LAST_KNOWN_AGE_MS = 20_000L
+        const val FRESH_SAMPLE_AGE_MS = 5_000L
+        const val MAX_CURRENT_FIX_AGE_MS = 10_000L
+        const val MAX_LAST_KNOWN_AGE_MS = 12_000L
         const val MAX_SAMPLE_AGE_MS = 2 * 60 * 1_000L
-        const val RECENT_LOCATION_MS = 20_000L
+        const val RECENT_LOCATION_MS = 10_000L
         const val FUTURE_TIMESTAMP_TOLERANCE_MS = 2_000L
         const val FUSED_PROVIDER_NAME = "fused"
+        const val NAVIGATION_UPDATE_MS = 500L
+        const val NAVIGATION_MIN_DISTANCE_METERS = 0.5f
     }
 }
 
