@@ -102,19 +102,19 @@ fun ProvinceDownloadOverlay(
     Button(onClick = { open = true }, modifier = modifier) {
         Icon(Icons.Rounded.CloudDownload, contentDescription = null)
         Spacer(Modifier.width(6.dp))
-        Text("دانلود آفلاین")
+        Text("فهرست ۳۱ استان")
     }
 
     if (open) {
         AlertDialog(
             onDismissRequest = { open = false },
-            title = { Text("نقشه آفلاین", fontWeight = FontWeight.Black) },
+            title = { Text("دانلود نقشه استان‌ها", fontWeight = FontWeight.Black) },
             text = {
                 Column(
                     Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("بسته کامل ایران اکنون قابل دانلود است. بسته‌های ۳۱ استان نیز هر زمان روی سرور منتشر شوند به‌صورت مستقل فعال می‌شوند.")
+                    Text("بسته‌های استانی NV از داده‌های OpenStreetMap ساخته می‌شوند و هر استان مستقل دانلود، نصب و حذف می‌شود.")
                     if (!availabilityLoaded) LinearProgressIndicator(Modifier.fillMaxWidth())
                     availabilityError?.let {
                         Text("بررسی بسته‌های استانی ناموفق بود. دانلود کامل ایران همچنان در دسترس است. $it")
@@ -122,18 +122,11 @@ fun ProvinceDownloadOverlay(
 
                     if (availabilityLoaded && publishedIds.isEmpty()) {
                         Text(
-                            "هنوز هیچ بسته استانی مستقلی روی سرور منتشر نشده است؛ به‌جای دکمه‌های غیرفعال می‌توانید همین حالا بسته کامل ایران را دانلود کنید.",
+                            "در حال حاضر بسته استانی منتشرشده‌ای روی سرور پیدا نشد؛ اتصال را بررسی کنید و دوباره وارد این منو شوید.",
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    IranPackFallbackRow(
-                        status = iranPackStatus,
-                        onStart = onStartIranDownload,
-                        onRetry = onRetryIranDownload,
-                        onCancel = onCancelIranDownload
-                    )
-
-                    Text("بسته‌های استانی", fontWeight = FontWeight.Black)
+                    Text("استان‌ها", fontWeight = FontWeight.Black)
                     OfflinePackCatalog.provinces.forEach { pack ->
                         ProvincePackRow(
                             pack = pack,

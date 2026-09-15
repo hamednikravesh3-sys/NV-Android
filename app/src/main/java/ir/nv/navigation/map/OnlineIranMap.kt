@@ -42,7 +42,7 @@ import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
-/** Online vector map with genuine camera pitch, two-finger rotation and 3D buildings. */
+/** Online OpenStreetMap base map with NV routing/location overlays and optional satellite mode. */
 @Composable
 fun OnlineIranMap(
     context: Context,
@@ -277,7 +277,9 @@ private class VectorMapHolder(context: Context) {
         style = null
         val onStyleLoaded: (Style) -> Unit = { loadedStyle ->
             style = loadedStyle
-            setupThreeDimensionalBuildings(loadedStyle)
+            // The standard OpenStreetMap style is raster-only. 3D vector buildings
+            // are kept only for the optional satellite/vector-overlay mode.
+            if (satelliteMode) setupThreeDimensionalBuildings(loadedStyle)
             setupDynamicLayers(loadedStyle)
             renderRoutes()
             renderTraffic()
@@ -289,7 +291,7 @@ private class VectorMapHolder(context: Context) {
         if (satelliteMode) {
             readyMap.setStyle(Style.Builder().fromJson(satelliteStyleJson(darkMode)), onStyleLoaded)
         } else {
-            readyMap.setStyle(if (darkMode) DARK_STYLE_URL else DAY_STYLE_URL, onStyleLoaded)
+            readyMap.setStyle(Style.Builder().fromJson(openStreetMapStyleJson(darkMode)), onStyleLoaded)
         }
     }
 
@@ -801,6 +803,34 @@ private class VectorMapHolder(context: Context) {
 
     private fun emptyFeatures(): FeatureCollection = FeatureCollection.fromFeatures(emptyList())
 
+    private fun openStreetMapStyleJson(night: Boolean): String {
+        val rasterPaint = if (night) {
+            "\"raster-brightness-max\":0.62,\"raster-brightness-min\":0.05,\"raster-saturation\":-0.35,\"raster-contrast\":0.16,"
+        } else ""
+        return """{
+          "version": 8,
+          "name": "NV OpenStreetMap",
+          "sources": {
+            "osm-standard": {
+              "type": "raster",
+              "tiles": ["$OSM_TILE_URL"],
+              "tileSize": 256,
+              "minzoom": 0,
+              "maxzoom": 19,
+              "attribution": "$OSM_ATTRIBUTION"
+            }
+          },
+          "layers": [
+            {
+              "id": "osm-standard-layer",
+              "type": "raster",
+              "source": "osm-standard",
+              "paint": { $rasterPaint "raster-fade-duration": 100 }
+            }
+          ]
+        }""".trimIndent()
+    }
+
     private fun satelliteStyleJson(night: Boolean): String {
         val rasterPaint = if (night) {
             "\"raster-brightness-max\":0.58,\"raster-saturation\":-0.22,\"raster-contrast\":0.16,"
@@ -877,8 +907,8 @@ private class VectorMapHolder(context: Context) {
     }
 
     private companion object {
-        const val DAY_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
-        const val DARK_STYLE_URL = "https://tiles.openfreemap.org/styles/dark"
+        const val OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        const val OSM_ATTRIBUTION = "© OpenStreetMap contributors"
         const val SATELLITE_TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         const val SATELLITE_ATTRIBUTION = "Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics"
         const val OPEN_MAP_TILES_SOURCE = "openmaptiles"

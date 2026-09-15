@@ -126,7 +126,7 @@ fun RahnamaHomeScreen(
                 )
                 RahnamaStatusChip(
                     icon = if (state.satelliteMode) Icons.Rounded.SatelliteAlt else Icons.Rounded.Map,
-                    text = if (state.satelliteMode) "ماهواره‌ای" else "نقشه",
+                    text = if (state.satelliteMode) "ماهواره‌ای" else "OpenStreetMap",
                     accent = NvColors.RouteBlue
                 )
                 when {
@@ -238,7 +238,8 @@ fun RahnamaHomeScreen(
                         }
                     )
                 }
-                Text("نقشه‌های آفلاین منطقه‌ای", color = NvColors.TextSecondaryDark)
+                Text("دانلود نقشه استان‌ها", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black)
+                Text("منوی مستقل ۳۱ استان • داده‌های OpenStreetMap", color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall)
                 ProvinceDownloadOverlay(
                     iranPackStatus = state.packStatus,
                     onStartIranDownload = viewModel::startMapDownload,
@@ -247,14 +248,14 @@ fun RahnamaHomeScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    "از این بخش می‌توانید بسته هر استان را جداگانه دریافت کنید؛ شهرستان‌های هر استان داخل همان بسته استانی قرار می‌گیرند.",
+                    "هر استان را جداگانه دانلود، لغو یا حذف کنید. بسته‌ها شامل نقشه، جستجو و مسیریابی آفلاین همان استان هستند.",
                     color = NvColors.TextSecondaryDark,
                     style = MaterialTheme.typography.labelSmall
                 )
                 Button(onClick = { viewModel.toggleSatelliteMode() }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Rounded.SatelliteAlt, contentDescription = null)
                     Spacer(Modifier.width(NvSpacing.Sm))
-                    Text(if (state.satelliteMode) "بازگشت به نقشه عادی" else "نمای ماهواره‌ای")
+                    Text(if (state.satelliteMode) "بازگشت به OpenStreetMap" else "نمای ماهواره‌ای")
                 }
                 Spacer(Modifier.height(NvSpacing.Xl))
             }
