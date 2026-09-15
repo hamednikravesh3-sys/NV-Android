@@ -25,6 +25,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cat > /tmp/v0184-chunks.sha256 <<'EOF'
+          3357a3bb2ec70a468ff0e4403e84cb6793b6e0c798ab34cb3c875634e5ff3347  .integration/v0184b64.part.00
+          9f613d6f0b3306855bc9ae8f5c3f9f53aac12f9698f0c09f82e7f81c05d9e383  .integration/v0184b64.part.01
+          db3403de4ce7722406c8b71da59c42b426178bebdba99736bebe69346b6176d6  .integration/v0184b64.part.02
+          9eb7a23f8822855c94077db568eb0745375f444ffc797e0d76c47357c87168f1  .integration/v0184b64.part.03
+          077a02823200d84acb0a776861daf4677851cebc0a8debda847ded50da56ceb1  .integration/v0184b64.part.04
+          7bb8161d210d944a50323019aaa06f07885ede4e97cd60a26a23f0c4e957c69e  .integration/v0184b64.part.05
+          ee6979e44cb01e1afeab7970dc954b02310258eacf21cf5b31452ab875318aa8  .integration/v0184b64.part.06
+          EOF
+          sha256sum -c /tmp/v0184-chunks.sha256
           cat .integration/v0184b64.part.* | base64 -d > /tmp/v0184.patch.gz
           echo '216329b5daf23273dbc99f18f609cba46914f672874c220f62dcefe313ec905a  /tmp/v0184.patch.gz' | sha256sum -c -
           gzip -t /tmp/v0184.patch.gz
