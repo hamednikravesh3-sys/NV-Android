@@ -28,29 +28,15 @@ jobs:
           from pathlib import Path
           path = Path('app/src/main/java/ir/nv/navigation/map/OnlineIranMap.kt')
           text = path.read_text(encoding='utf-8')
-          old = '''        if (!shouldAnimate) {
-              vehicleAnimator?.cancel()
-              renderedVehicleLocation = target
-              renderedVehicleBearing = targetBearing
-              applyVehicleFrame(target, targetBearing)
-          } else {
-              animateVehicle(from, target, renderedVehicleBearing, targetBearing)
-          }'''
-          new = '''        if (!shouldAnimate || from == null) {
-              vehicleAnimator?.cancel()
-              renderedVehicleLocation = target
-              renderedVehicleBearing = targetBearing
-              applyVehicleFrame(target, targetBearing)
-          } else {
-              animateVehicle(from, target, renderedVehicleBearing, targetBearing)
-          }'''
-          if old not in text:
-              raise SystemExit('Expected renderLocation block was not found exactly once')
+          old = '        if (!shouldAnimate) {'
+          new = '        if (!shouldAnimate || from == null) {'
           if text.count(old) != 1:
-              raise SystemExit('Expected renderLocation block is not unique')
-          path.write_text(text.replace(old, new), encoding='utf-8')
+              raise SystemExit(f'Expected exactly one nullable animation condition, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
           PY
           git diff --check
+          grep -Fq 'if (!shouldAnimate || from == null)' app/src/main/java/ir/nv/navigation/map/OnlineIranMap.kt
           git diff -- app/src/main/java/ir/nv/navigation/map/OnlineIranMap.kt
           git config user.name 'NV Compile Fix Bot'
           git config user.email 'actions@users.noreply.github.com'
