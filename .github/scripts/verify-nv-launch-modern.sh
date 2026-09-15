@@ -239,7 +239,7 @@ sleep 1
 # Screen 12: SOS/emergency entry must be reachable without a network request. Validate
 # the service cards in the initial viewport first, then scroll to prove the nearby-center
 # action is reachable rather than assuming every control is simultaneously composed.
-tap_text 'SOS و خدمات اضطراری' || { echo "NV Android 16 could not open SOS and emergency services"; exit 1; }
+tap_text 'SOS' || { echo "NV Android 16 could not open SOS and emergency services"; exit 1; }
 EMERGENCY_READY=0
 for _ in $(seq 1 15); do
   if dump_ui nv-modern-emergency-ui.xml && \
