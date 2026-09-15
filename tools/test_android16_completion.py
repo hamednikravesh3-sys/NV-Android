@@ -12,9 +12,10 @@ class Android16CompletionTest(unittest.TestCase):
         text = read('app/build.gradle.kts')
         self.assertRegex(text, r'compileSdk\s*=\s*36')
         self.assertRegex(text, r'targetSdk\s*=\s*36')
-        self.assertRegex(text, r'versionCode\s*=\s*20')
-        self.assertIn('versionName = "0.18.1"', text)
+        self.assertRegex(text, r'versionCode\s*=\s*21')
+        self.assertIn('versionName = "0.18.2"', text)
         self.assertIn('COMMUNITY_REPORT_API_URL', text)
+        self.assertIn('NV_CODE_REGISTRY_URL', text)
 
     def test_ci_exercises_android16_instrumentation_and_16k_alignment(self):
         text = read('.github/workflows/android.yml')
@@ -33,8 +34,8 @@ class Android16CompletionTest(unittest.TestCase):
         self.assertIn('platforms;android-36', text)
         self.assertIn('build-tools;36.0.0', text)
         self.assertRegex(text, r'api-level:\s*36')
-        self.assertIn("versionCode='20'", text)
-        self.assertIn("versionName='0.18.1'", text)
+        self.assertIn("versionCode='21'", text)
+        self.assertIn("versionName='0.18.2'", text)
         self.assertNotRegex(text, r'android-35|build-tools;35|api-level:\s*35')
 
     def test_navigation_gates_and_vehicle_constraints_are_integrated(self):
@@ -96,39 +97,45 @@ class Android16CompletionTest(unittest.TestCase):
         self.assertIn('UnavailableTaxiProvider', text)
         self.assertIn('mock-non-live', text)
         self.assertIn('mock-non-bookable', text)
-        # Deterministic mocks must not be production defaults.
         engine_ctor = re.search(r'class SmartMobilityEngine\((.*?)\) \{', text, re.S)
         self.assertIsNotNone(engine_ctor)
         ctor = engine_ctor.group(1)
         self.assertIn('UnavailableTransitRealtimeProvider', ctor)
         self.assertIn('UnavailableTaxiProvider', ctor)
 
-
     def test_real_world_feedback_fixes_are_wired_to_active_shell(self):
         vm = read('app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt')
         home = read('app/src/main/java/ir/nv/navigation/ui/RahnamaHome.kt')
-        v14 = read('app/src/main/java/ir/nv/navigation/ui/NvReferenceV14.kt')
+        v15 = read('app/src/main/java/ir/nv/navigation/ui/NvReferenceV15.kt')
         v16 = read('app/src/main/java/ir/nv/navigation/ui/NvReferenceV16.kt')
-        smart_ui = read('app/src/main/java/ir/nv/navigation/ui/RahnamaSmartMobilityHub.kt')
-        smart = read('app/src/main/java/ir/nv/navigation/smart/SmartMobility.kt')
+        v17 = read('app/src/main/java/ir/nv/navigation/ui/NvReferenceV17.kt')
+        assistant = read('app/src/main/java/ir/nv/navigation/ui/RahnamaSmartRouteAssistant.kt')
+        qr = read('app/src/main/java/ir/nv/navigation/ui/NvQrScannerOverlay.kt')
+        driving = read('app/src/main/java/ir/nv/navigation/ui/RahnamaLiveDrivingScreen.kt')
         self.assertIn('locationFailureMessage()', vm)
         self.assertIn('isLocationEnabled()', vm)
         self.assertNotIn('موقعیت فعلی پیدا نشد؛ GPS را روشن کنید', vm)
         self.assertIn('ensureHomeLocationTracking()', vm)
-        self.assertIn('تعریف کد مکان روی نقشه', v14)
-        self.assertIn('NvCodePickerMap', v14)
         self.assertIn('text = "SOS"', v16)
         self.assertIn('ProvinceDownloadOverlay(', home)
         self.assertIn('شهرستان‌های هر استان', home)
-        self.assertIn('planJourneyFromChat(query)', smart_ui)
-        self.assertIn('fun planJourneyFromChat(', vm)
-        self.assertIn('fun chatJourneyPlan(', smart)
-        self.assertIn('رزرو تاکسی/اسنپ متصل نیست', smart)
+        self.assertIn('RahnamaSmartRouteAssistant(', v17)
+        self.assertNotIn('RahnamaCodePickerOverlay(', v17)
+        self.assertIn('viewModel.routeFromCurrentLocationTo(candidate, selectedVehicle)', assistant)
+        self.assertIn('registry.allocateOnline', qr)
+        self.assertNotIn('OutlinedTextField', qr)
+        self.assertIn('val activeRouteOnly = listOf(route)', driving)
+        self.assertIn('selectedRouteIndex = 0', driving)
+        self.assertIn('if (state.offRoute)', driving)
+        self.assertIn('RahnamaLiveDrivingScreen(', v15)
 
-    def test_location_provider_accepts_fresh_coarse_fix_then_refines(self):
+    def test_location_provider_rejects_loose_fixes_and_refines_fast(self):
         location = read('core/location/src/main/java/ir/nv/navigation/location/DeviceLocationProvider.kt')
-        self.assertIn('acquisitionFallbackAccuracyLimit()', location)
-        self.assertIn('ABSOLUTE_MAX_ACCURACY_METERS', location)
+        self.assertIn('MAX_CURRENT_LOCATION_ACCURACY_METERS = 18f', location)
+        self.assertIn('MAX_NAVIGATION_ACCURACY_METERS = 35f', location)
+        self.assertIn('if (accuracy > navigationAccuracyLimit) return', location)
+        self.assertIn('NAVIGATION_UPDATE_MS = 500L', location)
+        self.assertIn('return accuracyPenalty + ageSeconds * 0.5', location)
         self.assertIn('fun updates(): Flow<NavigationFix>', location)
 
 if __name__ == '__main__':
