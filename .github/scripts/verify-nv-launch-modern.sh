@@ -140,7 +140,7 @@ adb_shell am start -W -n "$COMPONENT" || adb_shell am start -n "$COMPONENT"
 LOCATION_READY=0
 for attempt in $(seq 1 90); do
   if (( attempt % 3 == 0 )); then adb emu geo fix "$TEST_LON" "$TEST_LAT" >/dev/null 2>&1 || true; fi
-  if dump_ui nv-modern-ui.xml && ui_has 'موقعیت فعال' nv-modern-ui.xml; then LOCATION_READY=1; break; fi
+  if dump_ui nv-modern-ui.xml && (ui_has 'موقعیت فعال' nv-modern-ui.xml || ui_has 'موقعیت ±' nv-modern-ui.xml); then LOCATION_READY=1; break; fi
   sleep 2
 done
 [[ "$LOCATION_READY" -eq 1 ]] || { echo "NV did not consume the injected Android 16 GPS fix"; exit 1; }
