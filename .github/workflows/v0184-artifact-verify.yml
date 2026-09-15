@@ -1,0 +1,140 @@
+name: v0.18.4 Final Artifact Verification
+
+on:
+  push:
+    branches: [chatgpt/v0.18.4-integrated]
+    paths:
+      - '.artifact-verify-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: v0184-artifact-verify
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Install and verify final APK on Android 16
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Install Android 16 SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Download exact final APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Rahnama-Android16-v0.18.4-final
+          path: dist
+          github-token: ${{ github.token }}
+          repository: hamednikravesh3-sys/NV-Android
+          run-id: 34955684603
+
+      - name: Verify artifact signature and metadata before emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='dist/Rahnama-Android16-v0.18.4.apk'
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          test -s "$APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee final-apksigner-recheck.txt
+          "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK" | tee final-zipalign-recheck.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee final-badging-recheck.txt
+          grep -q "package: name='ir.nv.navigation'" final-badging-recheck.txt
+          grep -q "versionCode='23'" final-badging-recheck.txt
+          grep -q "versionName='0.18.4'" final-badging-recheck.txt
+          grep -q "sdkVersion:'29'" final-badging-recheck.txt
+          grep -q "targetSdkVersion:'36'" final-badging-recheck.txt
+          sha256sum "$APK" | tee final-apk-sha256.txt
+
+      - name: Enable KVM acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 16 install launch and instrumentation verification
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
+          NV_CODE_REGISTRY_URL: ${{ secrets.NV_CODE_REGISTRY_URL }}
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          cores: 2
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
+          script: |
+            set -eu
+            APK='dist/Rahnama-Android16-v0.18.4.apk'
+            PACKAGE='ir.nv.navigation'
+            ACTIVITY='ir.nv.navigation.MainActivity'
+            test -s "$APK"
+            adb install -r "$APK"
+            adb shell pm grant "$PACKAGE" android.permission.ACCESS_FINE_LOCATION || true
+            adb shell pm grant "$PACKAGE" android.permission.ACCESS_COARSE_LOCATION || true
+            adb emu geo fix 51.3890 35.6892 || true
+            adb logcat -c || true
+            adb shell am force-stop "$PACKAGE"
+            adb shell am start -W -n "$PACKAGE/$ACTIVITY" | tee android16-start.txt
+            sleep 15
+            PID="$(adb shell pidof "$PACKAGE" | tr -d '\r' | awk '{print $1}')"
+            test -n "$PID"
+            adb shell dumpsys package "$PACKAGE" > android16-package.txt
+            grep -q 'versionName=0.18.4' android16-package.txt
+            grep -q 'versionCode=23' android16-package.txt
+            adb shell dumpsys activity activities > android16-activity.txt
+            adb shell dumpsys window windows > android16-window.txt
+            adb shell uiautomator dump /sdcard/nv-final-ui.xml || true
+            adb pull /sdcard/nv-final-ui.xml android16-ui.xml || true
+            adb exec-out screencap -p > android16-screen.png || true
+            adb logcat -d > android16-logcat.txt
+            if grep -E "FATAL EXCEPTION|ANR in $PACKAGE|Process: $PACKAGE.*has died" android16-logcat.txt; then
+              echo 'Crash/ANR detected in Android 16 smoke test' >&2
+              exit 1
+            fi
+            grep -q "$PACKAGE" android16-activity.txt
+            test -s android16-ui.xml
+            adb uninstall "$PACKAGE" || true
+            gradle --no-daemon :app:connectedDebugAndroidTest
+
+      - name: Upload Android 16 verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rahnama-v0.18.4-android16-verification
+          path: |
+            final-apksigner-recheck.txt
+            final-zipalign-recheck.txt
+            final-badging-recheck.txt
+            final-apk-sha256.txt
+            android16-start.txt
+            android16-package.txt
+            android16-activity.txt
+            android16-window.txt
+            android16-ui.xml
+            android16-screen.png
+            android16-logcat.txt
+          if-no-files-found: warn
+          retention-days: 30
