@@ -45,6 +45,17 @@ jobs:
           node --test backend/cloud-sync/worker.test.mjs
           bash -n .github/scripts/verify-nv-launch-modern.sh
 
+      - name: Verify required live NV code registry
+        env:
+          NV_CODE_REGISTRY_URL: ${{ secrets.NV_CODE_REGISTRY_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$NV_CODE_REGISTRY_URL"
+          case "$NV_CODE_REGISTRY_URL" in
+            https://*) ;;
+            *) echo "NV_CODE_REGISTRY_URL must be a public HTTPS origin" >&2; exit 1 ;;
+          esac
+
       - name: Install Android 16 SDK without deprecated tools package
         run: |
           set -euo pipefail
@@ -53,6 +64,7 @@ jobs:
       - name: Lint test and build APKs
         env:
           NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
+          NV_CODE_REGISTRY_URL: ${{ secrets.NV_CODE_REGISTRY_URL }}
         run: |
           set -euo pipefail
           gradle --no-daemon \
@@ -68,7 +80,7 @@ jobs:
           set -euo pipefail
           BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
           INPUT_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-          OUTPUT_APK="app/build/outputs/apk/release/Rahnama-Android16-v0.18.1.apk"
+          OUTPUT_APK="app/build/outputs/apk/release/Rahnama-Android16-v0.18.2.apk"
           test -s "$INPUT_APK"
           test -s "keystore/nv-debug.jks"
           "$BUILD_TOOLS/apksigner" sign \
@@ -82,8 +94,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$OUTPUT_APK" | tee rahnama-zipalign.txt
           BADGING="$("$BUILD_TOOLS/aapt" dump badging "$OUTPUT_APK")"
           echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
-          echo "$BADGING" | grep -q "versionCode='20'"
-          echo "$BADGING" | grep -q "versionName='0.18.1'"
+          echo "$BADGING" | grep -q "versionCode='21'"
+          echo "$BADGING" | grep -q "versionName='0.18.2'"
           echo "$BADGING" | grep -q "targetSdkVersion:'36'"
           sha256sum "$OUTPUT_APK" | tee rahnama-apk-sha256.txt
 
@@ -96,7 +108,7 @@ jobs:
       - name: Verify real app flows and instrumentation on Android 16
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          NV_VERIFY_APK: app/build/outputs/apk/release/Rahnama-Android16-v0.18.1.apk
+          NV_VERIFY_APK: app/build/outputs/apk/release/Rahnama-Android16-v0.18.2.apk
           NV_VERIFY_PACKAGE: ir.nv.navigation
           NV_VERIFY_ACTIVITY: ir.nv.navigation.MainActivity
         with:
@@ -116,9 +128,9 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Rahnama-Android16-v0.18.1-final
+          name: Rahnama-Android16-v0.18.2-final
           path: |
-            app/build/outputs/apk/release/Rahnama-Android16-v0.18.1.apk
+            app/build/outputs/apk/release/Rahnama-Android16-v0.18.2.apk
             rahnama-apksigner.txt
             rahnama-zipalign.txt
             rahnama-apk-sha256.txt
@@ -129,7 +141,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Rahnama-Android16-v0.18.1-diagnostics
+          name: Rahnama-Android16-v0.18.2-diagnostics
           path: |
             nv-modern-launch-screen.png
             nv-modern-window-state.txt
