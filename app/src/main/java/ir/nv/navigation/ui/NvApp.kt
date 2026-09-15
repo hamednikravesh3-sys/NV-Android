@@ -133,6 +133,8 @@ fun NvApp(
     }
 
     DisposableEffect(billing) { onDispose { billing.close() } }
+    // Start consuming device fixes immediately when location permission is already available.
+    LaunchedEffect(Unit) { requestLocation(LocationAction.ORIGIN) }
     LaunchedEffect(billingState.purchased) { viewModel.refreshEntitlement(billingState.purchased) }
 
     val mapSource = NavigationModeResolver.preferredSource(
