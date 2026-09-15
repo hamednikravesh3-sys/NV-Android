@@ -6,16 +6,17 @@ import androidx.compose.runtime.getValue
 import ir.nv.navigation.ui.theme.AppThemeMode
 
 /**
- * Product-architecture shell: keeps the validated V14 home/nearby flow and uses
- * the live-driving surface while navigation is active. The driving surface renders
- * only the committed route; rerouting remains owned by NvViewModel.
+ * Product shell: normal reference home before navigation, driving-only screen after
+ * start. The driving screen renders only the committed route.
  */
 @Composable
 fun NvReferenceV15(
     darkMode: Boolean,
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
-    viewModel: NvViewModel
+    viewModel: NvViewModel,
+    onSmart: () -> Unit,
+    onEmergency: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     if (state.navigationActive) {
@@ -28,7 +29,9 @@ fun NvReferenceV15(
             darkMode = darkMode,
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
-            viewModel = viewModel
+            viewModel = viewModel,
+            onSmart = onSmart,
+            onEmergency = onEmergency
         )
     }
 }

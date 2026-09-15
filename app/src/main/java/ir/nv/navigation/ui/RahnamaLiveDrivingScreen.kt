@@ -105,7 +105,10 @@ fun RahnamaLiveDrivingScreen(
                 onManualGesture = viewModel::pauseNavigationFollow,
                 darkMode = darkMode,
                 satelliteMode = state.satelliteMode,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                maneuverIndex = state.maneuverIndex,
+                distanceToManeuverMeters = state.distanceToNextManeuverMeters,
+                speedKmh = state.speedKmh
             )
 
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

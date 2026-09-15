@@ -1,5 +1,6 @@
 package ir.nv.navigation.map
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -7,6 +8,8 @@ import android.graphics.Color
 import android.graphics.PointF
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -17,6 +20,7 @@ import ir.nv.navigation.R
 import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.core.Place
 import ir.nv.navigation.core.Route
+import ir.nv.navigation.core.RouteManeuver
 import ir.nv.navigation.core.TrafficSegment
 import ir.nv.navigation.core.TrafficSummary
 import org.maplibre.android.MapLibre
@@ -56,7 +60,10 @@ fun OnlineIranMap(
     onManualGesture: () -> Unit,
     darkMode: Boolean,
     satelliteMode: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    maneuverIndex: Int = 0,
+    distanceToManeuverMeters: Double = Double.POSITIVE_INFINITY,
+    speedKmh: Int = 0
 ) {
     val holder = remember { VectorMapHolder(context.applicationContext) }
     val doubleTapDetector = remember(holder) {
@@ -100,7 +107,10 @@ fun OnlineIranMap(
                 navigationRecenterToken = navigationRecenterToken,
                 bearingDegrees = bearingDegrees,
                 darkMode = darkMode,
-                satelliteMode = satelliteMode
+                satelliteMode = satelliteMode,
+                maneuverIndex = maneuverIndex,
+                distanceToManeuverMeters = distanceToManeuverMeters,
+                speedKmh = speedKmh
             )
         }
     )
@@ -119,6 +129,10 @@ private class VectorMapHolder(context: Context) {
     private var locationSource: GeoJsonSource? = null
     private var locationCircleLayer: CircleLayer? = null
     private var carLayer: SymbolLayer? = null
+    private var leftSignalLayer: SymbolLayer? = null
+    private var rightSignalLayer: SymbolLayer? = null
+    private var maneuverSource: GeoJsonSource? = null
+    private var maneuverLayer: SymbolLayer? = null
     private var flagSource: GeoJsonSource? = null
     private var flagLayer: SymbolLayer? = null
     private var flagCoordinate: Coordinate? = null
@@ -138,6 +152,27 @@ private class VectorMapHolder(context: Context) {
     private var navigationZoomLevel = 18
     private var navigationRecenterToken = 0
     private var bearingDegrees = 0f
+    private var maneuverIndex = 0
+    private var distanceToManeuverMeters = Double.POSITIVE_INFINITY
+    private var speedKmh = 0
+
+    // NavigationCarFeature port: keep rendered pose separate from the raw GPS target.
+    // When a new fix arrives while the previous animation is still running, animation
+    // restarts from the marker's actual rendered pose instead of the previous target.
+    private var renderedVehicleLocation: Coordinate? = null
+    private var renderedVehicleBearing = 0f
+    private var vehicleAnimator: ValueAnimator? = null
+    private var signalVisible = false
+    private var signalBlinking = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val signalBlinkRunnable = object : Runnable {
+        override fun run() {
+            if (!signalBlinking) return
+            signalVisible = !signalVisible
+            updateSignalLayers()
+            mainHandler.postDelayed(this, SIGNAL_BLINK_INTERVAL_MS)
+        }
+    }
 
     init {
         MapLibre.getInstance(context)
@@ -181,7 +216,10 @@ private class VectorMapHolder(context: Context) {
         navigationRecenterToken: Int,
         bearingDegrees: Float,
         darkMode: Boolean,
-        satelliteMode: Boolean
+        satelliteMode: Boolean,
+        maneuverIndex: Int,
+        distanceToManeuverMeters: Double,
+        speedKmh: Int
     ) {
         val nextPlaces = codedPlaces.distinctBy { it.code }.take(MAX_CODE_LABELS)
         val routesChanged = routes != renderedRoutes || selectedRouteIndex != renderedSelectedRoute
@@ -190,6 +228,10 @@ private class VectorMapHolder(context: Context) {
         val locationChanged = currentLocation != this.currentLocation ||
             navigationActive != this.navigationActive ||
             bearingDegrees != this.bearingDegrees
+        val guidanceChanged = routesChanged ||
+            maneuverIndex != this.maneuverIndex ||
+            distanceToManeuverMeters != this.distanceToManeuverMeters ||
+            navigationActive != this.navigationActive
         val cameraChanged = routesChanged ||
             currentLocation != this.currentLocation ||
             followLocation != this.followLocation ||
@@ -211,6 +253,9 @@ private class VectorMapHolder(context: Context) {
         this.bearingDegrees = bearingDegrees
         this.darkMode = darkMode
         this.satelliteMode = satelliteMode
+        this.maneuverIndex = maneuverIndex
+        this.distanceToManeuverMeters = distanceToManeuverMeters
+        this.speedKmh = speedKmh
 
         if (styleChanged) {
             loadStyle()
@@ -220,6 +265,7 @@ private class VectorMapHolder(context: Context) {
         if (trafficChanged) renderTraffic()
         if (placesChanged) renderPlaces()
         if (locationChanged) renderLocation()
+        if (guidanceChanged || locationChanged) renderNavigationGuidance()
         if (cameraChanged) updateCamera(frameRoute = routesChanged)
     }
 
@@ -235,7 +281,8 @@ private class VectorMapHolder(context: Context) {
             renderRoutes()
             renderTraffic()
             renderPlaces()
-            renderLocation()
+            renderLocation(animate = false)
+            renderNavigationGuidance()
             updateCamera(frameRoute = renderedRoutes.isNotEmpty())
         }
         if (satelliteMode) {
@@ -314,10 +361,49 @@ private class VectorMapHolder(context: Context) {
         loadedStyle.addImage(CAR_IMAGE_ID, carBitmap(appContext))
         carLayer = SymbolLayer(CAR_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
             PropertyFactory.iconImage(CAR_IMAGE_ID),
-            PropertyFactory.iconSize(0.62f),
+            PropertyFactory.iconSize(0.54f),
+            PropertyFactory.iconRotationAlignment("map"),
+            PropertyFactory.iconPitchAlignment("map"),
             PropertyFactory.iconAllowOverlap(true),
             PropertyFactory.iconIgnorePlacement(true),
             PropertyFactory.iconOpacity(0f)
+        ).also(loadedStyle::addLayer)
+
+        // Ported from NavigationCarFeature: amber turn indicators blink on the
+        // actual rendered vehicle marker instead of as an unrelated HUD animation.
+        leftSignalLayer = SymbolLayer(LEFT_SIGNAL_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+            PropertyFactory.textField("●"),
+            PropertyFactory.textSize(18f),
+            PropertyFactory.textColor(INDICATOR_AMBER),
+            PropertyFactory.textHaloColor(Color.argb(220, 6, 22, 39)),
+            PropertyFactory.textHaloWidth(1.5f),
+            PropertyFactory.textOffset(arrayOf(-1.45f, 0f)),
+            PropertyFactory.textAllowOverlap(true),
+            PropertyFactory.textIgnorePlacement(true),
+            PropertyFactory.textOpacity(0f)
+        ).also(loadedStyle::addLayer)
+        rightSignalLayer = SymbolLayer(RIGHT_SIGNAL_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+            PropertyFactory.textField("●"),
+            PropertyFactory.textSize(18f),
+            PropertyFactory.textColor(INDICATOR_AMBER),
+            PropertyFactory.textHaloColor(Color.argb(220, 6, 22, 39)),
+            PropertyFactory.textHaloWidth(1.5f),
+            PropertyFactory.textOffset(arrayOf(1.45f, 0f)),
+            PropertyFactory.textAllowOverlap(true),
+            PropertyFactory.textIgnorePlacement(true),
+            PropertyFactory.textOpacity(0f)
+        ).also(loadedStyle::addLayer)
+
+        maneuverSource = GeoJsonSource(MANEUVER_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)
+        maneuverLayer = SymbolLayer(MANEUVER_LAYER_ID, MANEUVER_SOURCE_ID).withProperties(
+            PropertyFactory.textField(""),
+            PropertyFactory.textSize(30f),
+            PropertyFactory.textColor(Color.WHITE),
+            PropertyFactory.textHaloColor(Color.rgb(6, 30, 52)),
+            PropertyFactory.textHaloWidth(3f),
+            PropertyFactory.textAllowOverlap(true),
+            PropertyFactory.textIgnorePlacement(true),
+            PropertyFactory.textOpacity(0f)
         ).also(loadedStyle::addLayer)
 
         flagSource = GeoJsonSource(FLAG_SOURCE_ID, emptyFeatures()).also(loadedStyle::addSource)
@@ -403,19 +489,206 @@ private class VectorMapHolder(context: Context) {
         placeSource?.setGeoJson(FeatureCollection.fromFeatures(features))
     }
 
-    private fun renderLocation() {
-        val point = currentLocation?.let {
-            Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))
+    private fun renderLocation(animate: Boolean = true) {
+        val target = currentLocation
+        if (target == null) {
+            vehicleAnimator?.cancel()
+            renderedVehicleLocation = null
+            locationSource?.setGeoJson(emptyFeatures())
+            locationCircleLayer?.setProperties(PropertyFactory.circleOpacity(0f))
+            carLayer?.setProperties(PropertyFactory.iconOpacity(0f))
+            stopSignalBlinking()
+            renderFlag()
+            return
         }
-        locationSource?.setGeoJson(
-            if (point == null) emptyFeatures() else FeatureCollection.fromFeature(point)
-        )
+
+        val targetBearing = normalizeBearing(bearingDegrees.takeIf { it.isFinite() } ?: renderedVehicleBearing)
+        val from = renderedVehicleLocation
+        val shouldAnimate = animate && navigationActive && from != null &&
+            coordinateDistanceMeters(from, target) <= MAX_ANIMATED_JUMP_METERS
+
+        if (!shouldAnimate) {
+            vehicleAnimator?.cancel()
+            renderedVehicleLocation = target
+            renderedVehicleBearing = targetBearing
+            applyVehicleFrame(target, targetBearing)
+        } else {
+            animateVehicle(from, target, renderedVehicleBearing, targetBearing)
+        }
+        renderFlag()
+    }
+
+    private fun animateVehicle(
+        from: Coordinate,
+        to: Coordinate,
+        fromBearing: Float,
+        toBearing: Float
+    ) {
+        // Important difference from the supplied sample: the next animation starts
+        // from renderedVehicleLocation, not from the previous GPS target. This avoids
+        // micro-jumps when fixes arrive faster than the animation duration.
+        vehicleAnimator?.cancel()
+        val duration = when {
+            speedKmh >= 90 -> 380L
+            speedKmh >= 40 -> 440L
+            speedKmh > 5 -> 500L
+            else -> 320L
+        }
+        vehicleAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            this.duration = duration
+            addUpdateListener { animator ->
+                val fraction = animator.animatedFraction
+                val coordinate = Coordinate(
+                    latitude = lerp(from.latitude, to.latitude, fraction),
+                    longitude = interpolateLongitude(from.longitude, to.longitude, fraction)
+                )
+                val rotation = interpolateBearing(fromBearing, toBearing, fraction)
+                renderedVehicleLocation = coordinate
+                renderedVehicleBearing = rotation
+                applyVehicleFrame(coordinate, rotation)
+            }
+            start()
+        }
+    }
+
+    private fun applyVehicleFrame(coordinate: Coordinate, bearing: Float) {
+        val feature = Feature.fromGeometry(Point.fromLngLat(coordinate.longitude, coordinate.latitude))
+        locationSource?.setGeoJson(FeatureCollection.fromFeature(feature))
         locationCircleLayer?.setProperties(PropertyFactory.circleOpacity(if (navigationActive) 0f else 1f))
         carLayer?.setProperties(
-            PropertyFactory.iconOpacity(if (navigationActive && point != null) 1f else 0f),
-            PropertyFactory.iconRotate(if (bearingDegrees.isFinite()) bearingDegrees else 0f)
+            PropertyFactory.iconOpacity(if (navigationActive) 1f else 0f),
+            PropertyFactory.iconRotate(bearing)
         )
-        renderFlag()
+        updateSignalLayers()
+    }
+
+    private fun renderNavigationGuidance() {
+        val maneuver = renderedRoutes
+            .getOrNull(renderedSelectedRoute)
+            ?.maneuvers
+            ?.getOrNull(maneuverIndex)
+        val turn = maneuver?.direction?.takeIf(::isTurnDirection)
+        val distance = distanceToManeuverMeters
+        val showArrow = navigationActive && turn != null && distance.isFinite() &&
+            distance in 0.0..ARROW_VISIBLE_DISTANCE_METERS && maneuver.coordinate != null
+
+        val point = if (showArrow) maneuver?.coordinate else null
+        maneuverSource?.setGeoJson(
+            point?.let {
+                FeatureCollection.fromFeature(
+                    Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))
+                )
+            } ?: emptyFeatures()
+        )
+        maneuverLayer?.setProperties(
+            PropertyFactory.textField(turn?.let(::maneuverGlyph).orEmpty()),
+            PropertyFactory.textOpacity(if (showArrow) 1f else 0f)
+        )
+
+        val shouldBlink = navigationActive && turn != null && distance.isFinite() &&
+            distance in 0.0..SIGNAL_START_DISTANCE_METERS
+        if (shouldBlink) startSignalBlinking() else stopSignalBlinking()
+        updateSignalLayers()
+    }
+
+    private fun startSignalBlinking() {
+        if (signalBlinking) return
+        signalBlinking = true
+        signalVisible = true
+        mainHandler.removeCallbacks(signalBlinkRunnable)
+        mainHandler.postDelayed(signalBlinkRunnable, SIGNAL_BLINK_INTERVAL_MS)
+    }
+
+    private fun stopSignalBlinking() {
+        signalBlinking = false
+        signalVisible = false
+        mainHandler.removeCallbacks(signalBlinkRunnable)
+        updateSignalLayers()
+    }
+
+    private fun updateSignalLayers() {
+        val direction = renderedRoutes
+            .getOrNull(renderedSelectedRoute)
+            ?.maneuvers
+            ?.getOrNull(maneuverIndex)
+            ?.direction
+        val active = navigationActive && signalBlinking && signalVisible
+        val left = active && (isLeftDirection(direction) || direction == RouteManeuver.Direction.UTURN)
+        val right = active && (isRightDirection(direction) || direction == RouteManeuver.Direction.UTURN)
+        leftSignalLayer?.setProperties(PropertyFactory.textOpacity(if (left) 1f else 0f))
+        rightSignalLayer?.setProperties(PropertyFactory.textOpacity(if (right) 1f else 0f))
+    }
+
+    private fun isTurnDirection(direction: RouteManeuver.Direction): Boolean = when (direction) {
+        RouteManeuver.Direction.LEFT,
+        RouteManeuver.Direction.SLIGHT_LEFT,
+        RouteManeuver.Direction.SHARP_LEFT,
+        RouteManeuver.Direction.RIGHT,
+        RouteManeuver.Direction.SLIGHT_RIGHT,
+        RouteManeuver.Direction.SHARP_RIGHT,
+        RouteManeuver.Direction.UTURN -> true
+        else -> false
+    }
+
+    private fun isLeftDirection(direction: RouteManeuver.Direction?): Boolean = when (direction) {
+        RouteManeuver.Direction.LEFT,
+        RouteManeuver.Direction.SLIGHT_LEFT,
+        RouteManeuver.Direction.SHARP_LEFT -> true
+        else -> false
+    }
+
+    private fun isRightDirection(direction: RouteManeuver.Direction?): Boolean = when (direction) {
+        RouteManeuver.Direction.RIGHT,
+        RouteManeuver.Direction.SLIGHT_RIGHT,
+        RouteManeuver.Direction.SHARP_RIGHT -> true
+        else -> false
+    }
+
+    private fun maneuverGlyph(direction: RouteManeuver.Direction): String = when (direction) {
+        RouteManeuver.Direction.LEFT -> "↰"
+        RouteManeuver.Direction.SLIGHT_LEFT -> "↖"
+        RouteManeuver.Direction.SHARP_LEFT -> "↙"
+        RouteManeuver.Direction.RIGHT -> "↱"
+        RouteManeuver.Direction.SLIGHT_RIGHT -> "↗"
+        RouteManeuver.Direction.SHARP_RIGHT -> "↘"
+        RouteManeuver.Direction.UTURN -> "↶"
+        else -> "↑"
+    }
+
+    private fun lerp(start: Double, end: Double, fraction: Float): Double =
+        start + (end - start) * fraction.toDouble()
+
+    private fun interpolateLongitude(start: Double, end: Double, fraction: Float): Double {
+        var delta = end - start
+        if (delta > 180.0) delta -= 360.0
+        if (delta < -180.0) delta += 360.0
+        var value = start + delta * fraction.toDouble()
+        if (value > 180.0) value -= 360.0
+        if (value < -180.0) value += 360.0
+        return value
+    }
+
+    private fun interpolateBearing(start: Float, end: Float, fraction: Float): Float {
+        val from = normalizeBearing(start)
+        val to = normalizeBearing(end)
+        var delta = to - from
+        if (delta > 180f) delta -= 360f
+        if (delta < -180f) delta += 360f
+        return normalizeBearing(from + delta * fraction)
+    }
+
+    private fun normalizeBearing(value: Float): Float = ((value % 360f) + 360f) % 360f
+
+    private fun coordinateDistanceMeters(a: Coordinate, b: Coordinate): Double {
+        val earthRadius = 6_371_000.0
+        val lat1 = Math.toRadians(a.latitude)
+        val lat2 = Math.toRadians(b.latitude)
+        val dLat = lat2 - lat1
+        val dLon = Math.toRadians(b.longitude - a.longitude)
+        val h = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+            kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
+            kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+        return 2 * earthRadius * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))
     }
 
     fun placeFlagAtScreen(x: Float, y: Float): Coordinate? {
@@ -433,8 +706,9 @@ private class VectorMapHolder(context: Context) {
     }
 
     private fun carBitmap(context: Context): Bitmap {
+        NavigationCarAsset.bitmap()?.let { return it }
         val drawable = requireNotNull(ContextCompat.getDrawable(context, R.drawable.nv_car_top))
-        val bitmap = Bitmap.createBitmap(96, 128, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(96, 160, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         drawable.setBounds(0, 0, canvas.width, canvas.height)
         drawable.draw(canvas)
@@ -470,6 +744,9 @@ private class VectorMapHolder(context: Context) {
     }
 
     fun destroy() {
+        vehicleAnimator?.cancel()
+        stopSignalBlinking()
+        mainHandler.removeCallbacksAndMessages(null)
         mapView.onPause()
         mapView.onStop()
         mapView.onDestroy()
@@ -602,6 +879,10 @@ private class VectorMapHolder(context: Context) {
         const val LOCATION_LAYER_ID = "nv-location-layer"
         const val CAR_IMAGE_ID = "nv-car-image"
         const val CAR_LAYER_ID = "nv-car-layer"
+        const val LEFT_SIGNAL_LAYER_ID = "nv-car-left-signal"
+        const val RIGHT_SIGNAL_LAYER_ID = "nv-car-right-signal"
+        const val MANEUVER_SOURCE_ID = "nv-maneuver-source"
+        const val MANEUVER_LAYER_ID = "nv-maneuver-layer"
         const val FLAG_SOURCE_ID = "nv-flag-source"
         const val FLAG_LAYER_ID = "nv-flag-layer"
         const val PLACE_SOURCE_ID = "nv-place-source"
@@ -611,6 +892,11 @@ private class VectorMapHolder(context: Context) {
         const val MAX_TRAFFIC_LAYERS = 12
         const val MAX_CODE_LABELS = 12
         const val CAMERA_ANIMATION_MS = 420
+        const val SIGNAL_BLINK_INTERVAL_MS = 500L
+        const val ARROW_VISIBLE_DISTANCE_METERS = 140.0
+        const val SIGNAL_START_DISTANCE_METERS = 70.0
+        const val MAX_ANIMATED_JUMP_METERS = 120.0
+        const val INDICATOR_AMBER = 0xFFFFAB00.toInt()
         val IRAN_CENTER = LatLng(32.4279, 53.6880)
         const val IRAN_OVERVIEW_ZOOM = 5.2
         const val HOME_ZOOM = 16.5

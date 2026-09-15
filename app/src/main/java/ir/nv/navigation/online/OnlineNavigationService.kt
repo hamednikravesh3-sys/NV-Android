@@ -9,6 +9,8 @@ import ir.nv.navigation.data.PlaceCodes
 import ir.nv.navigation.routing.RouteDecisionEngine
 import ir.nv.navigation.traffic.LiveTrafficService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -30,6 +32,11 @@ class OnlineNavigationService {
         .callTimeout(15, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
+    private val searchClient = client.newBuilder()
+        .connectTimeout(2_200, TimeUnit.MILLISECONDS)
+        .readTimeout(2_600, TimeUnit.MILLISECONDS)
+        .callTimeout(2_800, TimeUnit.MILLISECONDS)
+        .build()
     private val liveTraffic = LiveTrafficService()
     private val searchCache = object : LinkedHashMap<String, List<Place>>(80, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Place>>?): Boolean = size > 80
@@ -45,24 +52,27 @@ class OnlineNavigationService {
         synchronized(searchCache) { searchCache[q]?.let { return@withContext it } }
 
         val failures = mutableListOf<String>()
-        val generic = runCatching { searchPhoton(q, limit) }
-            .onFailure { failures += "Photon: ${it.message}" }
-            .getOrDefault(emptyList())
-        val roads = if (looksLikeRoadQuery(q)) {
-            runCatching { searchPhoton(q, limit, osmTag = "highway") }
-                .onFailure { failures += "Photon roads: ${it.message}" }
-                .getOrDefault(emptyList())
-        } else emptyList()
-        val iranQualified = if ((generic + roads).size < 6 && !q.contains("ایران")) {
-            runCatching { searchPhoton("$q ایران", limit) }.getOrDefault(emptyList())
-        } else emptyList()
-        val photonResults = generic + roads + iranQualified
-        val fallback = if (photonResults.size < 8) {
-            runCatching { searchNominatim(q, limit) }
-                .onFailure { failures += "Nominatim: ${it.message}" }
-                .getOrDefault(emptyList())
-        } else emptyList()
-        val results = (photonResults + fallback)
+        // Query independent geocoders in the same wave. The former staged fallback
+        // made the user wait for Photon before Nominatim was even started, which
+        // felt sluggish on mobile networks. Parallel providers also improve Persian
+        // POI recall without making the UI wait for a second network round trip.
+        val (genericResult, roadsResult, fallbackResult) = coroutineScope {
+            val generic = async { runCatching { searchPhoton(q, limit) } }
+            val roads = async {
+                if (looksLikeRoadQuery(q)) runCatching { searchPhoton(q, limit, osmTag = "highway") }
+                else Result.success(emptyList<Place>())
+            }
+            val fallback = async { runCatching { searchNominatim(q, limit) } }
+            Triple(generic.await(), roads.await(), fallback.await())
+        }
+        genericResult.exceptionOrNull()?.let { failures += "Photon: ${it.message}" }
+        roadsResult.exceptionOrNull()?.let { failures += "Photon roads: ${it.message}" }
+        fallbackResult.exceptionOrNull()?.let { failures += "Nominatim: ${it.message}" }
+        val results = (
+            genericResult.getOrDefault(emptyList()) +
+                roadsResult.getOrDefault(emptyList()) +
+                fallbackResult.getOrDefault(emptyList())
+            )
             .filter { isInsideIran(it.coordinate) }
             .distinctBy(::placeIdentity)
             .sortedWith(compareBy<Place> { searchScore(it, q) }.thenBy { it.name.length }.thenBy { it.code })
@@ -80,7 +90,7 @@ class OnlineNavigationService {
         val url = BuildConfig.GEOCODING_API_URL.toHttpUrlString() +
             "?q=$encoded&limit=$limit&lang=fa&bbox=44.0,24.0,64.0,40.0$tag"
         val request = Request.Builder().url(url).searchHeaders().build()
-        return client.newCall(request).execute().use { response ->
+        return searchClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             parsePhoton(JSONObject(response.body?.string().orEmpty()), query)
         }
@@ -92,7 +102,7 @@ class OnlineNavigationService {
             "/search?q=$encoded&format=jsonv2&addressdetails=1&countrycodes=ir" +
             "&limit=$limit&accept-language=fa,en"
         val request = Request.Builder().url(url).searchHeaders().build()
-        return client.newCall(request).execute().use { response ->
+        return searchClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             parseNominatim(JSONArray(response.body?.string().orEmpty()))
         }
@@ -107,7 +117,7 @@ class OnlineNavigationService {
         val url = BuildConfig.GEOCODING_FALLBACK_API_URL.toHttpUrlString() +
             "/lookup?osm_ids=$prefix${identity.osmId}&format=jsonv2&addressdetails=1&accept-language=fa,en"
         val request = Request.Builder().url(url).searchHeaders().build()
-        return client.newCall(request).execute().use { response ->
+        return searchClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             parseNominatim(JSONArray(response.body?.string().orEmpty()))
         }

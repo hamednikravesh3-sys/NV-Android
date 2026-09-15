@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.MyLocation
-import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -26,9 +25,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,19 +33,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import ir.nv.navigation.core.Place
 import ir.nv.navigation.navigation.VehicleProfile
 import ir.nv.navigation.ui.theme.NvColors
 import ir.nv.navigation.ui.theme.NvRadius
 import ir.nv.navigation.ui.theme.NvSpacing
 
 /**
- * Direct smart-route assistant. It intentionally avoids the old showcase/menu of
- * disconnected "smart" cards. The user's sentence is reduced to a destination
- * query, searched by the same production HybridSearchEngine used by the app, and
- * the route is then created from the device's current location.
+ * Production smart-route assistant.
+ *
+ * There is no origin field: NvViewModel resolves a precise device fix, extracts
+ * the destination intent, proximity-ranks search results and starts routing.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,37 +53,8 @@ fun RahnamaSmartRouteAssistant(
     onDismiss: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
-    var pendingDestination by remember { mutableStateOf<String?>(null) }
-    var searchStarted by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf<String?>(null) }
     var selectedVehicle by remember { mutableStateOf(VehicleProfile.CAR) }
-
-    LaunchedEffect(state.destinationSearching, pendingDestination) {
-        if (pendingDestination != null && state.destinationSearching) searchStarted = true
-    }
-
-    LaunchedEffect(
-        pendingDestination,
-        searchStarted,
-        state.destinationSearching,
-        state.destinationQuery,
-        state.destinationSuggestions
-    ) {
-        val pending = pendingDestination ?: return@LaunchedEffect
-        if (state.destinationQuery.trim() != pending.trim()) return@LaunchedEffect
-
-        val candidate = state.destinationSuggestions.firstOrNull()
-        if (candidate != null && !state.destinationSearching) {
-            status = "مقصد «${candidate.name}» پیدا شد؛ مسیر از موقعیت فعلی شما ساخته می‌شود…"
-            pendingDestination = null
-            searchStarted = false
-            viewModel.routeFromCurrentLocationTo(candidate, selectedVehicle)
-        } else if (searchStarted && !state.destinationSearching && state.destinationSuggestions.isEmpty()) {
-            status = "مقصد «$pending» پیدا نشد. نام خیابان، مکان یا کد NV را دقیق‌تر بنویسید."
-            pendingDestination = null
-            searchStarted = false
-        }
-    }
+    val locationAccuracy = state.locationAccuracyMeters
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -96,7 +62,9 @@ fun RahnamaSmartRouteAssistant(
         contentColor = NvColors.TextPrimaryDark
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = NvSpacing.Lg),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = NvSpacing.Lg),
             verticalArrangement = Arrangement.spacedBy(NvSpacing.Md)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -114,9 +82,13 @@ fun RahnamaSmartRouteAssistant(
                 }
                 Spacer(Modifier.width(NvSpacing.Sm))
                 Column(Modifier.weight(1f)) {
-                    Text("دستیار هوشمند مسیر", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                     Text(
-                        "مبدأ همیشه موقعیت فعلی شماست؛ فقط مقصد را به زبان عادی بنویسید.",
+                        "چت هوشمند سفر",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        "فقط بگویید کجا می‌خواهید بروید؛ مبدأ از GPS دقیق گرفته می‌شود.",
                         color = NvColors.TextSecondaryDark,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -127,16 +99,28 @@ fun RahnamaSmartRouteAssistant(
                 modifier = Modifier.fillMaxWidth(),
                 color = NvColors.Navy850,
                 shape = RoundedCornerShape(NvRadius.Card),
-                border = BorderStroke(1.dp, NvColors.DividerDark)
+                border = BorderStroke(
+                    1.dp,
+                    if ((locationAccuracy ?: Float.MAX_VALUE) <= 12f) NvColors.Success
+                    else NvColors.Warning
+                )
             ) {
                 Row(Modifier.padding(NvSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.MyLocation, contentDescription = null, tint = NvColors.Success)
+                    Icon(
+                        Icons.Rounded.MyLocation,
+                        contentDescription = null,
+                        tint = if ((locationAccuracy ?: Float.MAX_VALUE) <= 12f) NvColors.Success else NvColors.Warning
+                    )
                     Spacer(Modifier.width(NvSpacing.Sm))
                     Column(Modifier.weight(1f)) {
-                        Text("مبدأ: موقعیت دقیق فعلی من", fontWeight = FontWeight.Bold)
+                        Text("مبدأ خودکار: موقعیت فعلی من", fontWeight = FontWeight.Bold)
                         Text(
-                            state.locationAccuracyMeters?.let { "دقت فعلی GPS: ±${it.toInt()} متر" }
-                                ?: if (state.locating) "در حال تثبیت GPS…" else "GPS پس از ارسال درخواست تثبیت می‌شود",
+                            when {
+                                state.locating -> "در حال تثبیت GPS دقیق…"
+                                locationAccuracy != null ->
+                                    "دقت فعلی: ±${locationAccuracy.toInt()} متر"
+                                else -> "هنگام ارسال درخواست، GPS دقیق تثبیت می‌شود"
+                            },
                             color = NvColors.TextSecondaryDark,
                             style = MaterialTheme.typography.labelSmall
                         )
@@ -146,24 +130,35 @@ fun RahnamaSmartRouteAssistant(
 
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it; status = null },
+                onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("کجا برویم؟") },
-                placeholder = { Text("مثلاً: منو ببر میدان آزادی") },
+                label = { Text("کجا می‌خواهید بروید؟") },
+                placeholder = { Text("مثلاً: نزدیک‌ترین بیمارستان یا منو ببر میدان آزادی") },
                 minLines = 2,
-                maxLines = 4
+                maxLines = 4,
+                enabled = !state.smartJourneyPlanning
             )
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Sm)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(NvSpacing.Sm)
+            ) {
                 listOf(
                     VehicleProfile.CAR to "خودرو",
                     VehicleProfile.MOTORCYCLE to "موتور",
-                    VehicleProfile.WALKING to "پیاده"
+                    VehicleProfile.WALKING to "پیاده",
+                    VehicleProfile.TRANSIT to "عمومی"
                 ).forEach { (profile, label) ->
                     Surface(
-                        modifier = Modifier.weight(1f).clickable { selectedVehicle = profile },
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(enabled = !state.smartJourneyPlanning) { selectedVehicle = profile },
                         shape = RoundedCornerShape(NvRadius.Pill),
-                        color = if (selectedVehicle == profile) NvColors.RouteBlue.copy(alpha = .22f) else NvColors.Navy850,
+                        color = if (selectedVehicle == profile) {
+                            NvColors.RouteBlue.copy(alpha = .22f)
+                        } else {
+                            NvColors.Navy850
+                        },
                         border = BorderStroke(
                             1.dp,
                             if (selectedVehicle == profile) NvColors.RouteBlue else NvColors.DividerDark
@@ -171,116 +166,45 @@ fun RahnamaSmartRouteAssistant(
                     ) {
                         Text(
                             label,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
-                            fontWeight = if (selectedVehicle == profile) FontWeight.Black else FontWeight.Medium
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 9.dp),
+                            fontWeight = if (selectedVehicle == profile) FontWeight.Black else FontWeight.Medium,
+                            style = MaterialTheme.typography.labelMedium
                         )
                     }
                 }
             }
 
             Button(
-                onClick = {
-                    val destination = smartDestinationText(query)
-                    if (destination.isBlank()) {
-                        status = "نام مقصد را بنویسید."
-                    } else {
-                        pendingDestination = destination
-                        searchStarted = false
-                        status = "در حال جست‌وجوی «$destination»…"
-                        viewModel.updateDestinationQuery(destination)
-                        viewModel.useCurrentLocationAsOrigin()
-                    }
-                },
-                enabled = query.isNotBlank() && pendingDestination == null && !state.routing,
+                onClick = { viewModel.planJourneyFromChat(query, selectedVehicle) },
+                enabled = query.isNotBlank() && !state.smartJourneyPlanning && !state.routing,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(NvRadius.Medium)
             ) {
                 Icon(Icons.Rounded.DirectionsCar, contentDescription = null)
                 Spacer(Modifier.width(NvSpacing.Sm))
-                Text("پیدا کن و مسیر بساز", fontWeight = FontWeight.Black)
+                Text("تشخیص مقصد و ساخت مسیر", fontWeight = FontWeight.Black)
             }
 
-            if (pendingDestination != null || state.destinationSearching || state.routing || state.locating) {
+            if (state.smartJourneyPlanning || state.routing || state.locating) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
 
-            status?.let {
+            state.smartJourneyStatus?.let { status ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = NvColors.Navy850,
                     shape = RoundedCornerShape(NvRadius.Medium),
                     border = BorderStroke(1.dp, NvColors.RouteBlue.copy(alpha = .35f))
                 ) {
-                    Text(it, modifier = Modifier.padding(NvSpacing.Md), color = NvColors.TextPrimaryDark)
-                }
-            }
-
-            if (pendingDestination != null && state.destinationSuggestions.isNotEmpty()) {
-                Text("نتایج نزدیک", fontWeight = FontWeight.Bold)
-                state.destinationSuggestions.take(3).forEach { place ->
-                    SmartPlaceCandidate(place) {
-                        pendingDestination = null
-                        searchStarted = false
-                        status = "مسیر به «${place.name}» در حال ساخته‌شدن است…"
-                        viewModel.routeFromCurrentLocationTo(place, selectedVehicle)
-                    }
-                }
-            }
-
-            if (state.route != null && state.destination != null && !state.routing) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = NvColors.Success.copy(alpha = .13f),
-                    shape = RoundedCornerShape(NvRadius.Medium),
-                    border = BorderStroke(1.dp, NvColors.Success.copy(alpha = .55f))
-                ) {
                     Text(
-                        "مسیر به ${state.destination.name} آماده است. با بستن این پنجره مسیر واقعی روی نقشه نمایش داده می‌شود.",
+                        status,
                         modifier = Modifier.padding(NvSpacing.Md),
-                        fontWeight = FontWeight.Bold
+                        color = NvColors.TextPrimaryDark
                     )
                 }
             }
 
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("بازگشت به نقشه") }
             Spacer(Modifier.height(NvSpacing.Xl))
         }
     }
-}
-
-@Composable
-private fun SmartPlaceCandidate(place: Place, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        color = NvColors.Navy850,
-        shape = RoundedCornerShape(NvRadius.Medium),
-        border = BorderStroke(1.dp, NvColors.DividerDark)
-    ) {
-        Row(Modifier.padding(NvSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Place, contentDescription = null, tint = NvColors.RouteBlue)
-            Spacer(Modifier.width(NvSpacing.Sm))
-            Column(Modifier.weight(1f)) {
-                Text(place.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                place.address?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
-    }
-}
-
-private fun smartDestinationText(raw: String): String {
-    var text = raw.trim()
-        .replace('ي', 'ی')
-        .replace('ك', 'ک')
-    val phrases = listOf(
-        "لطفاً", "لطفا", "می‌خوام برم", "میخوام برم", "می خوام برم", "می‌خواهم بروم",
-        "منو ببر", "مرا ببر", "ببر منو", "برو به", "مسیر بده به", "مسیر بده",
-        "مسیریابی کن به", "مسیریابی کن", "راه را نشان بده", "راه رو نشون بده",
-        "از اینجا", "از موقعیت من", "با ماشین", "با خودرو", "با موتور", "پیاده"
-    )
-    phrases.forEach { text = text.replace(it, " ", ignoreCase = true) }
-    text = text.replace(Regex("\\s+"), " ").trim()
-    text = text.replace(Regex("^(به|تا|سمت)\\s+"), "").trim()
-    return text
 }

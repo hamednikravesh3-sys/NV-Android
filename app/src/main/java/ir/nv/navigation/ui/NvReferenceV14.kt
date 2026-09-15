@@ -36,13 +36,14 @@ fun NvReferenceV14(
     darkMode: Boolean,
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
-    viewModel: NvViewModel
+    viewModel: NvViewModel,
+    onSmart: () -> Unit,
+    onEmergency: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     var nearbyOpen by remember { mutableStateOf(false) }
     var nearbyInitialCategory by remember { mutableStateOf<NearbyCategory?>(null) }
     var savedOpen by remember { mutableStateOf(false) }
-    var codePickerOpen by remember { mutableStateOf(false) }
     var selectedPlace by remember { mutableStateOf<Place?>(null) }
 
     if (state.navigationActive) {
@@ -62,7 +63,9 @@ fun NvReferenceV14(
                 nearbyInitialCategory = category
                 nearbyOpen = true
             },
-            onPin = { savedOpen = true }
+            onPin = { savedOpen = true },
+            onSmart = onSmart,
+            onEmergency = onEmergency
         )
     }
 
@@ -100,16 +103,7 @@ fun NvReferenceV14(
         RahnamaSavedDialog(
             state = state,
             viewModel = viewModel,
-            onDefineCode = { savedOpen = false; codePickerOpen = true },
             onDismiss = { savedOpen = false }
-        )
-    }
-
-    if (codePickerOpen) {
-        RahnamaCodePickerDialog(
-            state = state,
-            viewModel = viewModel,
-            onDismiss = { codePickerOpen = false }
         )
     }
 }
@@ -399,7 +393,6 @@ private fun formatDistance(distanceMeters: Double): String =
 private fun RahnamaSavedDialog(
     state: NvUiState,
     viewModel: NvViewModel,
-    onDefineCode: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val saved = remember(state.personalPlaces, state.recentPlaces) {
@@ -411,16 +404,11 @@ private fun RahnamaSavedDialog(
         title = { Text("ذخیره‌ها و اخیر", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black) },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 500.dp).verticalScroll(rememberScrollState())) {
-                Button(onClick = onDefineCode, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Rounded.AddLocationAlt, contentDescription = null)
-                    Spacer(Modifier.width(NvSpacing.Xs))
-                    Text("تعریف کد مکان روی نقشه")
-                }
                 Text(
-                    "نقشه را حرکت دهید تا نشانگر قرمز دقیقاً روی محل موردنظر قرار بگیرد، سپس کد را ذخیره کنید.",
+                    "ساخت و خواندن کد مکان از بخش QR / کد NV انجام می‌شود؛ این صفحه فقط مکان‌های ذخیره‌شده و اخیر را نشان می‌دهد.",
                     color = NvColors.TextSecondaryDark,
                     style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(vertical = NvSpacing.Sm)
+                    modifier = Modifier.padding(bottom = NvSpacing.Sm)
                 )
                 if (saved.isEmpty()) {
                     Text("هنوز مکان ذخیره‌شده‌ای ندارید", color = NvColors.TextSecondaryDark)
@@ -452,80 +440,5 @@ private fun RahnamaSavedDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("بستن", color = NvColors.RouteBlue) } }
-    )
-}
-
-
-@Composable
-private fun RahnamaCodePickerDialog(
-    state: NvUiState,
-    viewModel: NvViewModel,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    var selected by remember { mutableStateOf(state.currentLocation ?: state.destination?.coordinate ?: state.origin?.coordinate) }
-    var title by remember { mutableStateOf("مکان من") }
-    var code by remember { mutableStateOf("") }
-    val normalizedCode = PersonalCodeRules.normalize(code)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = NvColors.Navy900,
-        title = { Text("تعریف کد مکان", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black) },
-        text = {
-            Column(
-                Modifier.fillMaxWidth().heightIn(max = 650.dp),
-                verticalArrangement = Arrangement.spacedBy(NvSpacing.Sm)
-            ) {
-                Text("نقشه را زیر نشانگر حرکت دهید؛ مختصات مرکز نشانگر ذخیره می‌شود.", color = NvColors.TextSecondaryDark)
-                Box(Modifier.fillMaxWidth().height(330.dp)) {
-                    NvCodePickerMap(
-                        context = context,
-                        initial = selected,
-                        satellite = state.satelliteMode,
-                        onPointSelected = { selected = it },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                selected?.let { point ->
-                    Text(
-                        "مختصات: %.6f, %.6f".format(point.latitude, point.longitude),
-                        color = NvColors.RouteBlue,
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it.take(60) },
-                    label = { Text("نام مکان") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { input -> code = PlaceCodes.normalizeDigits(input).filter(Char::isDigit).take(9) },
-                    label = { Text("کد شخصی") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("عدد ۱ تا ۹۹۹٬۹۹۹٬۹۹۹؛ روی همین گوشی ذخیره می‌شود") }
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val point = selected ?: return@Button
-                    val cleanCode = normalizedCode ?: return@Button
-                    viewModel.savePersonalCode(
-                        Place(code = 0L, name = title.trim().ifBlank { "مکان من" }, coordinate = point, category = "personal:map-pin"),
-                        cleanCode
-                    )
-                    onDismiss()
-                },
-                enabled = selected != null && normalizedCode != null
-            ) { Text("ذخیره کد این نقطه") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } }
     )
 }

@@ -12,8 +12,8 @@ class Android16CompletionTest(unittest.TestCase):
         text = read('app/build.gradle.kts')
         self.assertRegex(text, r'compileSdk\s*=\s*36')
         self.assertRegex(text, r'targetSdk\s*=\s*36')
-        self.assertRegex(text, r'versionCode\s*=\s*21')
-        self.assertIn('versionName = "0.18.2"', text)
+        self.assertRegex(text, r'versionCode\s*=\s*23')
+        self.assertIn('versionName = "0.18.4"', text)
         self.assertIn('COMMUNITY_REPORT_API_URL', text)
         self.assertIn('NV_CODE_REGISTRY_URL', text)
 
@@ -34,8 +34,8 @@ class Android16CompletionTest(unittest.TestCase):
         self.assertIn('platforms;android-36', text)
         self.assertIn('build-tools;36.0.0', text)
         self.assertRegex(text, r'api-level:\s*36')
-        self.assertIn("versionCode='21'", text)
-        self.assertIn("versionName='0.18.2'", text)
+        self.assertIn("versionCode='23'", text)
+        self.assertIn("versionName='0.18.4'", text)
         self.assertNotRegex(text, r'android-35|build-tools;35|api-level:\s*35')
 
     def test_navigation_gates_and_vehicle_constraints_are_integrated(self):
@@ -67,7 +67,7 @@ class Android16CompletionTest(unittest.TestCase):
         self.assertNotIn('OnlinePlacesService()', emergency)
         self.assertIn('discoverNearby', v14)
         self.assertIn('discoverEmergency', emergency)
-        self.assertIn('NearbyCategory.EMERGENCY', read('app/src/main/java/ir/nv/navigation/ui/RahnamaHome.kt'))
+        self.assertIn('onEmergency = onEmergency', read('app/src/main/java/ir/nv/navigation/ui/RahnamaHome.kt'))
         self.assertIn('NearbyCategory.HOSPITAL', read('app/src/main/java/ir/nv/navigation/ui/RahnamaHome.kt'))
         self.assertIn('NearbyCategory.PHARMACY', read('app/src/main/java/ir/nv/navigation/ui/RahnamaHome.kt'))
         self.assertIn('NearbyCategory.PARKING', read('app/src/main/java/ir/nv/navigation/ui/RahnamaHome.kt'))
@@ -116,12 +116,15 @@ class Android16CompletionTest(unittest.TestCase):
         self.assertIn('isLocationEnabled()', vm)
         self.assertNotIn('موقعیت فعلی پیدا نشد؛ GPS را روشن کنید', vm)
         self.assertIn('ensureHomeLocationTracking()', vm)
-        self.assertIn('text = "SOS"', v16)
+        self.assertIn('RahnamaHomeScreen(', read('app/src/main/java/ir/nv/navigation/ui/NvReferenceV14.kt'))
+        self.assertIn('RahnamaQuickAction(Icons.Rounded.Emergency, "SOS"', home)
+        self.assertIn('onEmergency = { emergencyOpen = true }', v16)
         self.assertIn('ProvinceDownloadOverlay(', home)
         self.assertIn('شهرستان‌های هر استان', home)
         self.assertIn('RahnamaSmartRouteAssistant(', v17)
         self.assertNotIn('RahnamaCodePickerOverlay(', v17)
-        self.assertIn('viewModel.routeFromCurrentLocationTo(candidate, selectedVehicle)', assistant)
+        self.assertIn('viewModel.planJourneyFromChat(query, selectedVehicle)', assistant)
+        self.assertIn('مبدأ خودکار: موقعیت فعلی من', assistant)
         self.assertIn('registry.allocateOnline', qr)
         self.assertNotIn('OutlinedTextField', qr)
         self.assertIn('val activeRouteOnly = listOf(route)', driving)
@@ -131,12 +134,30 @@ class Android16CompletionTest(unittest.TestCase):
 
     def test_location_provider_rejects_loose_fixes_and_refines_fast(self):
         location = read('core/location/src/main/java/ir/nv/navigation/location/DeviceLocationProvider.kt')
-        self.assertIn('MAX_CURRENT_LOCATION_ACCURACY_METERS = 18f', location)
-        self.assertIn('MAX_NAVIGATION_ACCURACY_METERS = 35f', location)
+        self.assertIn('MAX_CURRENT_LOCATION_ACCURACY_METERS = 10f', location)
+        self.assertIn('MAX_NAVIGATION_ACCURACY_METERS = 12f', location)
+        self.assertIn('if (!hasFinePermission()) return null', location)
         self.assertIn('if (accuracy > navigationAccuracyLimit) return', location)
         self.assertIn('NAVIGATION_UPDATE_MS = 500L', location)
         self.assertIn('return accuracyPenalty + ageSeconds * 0.5', location)
         self.assertIn('fun updates(): Flow<NavigationFix>', location)
+
+    def test_search_is_proximity_aware_and_remote_variants_are_parallel(self):
+        engine = read('app/src/main/java/ir/nv/navigation/search/HybridSearchEngine.kt')
+        online = read('app/src/main/java/ir/nv/navigation/online/OnlineNavigationService.kt')
+        self.assertIn('reference: Coordinate? = null', engine)
+        self.assertIn('awaitAll()', engine)
+        self.assertIn('PROXIMITY_WEIGHT', engine)
+        self.assertIn('MAX_ONLINE_VARIANTS = 2', engine)
+        self.assertIn('searchClient', online)
+        self.assertIn('coroutineScope', online)
+
+    def test_home_menu_matches_reference_access_model(self):
+        home = read('app/src/main/java/ir/nv/navigation/ui/RahnamaHome.kt')
+        for label in ['SOS', 'بیمارستان', 'داروخانه', 'پلیس', 'آتش‌نشانی', 'پارک', 'رستوران', 'سوخت', 'پارکینگ', 'هوشمند']:
+            self.assertIn(f'"{label}"', home)
+        self.assertIn('همه اطراف من', home)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -74,16 +74,20 @@ class MainActivity : ComponentActivity() {
             val locationPermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { permissions ->
-                val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                    permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-                if (granted) navigationViewModel.useCurrentLocationAsOrigin()
+                // Never present Android's Approximate Location as an exact point.
+                // The ViewModel surfaces the precise-location requirement if FINE
+                // was not granted.
+                navigationViewModel.useCurrentLocationAsOrigin()
             }
 
             LaunchedEffect(Unit) {
-                val hasLocationPermission =
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                if (hasLocationPermission) {
+                val hasFineLocationPermission =
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                val hasAnyLocationPermission = hasFineLocationPermission ||
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                if (hasFineLocationPermission || hasAnyLocationPermission) {
+                    // The ViewModel intentionally rejects coarse fixes instead of
+                    // plotting a misleading marker.
                     navigationViewModel.useCurrentLocationAsOrigin()
                 } else {
                     locationPermissionLauncher.launch(

@@ -440,8 +440,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startNavigation() {
         val route = mutableState.value.route ?: return
-        if (!locationProvider.hasPermission()) {
-            mutableState.update { it.copy(message = "برای راهنمای زنده، دسترسی موقعیت مکانی را فعال کنید") }
+        if (!locationProvider.hasFinePermission()) {
+            mutableState.update { it.copy(message = locationFailureMessage()) }
             return
         }
         navigationJob?.cancel()
@@ -527,24 +527,49 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun ensureHomeLocationTracking() {
-        if (!locationProvider.hasPermission() || homeLocationJob?.isActive == true) return
+        if (!locationProvider.hasFinePermission() || homeLocationJob?.isActive == true) return
         homeLocationJob = viewModelScope.launch {
             runCatching {
                 locationProvider.updates().collect { fix ->
                     mutableState.update { state ->
+                        val accuracy = fix.accuracyMeters
+                        // On the home map do not let a later 20-25 m network/GNSS fix
+                        // pull the marker into the next alley. Live navigation can use
+                        // a wider gate because RouteLocalMapMatcher snaps to the road.
+                        if (!state.navigationActive) {
+                            if (!accuracy.isFinite() || accuracy > HOME_LOCATION_ACCURACY_METERS) {
+                                return@update state.copy(
+                                    locating = true,
+                                    message = if (state.currentLocation == null) locationFailureMessage() else state.message
+                                )
+                            }
+                            val previousAccuracy = state.locationAccuracyMeters
+                            if (previousAccuracy != null &&
+                                previousAccuracy <= HOME_LOCATION_ACCURACY_METERS &&
+                                accuracy > previousAccuracy + HOME_ACCURACY_DEGRADATION_METERS
+                            ) {
+                                return@update state
+                            }
+                        }
+
                         val movingOrigin = state.origin?.category == DEVICE_LOCATION_CATEGORY
                         val updatedOrigin = if (movingOrigin) {
                             state.origin?.copy(coordinate = fix.coordinate)
                         } else state.origin
                         state.copy(
                             currentLocation = fix.coordinate,
-                            locationAccuracyMeters = fix.accuracyMeters.takeIf { it.isFinite() },
+                            locationAccuracyMeters = accuracy.takeIf { it.isFinite() },
                             origin = updatedOrigin,
                             locating = false,
                             message = if (state.message?.startsWith("Location روشن است") == true ||
-                                state.message?.contains("GPS") == true) null else state.message
+                                state.message?.contains("GPS") == true ||
+                                state.message?.contains("موقعیت تقریبی") == true) null else state.message
                         )
                     }
+                }
+            }.onFailure {
+                mutableState.update { state ->
+                    state.copy(locating = false, message = locationFailureMessage())
                 }
             }
         }
@@ -554,10 +579,10 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
      * Chat entry point: current device position is always the implicit origin.
      * The user only describes where/how they want to travel; no origin/destination form is required.
      */
-    fun planJourneyFromChat(rawQuery: String) {
+    fun planJourneyFromChat(rawQuery: String, preferredVehicle: VehicleProfile? = null) {
         val query = rawQuery.trim()
         if (query.isBlank()) return
-        if (!locationProvider.hasPermission()) {
+        if (!locationProvider.hasFinePermission()) {
             mutableState.update { it.copy(smartJourneyStatus = "برای شروع مسیر از موقعیت فعلی، مجوز Location را بدهید", message = locationFailureMessage()) }
             return
         }
@@ -565,7 +590,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             mutableState.update { it.copy(smartJourneyPlanning = true, smartJourneyStatus = "در حال تشخیص مقصد و دریافت موقعیت فعلی…", message = null) }
             val coordinate = withTimeoutOrNull(15_000L) { locationProvider.currentLocation() }
-                ?: mutableState.value.currentLocation
+                ?: preciseCurrentLocationFallback()
             if (coordinate == null) {
                 val failure = locationFailureMessage()
                 mutableState.update { it.copy(smartJourneyPlanning = false, smartJourneyStatus = failure, message = failure) }
@@ -579,7 +604,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     query = destinationText,
                     onlineAvailable = snapshot.onlineAvailable,
                     preferOffline = snapshot.preferOffline,
-                    limit = 8
+                    limit = 8,
+                    reference = coordinate
                 )
             }
             val destination = candidates.firstOrNull()
@@ -600,10 +626,11 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 coordinate = coordinate,
                 category = DEVICE_LOCATION_SNAPSHOT_CATEGORY
             )
-            val requestedVehicle = when {
+            val requestedVehicle = preferredVehicle ?: when {
                 query.contains("پیاده") -> VehicleProfile.WALKING
                 query.contains("دوچرخه") -> VehicleProfile.BICYCLE
                 query.contains("موتور") -> VehicleProfile.MOTORCYCLE
+                query.contains("مترو") || query.contains("اتوبوس") -> VehicleProfile.TRANSIT
                 else -> VehicleProfile.CAR
             }
             recentPlaces.record(destination)
@@ -642,8 +669,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun routeFromCurrentLocationTo(destination: Place, vehicleProfile: VehicleProfile = mutableState.value.vehicleProfile) {
-        if (!locationProvider.hasPermission()) {
-            mutableState.update { it.copy(message = "برای مسیریابی از موقعیت فعلی، دسترسی موقعیت مکانی را فعال کنید") }
+        if (!locationProvider.hasFinePermission()) {
+            mutableState.update { it.copy(message = locationFailureMessage()) }
             return
         }
         ensureHomeLocationTracking()
@@ -683,15 +710,22 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun useCurrentLocationAsOrigin() {
-        if (!locationProvider.hasPermission()) {
-            mutableState.update { it.copy(message = locationFailureMessage()) }
+        if (!locationProvider.hasFinePermission()) {
+            mutableState.update {
+                it.copy(
+                    locating = false,
+                    currentLocation = null,
+                    locationAccuracyMeters = null,
+                    message = locationFailureMessage()
+                )
+            }
             return
         }
         ensureHomeLocationTracking()
         viewModelScope.launch {
             mutableState.update { it.copy(locating = true, message = null) }
-            val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
-                ?: mutableState.value.currentLocation
+            val coordinate = withTimeoutOrNull(15_000L) { locationProvider.currentLocation() }
+                ?: preciseCurrentLocationFallback()
             if (coordinate == null) {
                 mutableState.update { it.copy(locating = false, message = locationFailureMessage()) }
             } else {
@@ -746,8 +780,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val currentLocationOrigin = originSelection.category == DEVICE_LOCATION_CATEGORY
-        if (currentLocationOrigin && !locationProvider.hasPermission()) {
-            mutableState.update { it.copy(message = "برای تعیین مبدأ، دسترسی موقعیت مکانی را فعال کنید") }
+        if (currentLocationOrigin && !locationProvider.hasFinePermission()) {
+            mutableState.update { it.copy(message = locationFailureMessage()) }
             return
         }
         viewModelScope.launch {
@@ -1045,6 +1079,14 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun preciseCurrentLocationFallback(): Coordinate? {
+        val snapshot = mutableState.value
+        val accuracy = snapshot.locationAccuracyMeters ?: return null
+        return snapshot.currentLocation?.takeIf {
+            accuracy.isFinite() && accuracy <= HOME_LOCATION_ACCURACY_METERS
+        }
+    }
+
     private fun search(query: String, origin: Boolean) {
         searchJob?.cancel()
         if (query.trim().isEmpty()) {
@@ -1062,7 +1104,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 hybridSearchEngine.searchDetailed(
                     query = query,
                     onlineAvailable = false,
-                    preferOffline = true
+                    preferOffline = true,
+                    reference = mutableState.value.currentLocation
                 ).items
             }
             mutableState.update {
@@ -1080,7 +1123,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 snapshot.onlineAvailable && !snapshot.preferOffline
             if (!needsOnline) return@launch
 
-            delay(220)
+            delay(80)
             mutableState.update {
                 if (origin) it.copy(originSearching = true) else it.copy(destinationSearching = true)
             }
@@ -1088,7 +1131,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 hybridSearchEngine.searchDetailed(
                     query = query,
                     onlineAvailable = true,
-                    preferOffline = false
+                    preferOffline = false,
+                    reference = mutableState.value.currentLocation
                 )
             }
             val activeQuery = if (origin) mutableState.value.originQuery else mutableState.value.destinationQuery
@@ -1400,5 +1444,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         const val INSIGHTS_REFRESH_DISTANCE_METERS = 2_500.0
         const val CONTINUOUS_REROUTE_INTERVAL_MS = 30_000L
         const val MIN_MAP_MATCH_CONFIDENCE = 0.35
+        const val HOME_LOCATION_ACCURACY_METERS = 12f
+        const val HOME_ACCURACY_DEGRADATION_METERS = 4f
     }
 }

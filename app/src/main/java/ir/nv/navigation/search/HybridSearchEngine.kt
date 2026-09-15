@@ -1,9 +1,19 @@
 package ir.nv.navigation.search
 
 import ir.nv.navigation.core.Place
+import ir.nv.navigation.core.Coordinate
 import ir.nv.navigation.data.NvCodeAllocationService
 import ir.nv.navigation.data.PersianText
 import ir.nv.navigation.data.PlaceCodes
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 fun interface PlaceSearchProvider {
     suspend fun search(query: String): List<Place>
@@ -24,16 +34,18 @@ class HybridSearchEngine(
         query: String,
         onlineAvailable: Boolean,
         preferOffline: Boolean,
-        limit: Int = 30
-    ): List<Place> = searchDetailed(query, onlineAvailable, preferOffline, limit).items
+        limit: Int = 30,
+        reference: Coordinate? = null
+    ): List<Place> = searchDetailed(query, onlineAvailable, preferOffline, limit, reference).items
 
     suspend fun searchDetailed(
         query: String,
         onlineAvailable: Boolean,
         preferOffline: Boolean,
-        limit: Int = 30
+        limit: Int = 30,
+        reference: Coordinate? = null
     ): HybridSearchResult {
-        val clean = normalize(query)
+        val clean = normalize(stripSearchIntent(query))
         if (clean.isEmpty()) return HybridSearchResult(emptyList(), false, false)
 
         val variants = expandQuery(clean)
@@ -54,35 +66,43 @@ class HybridSearchEngine(
             val registryPlace = registryResult.getOrNull()
             if (registryPlace != null || mayResolveRegistry) {
                 return HybridSearchResult(
-                    items = if (registryPlace != null) listOf(registryPlace) else rankAndDeduplicate(local, clean, limit),
+                    items = if (registryPlace != null) listOf(registryPlace) else rankAndDeduplicate(local, clean, limit, reference),
                     onlineAttempted = mayResolveRegistry,
                     onlineFailed = registryResult.isFailure
                 )
             }
-            return HybridSearchResult(rankAndDeduplicate(local, clean, limit), false, false)
+            return HybridSearchResult(rankAndDeduplicate(local, clean, limit, reference), false, false)
         }
 
         if (!onlineAvailable || preferOffline) {
-            return HybridSearchResult(rankAndDeduplicate(local, clean, limit), false, false)
+            return HybridSearchResult(rankAndDeduplicate(local, clean, limit, reference), false, false)
         }
 
-        var onlineFailed = false
-        val remote = buildList {
-            variants.take(MAX_ONLINE_VARIANTS).forEach { variant ->
-                val result = runCatching { online.search(variant) }
-                if (result.isFailure) onlineFailed = true
-                addAll(result.getOrDefault(emptyList()))
+        val onlineResults = withTimeoutOrNull(ONLINE_SEARCH_BUDGET_MS) {
+            coroutineScope {
+                variants.take(MAX_ONLINE_VARIANTS)
+                    .map { variant -> async { runCatching { online.search(variant) } } }
+                    .awaitAll()
             }
         }
+        val timedOut = onlineResults == null
+        val completed = onlineResults.orEmpty()
+        val remote = completed.flatMap { it.getOrDefault(emptyList()) }
+        val onlineFailed = timedOut || completed.any { it.isFailure }
 
         return HybridSearchResult(
-            items = rankAndDeduplicate(local + remote, clean, limit),
+            items = rankAndDeduplicate(local + remote, clean, limit, reference),
             onlineAttempted = true,
             onlineFailed = onlineFailed && remote.isEmpty()
         )
     }
 
-    private fun rankAndDeduplicate(values: List<Place>, query: String, limit: Int): List<Place> = values
+    private fun rankAndDeduplicate(
+        values: List<Place>,
+        query: String,
+        limit: Int,
+        reference: Coordinate?
+    ): List<Place> = values
         .distinctBy {
             Triple(
                 normalize(it.name),
@@ -90,10 +110,21 @@ class HybridSearchEngine(
                 (it.coordinate.longitude * 10_000).toInt()
             )
         }
-        .sortedWith(compareBy<Place> { smartScore(it, query) })
+        .sortedWith(compareBy<Place> { smartScore(it, query, reference) })
         .take(limit)
 
-    private fun smartScore(place: Place, query: String): Double {
+    private fun smartScore(place: Place, query: String, reference: Coordinate?): Double {
+        val textScore = textScore(place, query)
+        val proximityPenalty = reference?.let {
+            // Text relevance remains dominant. Distance only resolves otherwise
+            // similar candidates so "بیمارستان" prefers a useful nearby result.
+            (distanceMeters(it, place.coordinate) / 50_000.0).coerceIn(0.0, 1.0) * PROXIMITY_WEIGHT
+        } ?: 0.0
+        return textScore + proximityPenalty
+    }
+
+    private fun textScore(place: Place, query: String): Double {
+
         val name = normalize(place.name)
         val category = normalize(place.category.orEmpty())
         if (name == query) return 0.0
@@ -155,6 +186,27 @@ class HybridSearchEngine(
         return previous[right.length].toDouble() / maxOf(left.length, right.length).coerceAtLeast(1)
     }
 
+    private fun stripSearchIntent(value: String): String {
+        var result = value
+        val noise = listOf(
+            "نزدیک ترین", "نزدیک‌ترین", "نزدیکترین", "نزدیک من", "اطراف من", "همین اطراف",
+            "بهترین", "الان باز", "باز الان", "منو ببر", "مرا ببر", "مسیر بده", "مسیریابی کن",
+            "از اینجا", "از موقعیت من", "لطفا", "لطفاً"
+        )
+        noise.forEach { result = result.replace(it, " ", ignoreCase = true) }
+        return result.replace(Regex("\\s+"), " ").trim().ifBlank { value }
+    }
+
+    private fun distanceMeters(a: Coordinate, b: Coordinate): Double {
+        val lat1 = Math.toRadians(a.latitude)
+        val lat2 = Math.toRadians(b.latitude)
+        val dLat = lat2 - lat1
+        val dLon = Math.toRadians(b.longitude - a.longitude)
+        val h = sin(dLat / 2) * sin(dLat / 2) +
+            cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2)
+        return 2 * EARTH_RADIUS_METERS * asin(sqrt(min(1.0, h)))
+    }
+
     private fun normalize(value: String): String = PersianText.normalize(value)
         .replace('ي', 'ی')
         .replace('ك', 'ک')
@@ -165,8 +217,11 @@ class HybridSearchEngine(
 
     private companion object {
         const val MAX_QUERY_VARIANTS = 8
-        const val MAX_ONLINE_VARIANTS = 4
+        const val MAX_ONLINE_VARIANTS = 2
         const val MAX_EDIT_TEXT = 64
+        const val ONLINE_SEARCH_BUDGET_MS = 3_000L
+        const val EARTH_RADIUS_METERS = 6_371_000.0
+        const val PROXIMITY_WEIGHT = 0.18
 
         val synonymGroups = listOf(
             setOf("ترمینال", "پایانه", "مسافربری", "پایانه مسافربری"),

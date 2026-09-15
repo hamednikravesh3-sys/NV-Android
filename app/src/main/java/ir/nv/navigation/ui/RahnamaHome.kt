@@ -43,7 +43,9 @@ fun RahnamaHomeScreen(
     onThemeModeChange: (AppThemeMode) -> Unit,
     viewModel: NvViewModel,
     onNearby: (NearbyCategory?) -> Unit,
-    onPin: () -> Unit
+    onPin: () -> Unit,
+    onSmart: () -> Unit,
+    onEmergency: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -60,10 +62,8 @@ fun RahnamaHomeScreen(
     val locationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (granted) {
-            viewModel.useCurrentLocationAsOrigin()
+        viewModel.useCurrentLocationAsOrigin()
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
             viewModel.recenterNavigation()
         }
     }
@@ -76,7 +76,7 @@ fun RahnamaHomeScreen(
     }
 
     fun locateMe() {
-        if (hasLocationPermission()) {
+        if (hasFineLocationPermission()) {
             viewModel.useCurrentLocationAsOrigin()
             viewModel.recenterNavigation()
         } else {
@@ -154,7 +154,8 @@ fun RahnamaHomeScreen(
         if (state.routeAlternatives.isEmpty() && !searchExpanded) {
             RahnamaQuickPanel(
                 onNearby = onNearby,
-                onPin = onPin,
+                onSmart = onSmart,
+                onEmergency = onEmergency,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -372,7 +373,7 @@ private fun RahnamaSearchBar(
                         FilterChip(
                             selected = selectedRadiusKm == null,
                             onClick = { selectedRadiusKm = null },
-                            label = { Text("همه") },
+                            label = { Text("همه اطراف من") },
                             modifier = Modifier.weight(1f)
                         )
                         listOf(5, 10).forEach { radiusKm ->
@@ -460,7 +461,8 @@ private fun RahnamaSearchBar(
 @Composable
 private fun RahnamaQuickPanel(
     onNearby: (NearbyCategory?) -> Unit,
-    onPin: () -> Unit,
+    onSmart: () -> Unit,
+    onEmergency: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -470,17 +472,49 @@ private fun RahnamaQuickPanel(
         border = BorderStroke(1.dp, NvColors.RouteBlue.copy(alpha = .35f)),
         shadowElevation = NvElevation.Overlay
     ) {
-        Column(Modifier.padding(NvSpacing.Md), verticalArrangement = Arrangement.spacedBy(NvSpacing.Md)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("دسترسی سریع", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black)
-                TextButton(onClick = { onNearby(null) }) { Text("همه اطراف من", color = NvColors.RouteBlue) }
+        Column(
+            Modifier.padding(horizontal = NvSpacing.Md, vertical = NvSpacing.Sm),
+            verticalArrangement = Arrangement.spacedBy(NvSpacing.Sm)
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("دسترسی سریع", color = NvColors.TextPrimaryDark, fontWeight = FontWeight.Black)
+                    Text("مکان‌های مهم اطراف شما", color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onSmart) {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = NvColors.RouteBlue, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("هوشمند", color = NvColors.RouteBlue)
+                    }
+                    TextButton(onClick = { onNearby(null) }) {
+                        Text("همه اطراف من", color = NvColors.RouteBlue)
+                    }
+                }
             }
+
+            // The 12-category menu mirrors the supplied Rahyar Flutter reference, but
+            // every tile is wired to the real Nearby engine instead of demo data.
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                RahnamaQuickAction(Icons.Rounded.Emergency, "اورژانس", NvColors.Emergency) { onNearby(NearbyCategory.EMERGENCY) }
+                RahnamaQuickAction(Icons.Rounded.Emergency, "SOS", NvColors.Emergency, onEmergency)
                 RahnamaQuickAction(Icons.Rounded.LocalHospital, "بیمارستان", NvColors.Info) { onNearby(NearbyCategory.HOSPITAL) }
                 RahnamaQuickAction(Icons.Rounded.LocalPharmacy, "داروخانه", NvColors.Success) { onNearby(NearbyCategory.PHARMACY) }
+                RahnamaQuickAction(Icons.Rounded.LocalPolice, "پلیس", NvColors.RouteBlue) { onNearby(NearbyCategory.POLICE) }
+                RahnamaQuickAction(Icons.Rounded.LocalFireDepartment, "آتش‌نشانی", NvColors.Emergency) { onNearby(NearbyCategory.FIRE) }
+                RahnamaQuickAction(Icons.Rounded.HealthAndSafety, "امداد", NvColors.Info) { onNearby(NearbyCategory.RESCUE) }
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                RahnamaQuickAction(Icons.Rounded.Park, "پارک", NvColors.Success) { onNearby(NearbyCategory.PARKS) }
+                RahnamaQuickAction(Icons.Rounded.Attractions, "گردشگری", NvColors.RouteBlue) { onNearby(NearbyCategory.ATTRACTIONS) }
+                RahnamaQuickAction(Icons.Rounded.Restaurant, "رستوران", NvColors.Warning) { onNearby(NearbyCategory.RESTAURANTS) }
+                RahnamaQuickAction(Icons.Rounded.Hotel, "هتل", NvColors.Info) { onNearby(NearbyCategory.HOTEL) }
+                RahnamaQuickAction(Icons.Rounded.LocalGasStation, "سوخت", NvColors.Emergency) { onNearby(NearbyCategory.FUEL) }
                 RahnamaQuickAction(Icons.Rounded.LocalParking, "پارکینگ", NvColors.RouteBlue) { onNearby(NearbyCategory.PARKING) }
-                RahnamaQuickAction(Icons.Rounded.Bookmark, "ذخیره", NvColors.Warning, onPin)
             }
         }
     }
@@ -488,10 +522,10 @@ private fun RahnamaQuickPanel(
 
 @Composable
 private fun RahnamaQuickAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, color: Color, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(58.dp).clickable(onClick = onClick)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(52.dp).clickable(onClick = onClick)) {
         Surface(shape = RoundedCornerShape(NvRadius.Medium), color = color.copy(alpha = .16f), border = BorderStroke(1.dp, color.copy(alpha = .45f))) {
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(26.dp))
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(24.dp))
             }
         }
         Spacer(Modifier.height(NvSpacing.Xs))
