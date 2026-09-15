@@ -1,12 +1,11 @@
 # NV Android
 
-NV is a Persian-first navigation application for Android 10 and newer. This
-repository replaces the earlier incomplete IranNavApp upload with a standard,
-testable Android project.
+Rahnama (NV) is a Persian-first navigation application targeting Android 16 / API 36.
+This repository contains the native Kotlin/Jetpack Compose Android implementation.
 
 ## Current architecture (0.12)
 
-- Android minSdk 29 (Android 10), Kotlin and Jetpack Compose
+- Android 16 targetSdk/compileSdk 36 (minSdk 29), Kotlin and Jetpack Compose
 - online-first MapLibre vector map with real pitch, two-finger rotation and 3D
   OpenMapTiles buildings, instant bundled Iran-city search, Photon plus
   Nominatim street/place fallback, and dual-provider routing
@@ -108,7 +107,7 @@ The following cannot truthfully be marked finished only by compiling the APK:
 - selecting a weather-alert provider and storing its production credential
 - creating the Google Play product and verifying purchases on a backend
 - Play Integrity backed prevention of trial reset after uninstall/factory reset
-- road testing on Android 10–17 devices across representative Iran routes
+- road testing on representative Android 16 devices/routes before public rollout
 
 Local signing alone cannot prevent reinstall abuse. The included signed trial
 record detects edits and clock rollback, while production enforcement must bind

@@ -183,11 +183,26 @@ private class VectorMapHolder(context: Context) {
         darkMode: Boolean,
         satelliteMode: Boolean
     ) {
+        val nextPlaces = codedPlaces.distinctBy { it.code }.take(MAX_CODE_LABELS)
         val routesChanged = routes != renderedRoutes || selectedRouteIndex != renderedSelectedRoute
+        val trafficChanged = trafficSegments != renderedTraffic
+        val placesChanged = nextPlaces != renderedPlaces
+        val locationChanged = currentLocation != this.currentLocation ||
+            navigationActive != this.navigationActive ||
+            bearingDegrees != this.bearingDegrees
+        val cameraChanged = routesChanged ||
+            currentLocation != this.currentLocation ||
+            followLocation != this.followLocation ||
+            navigationActive != this.navigationActive ||
+            navigationZoomLevel != this.navigationZoomLevel ||
+            navigationRecenterToken != this.navigationRecenterToken ||
+            bearingDegrees != this.bearingDegrees
+        val styleChanged = appliedDarkMode != darkMode || appliedSatelliteMode != satelliteMode
+
         renderedRoutes = routes
         renderedSelectedRoute = selectedRouteIndex
         renderedTraffic = trafficSegments
-        renderedPlaces = codedPlaces.distinctBy { it.code }.take(MAX_CODE_LABELS)
+        renderedPlaces = nextPlaces
         this.currentLocation = currentLocation
         this.followLocation = followLocation
         this.navigationActive = navigationActive
@@ -196,15 +211,16 @@ private class VectorMapHolder(context: Context) {
         this.bearingDegrees = bearingDegrees
         this.darkMode = darkMode
         this.satelliteMode = satelliteMode
-        if (appliedDarkMode != darkMode || appliedSatelliteMode != satelliteMode) {
+
+        if (styleChanged) {
             loadStyle()
             return
         }
-        renderRoutes()
-        renderTraffic()
-        renderPlaces()
-        renderLocation()
-        updateCamera(frameRoute = routesChanged)
+        if (routesChanged) renderRoutes()
+        if (trafficChanged) renderTraffic()
+        if (placesChanged) renderPlaces()
+        if (locationChanged) renderLocation()
+        if (cameraChanged) updateCamera(frameRoute = routesChanged)
     }
 
     private fun loadStyle() {
@@ -594,7 +610,7 @@ private class VectorMapHolder(context: Context) {
         const val MAX_ROUTE_LAYERS = 8
         const val MAX_TRAFFIC_LAYERS = 12
         const val MAX_CODE_LABELS = 12
-        const val CAMERA_ANIMATION_MS = 650
+        const val CAMERA_ANIMATION_MS = 420
         val IRAN_CENTER = LatLng(32.4279, 53.6880)
         const val IRAN_OVERVIEW_ZOOM = 5.2
         const val HOME_ZOOM = 16.5

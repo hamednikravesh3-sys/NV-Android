@@ -1,0 +1,34 @@
+name: Finalize Android 16
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify finalized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt')
+          s = p.read_text(encoding='utf-8')
+          assert 'Regex("\\\\s+")' in s, 'Kotlin whitespace regex escape is not finalized'
+          assert 'Regex("^(به|تا|سمت)\\\\s+")' in s, 'Kotlin prefix regex escape is not finalized'
+          print('Finalized Kotlin regex escapes verified.')
+          PY
+          git diff --check
+          python -m unittest discover -s tools -p 'test_*.py'
+          node --test backend/nv-code-registry/worker.test.mjs
+          node --test backend/cloud-sync/worker.test.mjs

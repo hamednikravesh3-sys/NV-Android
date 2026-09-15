@@ -10,19 +10,54 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 class WeatherAlertService(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .callTimeout(12, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 ) {
     fun alertsAhead(route: Route): List<RouteNotice> {
-        val sample = RoutePointSampler.pointAhead(route, WEATHER_DISTANCE_METERS) ?: return emptyList()
+        if (route.distanceMeters <= 0.0) return emptyList()
+        val sampleDistances = buildList {
+            SAMPLE_DISTANCES.filterTo(this) { it < route.distanceMeters }
+            add((route.distanceMeters * 0.72).coerceAtLeast(1_000.0).coerceAtMost(route.distanceMeters))
+        }.distinctBy { (it / 1_000.0).roundToInt() }
+            .sorted()
+            .take(MAX_SAMPLES)
+
+        val notices = sampleDistances.mapNotNull { distance ->
+            val sample = RoutePointSampler.pointAhead(route, distance) ?: return@mapNotNull null
+            val etaSeconds = route.travelSeconds * (sample.distanceAheadMeters / route.distanceMeters).coerceIn(0.0, 1.0)
+            val conditions = fetchForecast(sample.coordinate.latitude, sample.coordinate.longitude, etaSeconds)
+                ?: return@mapNotNull null
+            val warning = warning(conditions)
+            if (warning == null && sample.distanceAheadMeters > NORMAL_CONDITIONS_MAX_DISTANCE) return@mapNotNull null
+            RouteNotice(
+                title = if (warning != null) {
+                    "هشدار هواشناسی حدود ${etaLabel(etaSeconds)} دیگر"
+                } else {
+                    "آب‌وهوا حدود ${etaLabel(etaSeconds)} دیگر"
+                },
+                detail = warning ?: normalConditions(conditions),
+                distanceAheadMeters = sample.distanceAheadMeters,
+                kind = RouteNotice.Kind.WEATHER
+            )
+        }
+
+        return notices
+            .distinctBy { Triple(it.title, it.detail, (it.distanceAheadMeters / 2_000.0).toInt()) }
+            .sortedBy { it.distanceAheadMeters }
+            .take(MAX_NOTICES)
+    }
+
+    private fun fetchForecast(latitude: Double, longitude: Double, etaSeconds: Double): JSONObject? {
         val url = BuildConfig.WEATHER_API_URL.toHttpUrl().newBuilder()
-            .addQueryParameter("latitude", sample.coordinate.latitude.toString())
-            .addQueryParameter("longitude", sample.coordinate.longitude.toString())
-            .addQueryParameter("current", "temperature_2m,weather_code,precipitation,wind_gusts_10m,visibility")
-            .addQueryParameter("forecast_hours", "1")
+            .addQueryParameter("latitude", latitude.toString())
+            .addQueryParameter("longitude", longitude.toString())
+            .addQueryParameter("hourly", "temperature_2m,weather_code,precipitation,wind_gusts_10m,visibility")
+            .addQueryParameter("forecast_hours", "24")
             .addQueryParameter("timezone", "auto")
             .apply {
                 BuildConfig.WEATHER_API_KEY.takeIf { it.isNotBlank() }
@@ -34,19 +69,15 @@ class WeatherAlertService(
             check(response.isSuccessful) { "Weather HTTP ${response.code}" }
             val body = requireNotNull(response.body).string().trim()
             val document = if (body.startsWith("[")) JSONArray(body).optJSONObject(0) else JSONObject(body)
-            val current = document?.optJSONObject("current") ?: return emptyList()
-            val warning = warning(current)
-            val distanceLabel = if (sample.distanceAheadMeters >= 9_950.0) "۱۰ کیلومتر" else
-                "${(sample.distanceAheadMeters / 1_000.0).coerceAtLeast(0.1).let { "%.1f".format(it) }} کیلومتر"
-            return listOf(
-                RouteNotice(
-                    title = if (warning != null) "هشدار هواشناسی در $distanceLabel جلوتر" else
-                        "آب‌وهوا در $distanceLabel جلوتر",
-                    detail = warning ?: normalConditions(current),
-                    distanceAheadMeters = sample.distanceAheadMeters,
-                    kind = RouteNotice.Kind.WEATHER
-                )
-            )
+            val hourly = document?.optJSONObject("hourly") ?: return null
+            val index = (etaSeconds / 3_600.0).roundToInt().coerceIn(0, 23)
+            return JSONObject().apply {
+                put("temperature_2m", hourly.optJSONArray("temperature_2m")?.optDouble(index, Double.NaN))
+                put("weather_code", hourly.optJSONArray("weather_code")?.optInt(index, 0))
+                put("precipitation", hourly.optJSONArray("precipitation")?.optDouble(index, 0.0))
+                put("wind_gusts_10m", hourly.optJSONArray("wind_gusts_10m")?.optDouble(index, 0.0))
+                put("visibility", hourly.optJSONArray("visibility")?.optDouble(index, Double.POSITIVE_INFINITY))
+            }
         }
     }
 
@@ -77,17 +108,32 @@ class WeatherAlertService(
         val gust = current.optDouble("wind_gusts_10m", 0.0)
         val visibility = current.optDouble("visibility", Double.POSITIVE_INFINITY)
         return when {
-            code >= 95 -> "احتمال رعدوبرق؛ سرعت را کاهش دهید"
-            code in 71..77 || code in 85..86 -> "بارش برف در مسیر"
-            visibility < 1_000 -> "دید کمتر از یک کیلومتر"
+            code >= 95 -> "خطر رعدوبرق در مسیر؛ سرعت را کاهش دهید و فاصله طولی را بیشتر کنید"
+            code in 71..77 || code in 85..86 -> "برف در مسیر پیش‌بینی شده؛ احتمال لغزندگی وجود دارد"
+            visibility < 700 -> "دید بسیار کم، کمتر از ۷۰۰ متر؛ با سرعت ایمن حرکت کنید"
+            visibility < 1_500 -> "کاهش دید در مسیر؛ چراغ‌ها و فاصله طولی را کنترل کنید"
+            gust >= 75 -> "تندباد شدید تا ${gust.toInt()} کیلومتر بر ساعت"
             gust >= 60 -> "تندباد تا ${gust.toInt()} کیلومتر بر ساعت"
-            precipitation >= 5 -> "بارش شدید در مسیر"
-            code in 51..67 || code in 80..82 -> "بارندگی در مسیر"
+            precipitation >= 7 -> "بارش سنگین در مسیر پیش‌بینی شده"
+            precipitation >= 3 -> "بارش قابل توجه در مسیر پیش‌بینی شده"
+            code in 51..67 || code in 80..82 -> "بارندگی در مسیر پیش‌بینی شده"
             else -> null
         }
     }
 
+    private fun etaLabel(seconds: Double): String {
+        val minutes = (seconds / 60.0).roundToInt().coerceAtLeast(1)
+        return if (minutes < 60) "$minutes دقیقه" else {
+            val hours = minutes / 60
+            val rest = minutes % 60
+            if (rest == 0) "$hours ساعت" else "$hours ساعت و $rest دقیقه"
+        }
+    }
+
     private companion object {
-        const val WEATHER_DISTANCE_METERS = 10_000.0
+        val SAMPLE_DISTANCES = listOf(5_000.0, 20_000.0, 50_000.0)
+        const val MAX_SAMPLES = 4
+        const val MAX_NOTICES = 4
+        const val NORMAL_CONDITIONS_MAX_DISTANCE = 6_000.0
     }
 }
