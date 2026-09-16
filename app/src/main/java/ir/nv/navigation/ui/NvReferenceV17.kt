@@ -26,8 +26,8 @@ import ir.nv.navigation.ui.theme.NvColors
 
 /**
  * Active product shell. The old separate "define code" entry is intentionally gone:
- * code allocation now lives inside the QR surface. Smart navigation opens a direct,
- * functional destination assistant rather than the disconnected feature showcase.
+ * code allocation now lives inside the QR surface. Smart navigation opens the functional Smart Mobility Hub; each card either uses
+ * a real app capability or clearly reports when an external live provider is unavailable.
  */
 @Composable
 fun NvReferenceV17(
@@ -66,7 +66,7 @@ fun NvReferenceV17(
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         Icons.Rounded.AutoAwesome,
-                        contentDescription = "دستیار هوشمند مسیر",
+                        contentDescription = "مرکز هوشمند راهنما",
                         tint = NvColors.TextPrimaryDark,
                         modifier = Modifier.size(28.dp)
                     )
@@ -76,7 +76,7 @@ fun NvReferenceV17(
     }
 
     if (smartOpen) {
-        RahnamaSmartRouteAssistant(
+        RahnamaSmartMobilityHub(
             state = state,
             viewModel = viewModel,
             onDismiss = { smartOpen = false }

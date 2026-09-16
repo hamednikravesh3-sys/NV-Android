@@ -24,6 +24,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -151,7 +152,18 @@ fun RahnamaSmartRouteAssistant(
                 label = { Text("کجا برویم؟") },
                 placeholder = { Text("مثلاً: منو ببر میدان آزادی") },
                 minLines = 2,
-                maxLines = 4
+                maxLines = 4,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = NvColors.TextPrimaryDark,
+                    unfocusedTextColor = NvColors.TextPrimaryDark,
+                    cursorColor = NvColors.RouteBlue,
+                    focusedBorderColor = NvColors.RouteBlue,
+                    unfocusedBorderColor = NvColors.DividerDark,
+                    focusedLabelColor = NvColors.RouteBlue,
+                    unfocusedLabelColor = NvColors.TextSecondaryDark,
+                    focusedPlaceholderColor = NvColors.TextSecondaryDark,
+                    unfocusedPlaceholderColor = NvColors.TextSecondaryDark
+                )
             )
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Sm)) {

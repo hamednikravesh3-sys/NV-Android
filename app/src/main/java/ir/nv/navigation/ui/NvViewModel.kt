@@ -587,7 +587,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             mutableState.update { it.copy(smartJourneyPlanning = true, smartJourneyStatus = "در حال تشخیص مقصد و دریافت موقعیت فعلی…", message = null) }
             val coordinate = withTimeoutOrNull(15_000L) { locationProvider.currentLocation() }
-                ?: mutableState.value.currentLocation
+                ?: mutableState.value.takeIf { (it.locationAccuracyMeters ?: Float.POSITIVE_INFINITY) <= 10f }?.currentLocation
             if (coordinate == null) {
                 val failure = locationFailureMessage()
                 mutableState.update { it.copy(smartJourneyPlanning = false, smartJourneyStatus = failure, message = failure) }
@@ -595,15 +595,22 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             val intent = SmartJourneyIntentParser.parse(query)
-            val destinationText = intent.destinationQuery
+            val destinationQueries = SmartJourneyIntentParser.destinationQueries(query)
+            val destinationText = destinationQueries.firstOrNull() ?: intent.destinationQuery
             val snapshot = mutableState.value
             val candidates = withContext(Dispatchers.IO) {
-                hybridSearchEngine.search(
-                    query = destinationText,
-                    onlineAvailable = snapshot.onlineAvailable,
-                    preferOffline = snapshot.preferOffline,
-                    limit = 8
-                )
+                val collected = mutableListOf<Place>()
+                for (candidateQuery in destinationQueries.ifEmpty { listOf(destinationText) }) {
+                    val matches = hybridSearchEngine.search(
+                        query = candidateQuery,
+                        onlineAvailable = snapshot.onlineAvailable,
+                        preferOffline = snapshot.preferOffline,
+                        limit = 8
+                    )
+                    collected += matches
+                    if (matches.isNotEmpty()) break
+                }
+                combineSearchResults(collected)
             }
             val destination = candidates.firstOrNull()
             if (destination == null) {
@@ -728,7 +735,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             mutableState.update { it.copy(locating = true, message = null) }
             val coordinate = withTimeoutOrNull(12_000L) { locationProvider.currentLocation() }
-                ?: mutableState.value.currentLocation
+                ?: mutableState.value.takeIf { (it.locationAccuracyMeters ?: Float.POSITIVE_INFINITY) <= 10f }?.currentLocation
             if (coordinate == null) {
                 mutableState.update { it.copy(locating = false, message = locationFailureMessage()) }
             } else {

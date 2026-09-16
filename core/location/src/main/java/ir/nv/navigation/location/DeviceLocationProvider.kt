@@ -247,7 +247,7 @@ class DeviceLocationProvider(private val context: Context) {
         const val ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS = 8f
         const val MAX_CURRENT_LOCATION_ACCURACY_METERS = 10f
         const val GOOD_NAVIGATION_ACCURACY_METERS = 8f
-        const val MAX_NAVIGATION_ACCURACY_METERS = 20f
+        const val MAX_NAVIGATION_ACCURACY_METERS = 10f
         const val ABSOLUTE_MAX_ACCURACY_METERS = 35f
         const val COARSE_TARGET_ACCURACY_METERS = 1_500f
         const val COARSE_EXCELLENT_ACCURACY_METERS = 800f

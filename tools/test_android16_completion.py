@@ -12,8 +12,8 @@ class Android16CompletionTest(unittest.TestCase):
         text = read('app/build.gradle.kts')
         self.assertRegex(text, r'compileSdk\s*=\s*36')
         self.assertRegex(text, r'targetSdk\s*=\s*36')
-        self.assertRegex(text, r'versionCode\s*=\s*22')
-        self.assertIn('versionName = "0.18.5"', text)
+        self.assertRegex(text, r'versionCode\s*=\s*23')
+        self.assertIn('versionName = "0.18.6"', text)
         self.assertIn('COMMUNITY_REPORT_API_URL', text)
         self.assertIn('NV_CODE_REGISTRY_URL', text)
 
@@ -132,7 +132,7 @@ class Android16CompletionTest(unittest.TestCase):
     def test_location_provider_rejects_loose_fixes_and_refines_fast(self):
         location = read('core/location/src/main/java/ir/nv/navigation/location/DeviceLocationProvider.kt')
         self.assertIn('MAX_CURRENT_LOCATION_ACCURACY_METERS = 10f', location)
-        self.assertIn('MAX_NAVIGATION_ACCURACY_METERS = 20f', location)
+        self.assertIn('MAX_NAVIGATION_ACCURACY_METERS = 10f', location)
         self.assertIn('if (accuracy > navigationAccuracyLimit) return', location)
         self.assertIn('NAVIGATION_UPDATE_MS = 500L', location)
         self.assertIn('return accuracyPenalty + ageSeconds * 0.5', location)

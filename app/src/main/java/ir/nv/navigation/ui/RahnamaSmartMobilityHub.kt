@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -210,14 +211,10 @@ private fun SmartHubMenu(
     taxiAvailable: Boolean,
     onOpen: (SmartFeatureScreen) -> Unit
 ) {
-    val operationalFeatures = SmartFeatureScreen.entries.filter { feature ->
-        when (feature) {
-            SmartFeatureScreen.STATION_TRANSFER, SmartFeatureScreen.LIVE_METRO -> transitAvailable
-            SmartFeatureScreen.TAXI -> taxiAvailable
-            else -> true
-        }
-    }
-    operationalFeatures.chunked(2).forEach { rowItems ->
+    // Keep the complete professional menu visible. Cards backed by an external
+    // provider remain accessible and their detail screen states availability honestly.
+    // This avoids silently hiding Metro/Taxi capabilities from the product shell.
+    SmartFeatureScreen.entries.chunked(2).forEach { rowItems ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Sm)) {
             rowItems.forEach { feature ->
                 Surface(
@@ -260,7 +257,18 @@ private fun SmartChatScreen(
         modifier = Modifier.fillMaxWidth(),
         label = { Text("سؤال سفر") },
         placeholder = { Text("مثلاً: عجله دارم، از اینجا سریع‌ترین راه تا میدان آزادی را پیدا کن") },
-        minLines = 2
+        minLines = 2,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = NvColors.TextPrimaryDark,
+            unfocusedTextColor = NvColors.TextPrimaryDark,
+            cursorColor = NvColors.RouteBlue,
+            focusedBorderColor = NvColors.RouteBlue,
+            unfocusedBorderColor = NvColors.DividerDark,
+            focusedLabelColor = NvColors.RouteBlue,
+            unfocusedLabelColor = NvColors.TextSecondaryDark,
+            focusedPlaceholderColor = NvColors.TextSecondaryDark,
+            unfocusedPlaceholderColor = NvColors.TextSecondaryDark
+        )
     )
     Button(
         onClick = {
