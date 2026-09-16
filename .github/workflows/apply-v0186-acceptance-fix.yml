@@ -1,0 +1,44 @@
+name: Apply v0.18.6 Acceptance Fix
+
+on:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+    paths:
+      - tools/trigger-v0186-acceptance.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nv-persian-rtl-master-spec
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply acceptance fixes
+        run: |
+          set -euo pipefail
+          python tools/apply_v0186_acceptance_fix.py
+          git diff --check
+      - name: Commit source changes
+        run: |
+          set -euo pipefail
+          rm -f tools/trigger-v0186-acceptance.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "Fix smart hub routing location and input contrast"
+          git push origin HEAD:nv-persian-rtl-master-spec
