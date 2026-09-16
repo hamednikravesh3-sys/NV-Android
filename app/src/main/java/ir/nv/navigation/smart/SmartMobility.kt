@@ -227,16 +227,32 @@ class SmartMobilityEngine(
                 if (hasRoute) "مسیرهای فعلی را برای کمترین زمان مقایسه می‌کنم" else "ابتدا مقصد را انتخاب کنید تا سریع‌ترین گزینه قابل محاسبه باشد",
                 SmartFeatureScreen.RUSH
             )
-            listOf("مترو", "اتوبوس", "brt", "حمل", "چندحالته").any(clean::contains) -> SmartAssistantReply(
-                "سفر چندحالته",
-                transitProvider.availability.messageFa,
-                SmartFeatureScreen.MULTIMODAL
-            )
-            listOf("تاکسی", "اسنپ", "تپسی").any(clean::contains) -> SmartAssistantReply(
-                "هماهنگی تاکسی",
-                taxiProvider.availability.messageFa,
-                SmartFeatureScreen.TAXI
-            )
+            listOf("مترو", "اتوبوس", "brt", "حمل", "چندحالته").any(clean::contains) ->
+                if (transitProvider.availability.available) {
+                    SmartAssistantReply(
+                        "سفر چندحالته",
+                        "داده حمل‌ونقل عمومی متصل است؛ گزینه‌های واقعی سفر را مقایسه می‌کنم",
+                        SmartFeatureScreen.MULTIMODAL
+                    )
+                } else {
+                    SmartAssistantReply(
+                        "حمل‌ونقل عمومی",
+                        "مقصد را از متن تشخیص می‌دهم و مسیرهای قابل اتکا را می‌سازم؛ زمان زنده مترو فقط پس از اتصال منبع رسمی نمایش داده می‌شود"
+                    )
+                }
+            listOf("تاکسی", "اسنپ", "تپسی").any(clean::contains) ->
+                if (taxiProvider.availability.available) {
+                    SmartAssistantReply(
+                        "هماهنگی تاکسی",
+                        "ارائه‌دهنده تاکسی متصل است؛ برآورد و رزرو واقعی را بررسی می‌کنم",
+                        SmartFeatureScreen.TAXI
+                    )
+                } else {
+                    SmartAssistantReply(
+                        "مسیر تاکسی",
+                        "مسیر جاده‌ای واقعی را محاسبه می‌کنم؛ قیمت یا رزرو زنده تا اتصال ارائه‌دهنده نمایش داده نمی‌شود"
+                    )
+                }
             listOf("زمان", "رسیدن", "eta", "کی می‌رسم").any(clean::contains) -> SmartAssistantReply(
                 "برآورد زمان رسیدن",
                 if (hasRoute) "اطمینان ETA را از طول مسیر، ترافیک و وضعیت موقعیت محاسبه می‌کنم" else "برای ETA ابتدا یک مسیر بسازید",

@@ -125,7 +125,7 @@ fun RahnamaSmartMobilityHub(
                         fontWeight = FontWeight.Black
                     )
                     Text(
-                        if (screen == null) "ابزارهای هوشمند سفر، با fallback صریح برای سرویس‌های متصل‌نشده" else "داده زنده فقط وقتی منبع واقعی در دسترس باشد نمایش داده می‌شود",
+                        if (screen == null) "مقصد را طبیعی بنویسید؛ راهنما موقعیت، مسیرها، زمان و گزینه‌های واقعی سفر را بررسی می‌کند" else "فقط داده واقعی نمایش داده می‌شود؛ داده ساختگی یا سرویس نمایشی نشان داده نمی‌شود",
                         color = NvColors.TextSecondaryDark,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -135,7 +135,11 @@ fun RahnamaSmartMobilityHub(
             HorizontalDivider(color = NvColors.DividerDark)
 
             when (val selected = screen) {
-                null -> SmartHubMenu(onOpen = { screen = it })
+                null -> SmartHubMenu(
+                    transitAvailable = engine.transitAvailability().available,
+                    taxiAvailable = engine.taxiAvailability().available,
+                    onOpen = { screen = it }
+                )
                 SmartFeatureScreen.CHAT -> SmartChatScreen(state, engine, viewModel) { target -> screen = target }
                 SmartFeatureScreen.RUSH -> RushModeScreen(state, engine, viewModel)
                 SmartFeatureScreen.MULTIMODAL -> MultimodalScreen(state, engine, travelPreferences)
@@ -201,8 +205,19 @@ fun RahnamaSmartMobilityHub(
 }
 
 @Composable
-private fun SmartHubMenu(onOpen: (SmartFeatureScreen) -> Unit) {
-    SmartFeatureScreen.entries.chunked(2).forEach { rowItems ->
+private fun SmartHubMenu(
+    transitAvailable: Boolean,
+    taxiAvailable: Boolean,
+    onOpen: (SmartFeatureScreen) -> Unit
+) {
+    val operationalFeatures = SmartFeatureScreen.entries.filter { feature ->
+        when (feature) {
+            SmartFeatureScreen.STATION_TRANSFER, SmartFeatureScreen.LIVE_METRO -> transitAvailable
+            SmartFeatureScreen.TAXI -> taxiAvailable
+            else -> true
+        }
+    }
+    operationalFeatures.chunked(2).forEach { rowItems ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(NvSpacing.Sm)) {
             rowItems.forEach { feature ->
                 Surface(
@@ -244,7 +259,7 @@ private fun SmartChatScreen(
         onValueChange = { query = it },
         modifier = Modifier.fillMaxWidth(),
         label = { Text("سؤال سفر") },
-        placeholder = { Text("مثلاً سریع‌ترین مسیر چیست؟") },
+        placeholder = { Text("مثلاً: عجله دارم، از اینجا سریع‌ترین راه تا میدان آزادی را پیدا کن") },
         minLines = 2
     )
     Button(
@@ -257,7 +272,7 @@ private fun SmartChatScreen(
     ) {
         Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
         Spacer(Modifier.size(NvSpacing.Xs))
-        Text(if (state.smartJourneyPlanning) "در حال ساخت مسیر…" else "تشخیص مقصد و ساخت مسیر از موقعیت من")
+        Text(if (state.smartJourneyPlanning) "در حال تحلیل درخواست و ساخت مسیر…" else "تحلیل درخواست و ساخت بهترین مسیر")
     }
     if (state.smartJourneyPlanning) LinearProgressIndicator(Modifier.fillMaxWidth())
     state.smartJourneyStatus?.let { SmartInfoCard("دستیار مسیر", it, NvColors.RouteBlue) }
@@ -859,17 +874,17 @@ private fun featureColor(feature: SmartFeatureScreen) = when (feature) {
 }
 
 private fun featureSubtitle(feature: SmartFeatureScreen): String = when (feature) {
-    SmartFeatureScreen.CHAT -> "درک محلی درخواست و هدایت به ابزار مناسب"
-    SmartFeatureScreen.RUSH -> "انتخاب سریع‌ترین alternative واقعی"
-    SmartFeatureScreen.MULTIMODAL -> "پیاده، حمل‌ونقل عمومی و تاکسی با fallback"
-    SmartFeatureScreen.STATION_TRANSFER -> "آماده اتصال GTFS/GTFS-RT"
-    SmartFeatureScreen.LIVE_METRO -> "نمایش live فقط از feed واقعی"
-    SmartFeatureScreen.TAXI -> "Adapter قیمت/رزرو با حالت unavailable"
-    SmartFeatureScreen.ETA_CONFIDENCE -> "ETA به‌همراه confidence و بازه خطا"
-    SmartFeatureScreen.TIME_COST -> "زمان، فاصله، مصرف و هزینه تنظیم‌پذیر"
-    SmartFeatureScreen.WALKING -> "برآورد و مسیر واقعی با پروفایل Walking"
-    SmartFeatureScreen.PARKING -> "پارک نزدیک مقصد و ادامه مسیر پیاده"
-    SmartFeatureScreen.PREFERENCES -> "وسیله، پروفایل مسیر، آفلاین و حریم خصوصی"
+    SmartFeatureScreen.CHAT -> "مقصد و نوع سفر را از متن فارسی تشخیص می‌دهد"
+    SmartFeatureScreen.RUSH -> "سریع‌ترین مسیر محاسبه‌شده را واقعاً انتخاب می‌کند"
+    SmartFeatureScreen.MULTIMODAL -> "فقط گزینه‌های واقعاً قابل استفاده را مقایسه می‌کند"
+    SmartFeatureScreen.STATION_TRANSFER -> "تعویض ایستگاه با داده زنده متصل"
+    SmartFeatureScreen.LIVE_METRO -> "زمان حرکت و وضعیت ایستگاه از منبع زنده"
+    SmartFeatureScreen.TAXI -> "قیمت و رزرو از ارائه‌دهنده متصل"
+    SmartFeatureScreen.ETA_CONFIDENCE -> "زمان رسیدن همراه با درصد اطمینان و بازه خطا"
+    SmartFeatureScreen.TIME_COST -> "زمان، فاصله، مصرف سوخت و هزینه سفر"
+    SmartFeatureScreen.WALKING -> "مسیر پیاده با پروفایل واقعی مسیریابی"
+    SmartFeatureScreen.PARKING -> "پارک نزدیک مقصد و ادامه مسیر تا مقصد"
+    SmartFeatureScreen.PREFERENCES -> "وسیله، نوع مسیر، آفلاین و حریم خصوصی"
 }
 
 private fun urgencyTitle(value: Urgency): String = when (value) {

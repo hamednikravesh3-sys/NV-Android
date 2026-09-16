@@ -60,6 +60,9 @@ import ir.nv.navigation.routing.RoutePointSampler
 import ir.nv.navigation.routing.SqliteRoutingGraph
 import ir.nv.navigation.search.HybridSearchEngine
 import ir.nv.navigation.search.PlaceSearchProvider
+import ir.nv.navigation.smart.SmartJourneyIntentParser
+import ir.nv.navigation.smart.SmartJourneyMode
+import ir.nv.navigation.smart.SmartJourneyPriority
 import ir.nv.navigation.weather.WeatherAlertService
 import ir.nv.navigation.traffic.LiveTrafficService
 import kotlinx.coroutines.Dispatchers
@@ -591,7 +594,8 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            val destinationText = extractChatDestination(query)
+            val intent = SmartJourneyIntentParser.parse(query)
+            val destinationText = intent.destinationQuery
             val snapshot = mutableState.value
             val candidates = withContext(Dispatchers.IO) {
                 hybridSearchEngine.search(
@@ -619,11 +623,21 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 coordinate = coordinate,
                 category = DEVICE_LOCATION_SNAPSHOT_CATEGORY
             )
-            val requestedVehicle = when {
-                query.contains("پیاده") -> VehicleProfile.WALKING
-                query.contains("دوچرخه") -> VehicleProfile.BICYCLE
-                query.contains("موتور") -> VehicleProfile.MOTORCYCLE
-                else -> VehicleProfile.CAR
+            val requestedVehicle = when (intent.mode) {
+                SmartJourneyMode.WALKING -> VehicleProfile.WALKING
+                SmartJourneyMode.BICYCLE -> VehicleProfile.BICYCLE
+                SmartJourneyMode.MOTORCYCLE -> VehicleProfile.MOTORCYCLE
+                SmartJourneyMode.DRIVING,
+                SmartJourneyMode.TAXI,
+                SmartJourneyMode.TRANSIT,
+                SmartJourneyMode.MIXED,
+                SmartJourneyMode.AUTO -> VehicleProfile.CAR
+            }
+            val fastestRequested = intent.hurry || intent.priority == SmartJourneyPriority.FASTEST
+            val modeNotice = when (intent.mode) {
+                SmartJourneyMode.TAXI -> "درخواست تاکسی تشخیص داده شد؛ مسیر جاده‌ای واقعی محاسبه می‌شود و قیمت/رزرو زنده فقط با ارائه‌دهنده متصل نمایش داده خواهد شد"
+                SmartJourneyMode.TRANSIT, SmartJourneyMode.MIXED -> "درخواست حمل‌ونقل عمومی تشخیص داده شد؛ داده زمان‌بندی زنده فقط در صورت اتصال منبع واقعی نمایش داده می‌شود"
+                else -> null
             }
             recentPlaces.record(destination)
             mutableState.update {
@@ -638,11 +652,15 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     recentPlaces = recentPlaces.all(),
                     vehicleProfile = requestedVehicle,
                     smartJourneyPlanning = false,
-                    smartJourneyStatus = "مقصد ${destination.name} تشخیص داده شد؛ برنامه سفر از موقعیت فعلی در حال ساخته‌شدن است",
+                    smartJourneyStatus = buildString {
+                        append("مقصد ${destination.name} تشخیص داده شد؛ ")
+                        append(if (fastestRequested) "سریع‌ترین مسیر واقعی در حال محاسبه است" else "مسیر از موقعیت فعلی در حال محاسبه است")
+                        modeNotice?.let { append(" • "); append(it) }
+                    },
                     message = null
                 )
             }
-            calculateRoute()
+            calculateRouteInternal(autoSelectFastest = fastestRequested)
         }
     }
 
@@ -752,7 +770,9 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun calculateRoute() {
+    fun calculateRoute() = calculateRouteInternal(autoSelectFastest = false)
+
+    private fun calculateRouteInternal(autoSelectFastest: Boolean) {
         val initialState = mutableState.value
         val originSelection = initialState.origin
         val destination = initialState.destination
@@ -821,15 +841,20 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                 }
             val candidates = plan.candidates
             val results = candidates.map { RouteOriginConnector.attach(origin.coordinate, it.route) }
-            val result = results.firstOrNull()
-            val source = candidates.firstOrNull()?.source ?: RouteSource.NONE
+            val selectedIndex = if (autoSelectFastest && results.isNotEmpty()) {
+                results.indices.minByOrNull { index -> results[index].travelSeconds } ?: 0
+            } else {
+                0
+            }
+            val result = results.getOrNull(selectedIndex)
+            val source = candidates.getOrNull(selectedIndex)?.source ?: RouteSource.NONE
 
             mutableState.update {
                 it.copy(
                     routing = false,
                     route = result,
                     routeAlternatives = results,
-                    selectedRouteIndex = 0,
+                    selectedRouteIndex = selectedIndex,
                     navigationActive = false,
                     maneuverIndex = 0,
                     distanceToNextManeuverMeters = result?.maneuvers?.firstOrNull()?.distanceMeters
@@ -842,7 +867,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                     routeSource = source,
                     routeNotices = emptyList(),
                     routeInsightsLoading = result != null,
-                    traffic = candidates.firstOrNull()?.traffic,
+                    traffic = candidates.getOrNull(selectedIndex)?.traffic,
                     trafficSegments = emptyList(),
                     message = when {
                         result != null && plan.fallbackUsed && source == RouteSource.OFFLINE ->

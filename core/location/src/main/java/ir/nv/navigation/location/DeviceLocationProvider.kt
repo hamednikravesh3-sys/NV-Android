@@ -241,14 +241,14 @@ class DeviceLocationProvider(private val context: Context) {
     private fun normalizeBearing(value: Float): Float = ((value % 360f) + 360f) % 360f
 
     private companion object {
-        const val LOCATION_COLLECTION_WINDOW_MS = 12_000L
-        const val TARGET_ACCURACY_METERS = 8f
-        const val EXCELLENT_ACCURACY_METERS = 5f
-        const val ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS = 12f
-        const val MAX_CURRENT_LOCATION_ACCURACY_METERS = 18f
-        const val GOOD_NAVIGATION_ACCURACY_METERS = 15f
-        const val MAX_NAVIGATION_ACCURACY_METERS = 35f
-        const val ABSOLUTE_MAX_ACCURACY_METERS = 60f
+        const val LOCATION_COLLECTION_WINDOW_MS = 15_000L
+        const val TARGET_ACCURACY_METERS = 5f
+        const val EXCELLENT_ACCURACY_METERS = 3f
+        const val ACCEPTABLE_LAST_KNOWN_ACCURACY_METERS = 8f
+        const val MAX_CURRENT_LOCATION_ACCURACY_METERS = 10f
+        const val GOOD_NAVIGATION_ACCURACY_METERS = 8f
+        const val MAX_NAVIGATION_ACCURACY_METERS = 20f
+        const val ABSOLUTE_MAX_ACCURACY_METERS = 35f
         const val COARSE_TARGET_ACCURACY_METERS = 1_500f
         const val COARSE_EXCELLENT_ACCURACY_METERS = 800f
         const val MAX_COARSE_LOCATION_ACCURACY_METERS = 5_000f
