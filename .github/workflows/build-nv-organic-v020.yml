@@ -1,0 +1,137 @@
+name: Build NV v0.20 Organic Core APK
+
+on:
+  push:
+    branches:
+      - nv-organic-v020-release
+  workflow_dispatch:
+
+jobs:
+  build-organic-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout NV repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build ccache
+
+      - name: Clone stable Organic Maps core
+        run: |
+          git clone --depth 1 --branch 2026.08.27-18-android --filter=blob:limit=128k \
+            https://github.com/organicmaps/organicmaps.git organicmaps
+          cd organicmaps
+          git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
+
+      - name: Apply NV branding and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, base64
+
+          root = Path('organicmaps')
+
+          # Keep the upstream engine/code intact; only use a distinct NV package id.
+          p = root / 'android/build.gradle'
+          s = p.read_text(encoding='utf-8')
+          s = s.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation.om'")
+          if "appId = 'ir.nv.navigation.om'" not in s:
+              raise SystemExit('Failed to patch application id')
+          p.write_text(s, encoding='utf-8')
+
+          # Visible NV product name. Organic Maps attribution remains available in the About/help UI.
+          for rel in [
+              'android/libs/branding/src/main/res/values/donottranslate.xml',
+              'android/libs/branding/src/debug/res/values/donottranslate.xml',
+              'android/libs/branding/src/beta/res/values/donottranslate.xml',
+          ]:
+              f = root / rel
+              if f.exists():
+                  text = f.read_text(encoding='utf-8')
+                  text = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', text)
+                  f.write_text(text, encoding='utf-8')
+
+          # User-provided NV launcher icon, already stored in the NV repository.
+          icon_b64 = Path('platform/reference-v019-icon256.b64').read_text(encoding='utf-8').strip()
+          icon = base64.b64decode(icon_b64)
+          icon_dir = root / 'android/libs/branding/src/main/res/mipmap-nodpi'
+          icon_dir.mkdir(parents=True, exist_ok=True)
+          (icon_dir / 'nv_launcher.webp').write_bytes(icon)
+
+          manifest = root / 'android/app/src/main/AndroidManifest.xml'
+          text = manifest.read_text(encoding='utf-8')
+          text = text.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/nv_launcher"')
+          manifest.write_text(text, encoding='utf-8')
+
+          # Make the About page explicit about the engine provenance for license attribution.
+          attr = root / 'NV_ENGINE_ATTRIBUTION.txt'
+          attr.write_text(
+              'NV v0.20 uses the Organic Maps Project engine and OpenStreetMap data.\n'
+              'Organic Maps Project: https://organicmaps.app\n'
+              'Source: https://github.com/organicmaps/organicmaps\n',
+              encoding='utf-8'
+          )
+          print('NV Organic Core branding applied')
+          PY
+
+          grep -q "appId = 'ir.nv.navigation.om'" organicmaps/android/build.gradle
+          grep -q '>NV<' organicmaps/android/libs/branding/src/debug/res/values/donottranslate.xml
+          test -s organicmaps/android/libs/branding/src/main/res/mipmap-nodpi/nv_launcher.webp
+
+      - name: Configure Android SDK
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > organicmaps/android/local.properties
+          cmake --version
+          ninja --version
+          java -version
+
+      - name: Configure ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: nv-organic-v020-arm64
+          max-size: 2G
+
+      - name: Build Organic Maps based NV APK
+        working-directory: organicmaps/android
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          ./gradlew --no-daemon -Parm64 :app:testWebDebugUnitTest :sdk:testDebug :app:assembleWebDebug
+
+      - name: Validate APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find organicmaps/android/app/build/outputs/apk -type f -name 'OrganicMaps-*.apk' | head -n 1)
+          test -n "$APK"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          AAPT=$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" | tee /tmp/nv-organic-badging.txt
+          grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-organic-badging.txt
+          grep -q "application-label:'NV'" /tmp/nv-organic-badging.txt
+          mkdir -p dist
+          cp "$APK" dist/NV-v0.20.0-organic-core-arm64-debug.apk
+          sha256sum dist/NV-v0.20.0-organic-core-arm64-debug.apk | tee dist/NV-v0.20.0-organic-core-arm64-debug.apk.sha256
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.20.0-organic-core-arm64-debug
+          path: |
+            dist/NV-v0.20.0-organic-core-arm64-debug.apk
+            dist/NV-v0.20.0-organic-core-arm64-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
