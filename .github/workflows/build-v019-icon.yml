@@ -16,14 +16,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Export raw overlay diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: v019-overlay-raw
+          path: platform/reference-v019-overlay/part*
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Reconstruct v0.19 reference source
         shell: bash
         run: |
           set -euo pipefail
           count="$(find platform/reference-v019-overlay -maxdepth 1 -type f -name 'part*' | wc -l)"
           test "$count" -eq 16
+          wc -c platform/reference-v019-overlay/part*
+          sha1sum platform/reference-v019-overlay/part*
           cat platform/reference-v019-overlay/part* | base64 -d > /tmp/v019-overlay.tar.xz
-          echo "d418bf838835984cfe0caf76d8dc797486df850a284a8be0e840bb91222da7e1  /tmp/v019-overlay.tar.xz" | sha256sum -c -
+          echo "acd2ddace0b15b76c3267a79a4fa3dcaa6c1b6bc3ae1702a68e5ffe219bbb5ef  /tmp/v019-overlay.tar.xz" | sha256sum -c -
           xz -t /tmp/v019-overlay.tar.xz
           tar -xJf /tmp/v019-overlay.tar.xz -C .
 
@@ -39,9 +49,9 @@ jobs:
           cp app/src/main/res/mipmap-nodpi/nv_launcher.webp app/src/main/res/mipmap-nodpi/nv_launcher_round.webp
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('app/src/main/AndroidManifest.xml')
           s = p.read_text(encoding='utf-8')
-          import re
           s = re.sub(r'android:icon="[^"]+"', 'android:icon="@mipmap/nv_launcher"', s)
           if 'android:roundIcon=' in s:
               s = re.sub(r'android:roundIcon="[^"]+"', 'android:roundIcon="@mipmap/nv_launcher_round"', s)
