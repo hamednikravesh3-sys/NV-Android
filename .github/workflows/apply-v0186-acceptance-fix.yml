@@ -27,6 +27,9 @@ jobs:
         run: |
           set -euo pipefail
           python tools/apply_v0186_acceptance_fix.py
+          # GitHub App tokens cannot push workflow-file edits. Source changes are
+          # committed here; workflow metadata is synchronized separately.
+          git checkout -- .github/workflows
           git diff --check
       - name: Commit source changes
         run: |
