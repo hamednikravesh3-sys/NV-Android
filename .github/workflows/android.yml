@@ -27,11 +27,18 @@ jobs:
         run: |
           python3 - <<'PY'
           import base64
-          import gzip
+          import hashlib
+          import lzma
           from pathlib import Path
 
-          encoded = Path('.github/online-provinces.patch.gz.b64').read_text()
-          Path('/tmp/online-provinces.patch').write_bytes(gzip.decompress(base64.b64decode(encoded)))
+          encoded = Path('.github/online-provinces.patch.xz.b64').read_text().strip()
+          if len(encoded) != 15376:
+              raise SystemExit(f'Unexpected patch payload length: {len(encoded)}')
+          patch = lzma.decompress(base64.b64decode(encoded))
+          digest = hashlib.sha256(patch).hexdigest()
+          if digest != '5e5f5af32747e80d338950159fdef13e59ece3c6261ca7f901ef047f6f692b42':
+              raise SystemExit(f'Unexpected patch SHA-256: {digest}')
+          Path('/tmp/online-provinces.patch').write_bytes(patch)
           PY
           git apply --check /tmp/online-provinces.patch
           git apply /tmp/online-provinces.patch
