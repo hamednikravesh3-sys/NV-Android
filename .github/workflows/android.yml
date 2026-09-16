@@ -14,6 +14,9 @@ jobs:
   build:
     runs-on: macos-15-intel
     timeout-minutes: 45
+    env:
+      ANDROID_HOME: /Users/runner/Library/Android/sdk
+      ANDROID_SDK_ROOT: /Users/runner/Library/Android/sdk
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -23,12 +26,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: android-actions/setup-android@v3
+      - name: Apply online-first province patch
+        run: |
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import lzma
+          from pathlib import Path
+
+          encoded = Path('.github/online-provinces.patch.xz.b64').read_text().strip()
+          if len(encoded) != 15376:
+              raise SystemExit(f'Unexpected patch payload length: {len(encoded)}')
+          patch = lzma.decompress(base64.b64decode(encoded))
+          digest = hashlib.sha256(patch).hexdigest()
+          if digest != '5e5f5af32747e80d338950159fdef13e59ece3c6261ca7f901ef047f6f692b42':
+              raise SystemExit(f'Unexpected patch SHA-256: {digest}')
+          Path('/tmp/online-provinces.patch').write_bytes(patch)
+          PY
+          git apply --check /tmp/online-provinces.patch
+          git apply /tmp/online-provinces.patch
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
       - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
       - name: Unit tests and debug APK
         env:
           NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
