@@ -1,0 +1,140 @@
+name: Build NV v0.21 Final Reference UI APK
+
+on:
+  push:
+    branches:
+      - nv-organic-v021-final
+  workflow_dispatch:
+
+jobs:
+  build-final:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout NV repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build ccache
+
+      - name: Clone stable Organic Maps core
+        run: |
+          git clone --depth 1 --branch 2026.08.27-18-android --filter=blob:limit=128k https://github.com/organicmaps/organicmaps.git organicmaps
+          cd organicmaps
+          git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
+
+      - name: Integrate NV reference UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p organicmaps/android/app/src/main/java/app/organicmaps
+          cp platform/organic-ui/NvSmartMenuActivity.java organicmaps/android/app/src/main/java/app/organicmaps/NvSmartMenuActivity.java
+          sed -i 's/\.setMinHeight(/.setMinimumHeight(/g' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartMenuActivity.java
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, base64
+          root = Path('organicmaps')
+
+          p = root / 'android/build.gradle'
+          s = p.read_text(encoding='utf-8')
+          s = s.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation.om'")
+          if "appId = 'ir.nv.navigation.om'" not in s:
+              raise SystemExit('Failed to patch application id')
+          p.write_text(s, encoding='utf-8')
+
+          app_gradle = root / 'android/app/build.gradle'
+          text = app_gradle.read_text(encoding='utf-8')
+          old = r"~/name='app\.organicmaps(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
+          new = r"~/name='ir\.nv\.navigation\.om(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
+          if old not in text:
+              raise SystemExit('Organic Maps permission whitelist pattern not found')
+          app_gradle.write_text(text.replace(old, new), encoding='utf-8')
+
+          for rel in [
+              'android/libs/branding/src/main/res/values/donottranslate.xml',
+              'android/libs/branding/src/debug/res/values/donottranslate.xml',
+              'android/libs/branding/src/beta/res/values/donottranslate.xml']:
+              f = root / rel
+              if f.exists():
+                  v = f.read_text(encoding='utf-8')
+                  v = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', v)
+                  f.write_text(v, encoding='utf-8')
+
+          icon_b64 = Path('platform/reference-v019-icon256.b64').read_text(encoding='utf-8').strip()
+          icon = base64.b64decode(icon_b64)
+          icon_dir = root / 'android/libs/branding/src/main/res/mipmap-nodpi'
+          icon_dir.mkdir(parents=True, exist_ok=True)
+          (icon_dir / 'nv_launcher.webp').write_bytes(icon)
+
+          manifest = root / 'android/app/src/main/AndroidManifest.xml'
+          text = manifest.read_text(encoding='utf-8')
+          text = text.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/nv_launcher"')
+          launcher_filter = '      <intent-filter>\n        <action android:name="android.intent.action.MAIN"/>\n        <category android:name="android.intent.category.LAUNCHER"/>\n      </intent-filter>\n'
+          if launcher_filter not in text:
+              raise SystemExit('Launcher alias filter not found')
+          text = text.replace(launcher_filter, '', 1)
+          nv_activity = '    <activity\n        android:name="app.organicmaps.NvSmartMenuActivity"\n        android:label="NV"\n        android:exported="true"\n        android:screenOrientation="portrait"\n        android:theme="@style/MwmTheme">\n      <intent-filter>\n        <action android:name="android.intent.action.MAIN" />\n        <category android:name="android.intent.category.LAUNCHER" />\n      </intent-filter>\n    </activity>\n\n'
+          anchor = '    <activity\n        android:name="app.organicmaps.MwmActivity"'
+          if anchor not in text:
+              raise SystemExit('MwmActivity manifest anchor not found')
+          text = text.replace(anchor, nv_activity + anchor, 1)
+          manifest.write_text(text, encoding='utf-8')
+          PY
+          grep -q 'NvSmartMenuActivity' organicmaps/android/app/src/main/AndroidManifest.xml
+          grep -q '۲۲ منوی مرجع' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartMenuActivity.java
+          grep -q 'setMinimumHeight' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartMenuActivity.java
+
+      - name: Configure Android SDK
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > organicmaps/android/local.properties
+          java -version
+          cmake --version
+          ninja --version
+
+      - name: Configure ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: nv-organic-v021-final-arm64
+          max-size: 2G
+
+      - name: Build and test
+        working-directory: organicmaps/android
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          ./gradlew --no-daemon -Parm64 :app:testWebDebugUnitTest :sdk:testDebug :app:assembleWebDebug
+
+      - name: Validate APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find organicmaps/android/app/build/outputs/apk -type f -name 'OrganicMaps-*.apk' | head -n 1)
+          test -n "$APK"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          AAPT=$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aapt | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" | tee /tmp/nv-v021-final-badging.txt
+          grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-v021-final-badging.txt
+          grep -q "application-label:'NV'" /tmp/nv-v021-final-badging.txt
+          grep -q "launchable-activity: name='app.organicmaps.NvSmartMenuActivity'" /tmp/nv-v021-final-badging.txt
+          mkdir -p dist
+          cp "$APK" dist/NV-v0.21.0-reference-ui-organic-core-arm64-debug.apk
+          sha256sum dist/NV-v0.21.0-reference-ui-organic-core-arm64-debug.apk | tee dist/NV-v0.21.0-reference-ui-organic-core-arm64-debug.apk.sha256
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.21.0-reference-ui-organic-core-arm64-debug
+          path: |
+            dist/NV-v0.21.0-reference-ui-organic-core-arm64-debug.apk
+            dist/NV-v0.21.0-reference-ui-organic-core-arm64-debug.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
