@@ -45,6 +45,18 @@ jobs:
 
           root = Path('organicmaps')
 
+          # Fix Java loop lambdas so they capture immutable query values.
+          overlay = root / 'android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java'
+          value = overlay.read_text(encoding='utf-8')
+          value = value.replace('() -> search(items[i][1])', 'searchAction(items[i][1])')
+          value = value.replace('() -> search(items[i + 1][1])', 'searchAction(items[i + 1][1])')
+          marker = '    private void search(String query) {\n'
+          helper = '    private Runnable searchAction(String query) {\n      return () -> search(query);\n    }\n\n'
+          if marker not in value:
+              raise SystemExit('NV overlay search helper anchor not found')
+          value = value.replace(marker, helper + marker, 1)
+          overlay.write_text(value, encoding='utf-8')
+
           # Keep the proven Organic Maps engine but use NV's own package id.
           build_gradle = root / 'android/build.gradle'
           text = build_gradle.read_text(encoding='utf-8')
@@ -122,6 +134,7 @@ jobs:
           grep -q '35.6892' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
           grep -q 'MapLanguageCode.setMapLanguageCode("fa")' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'همه منوهای NV' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'searchAction(items\[i\]\[1\])' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           test -s organicmaps/android/libs/branding/src/main/res/mipmap-nodpi/nv_launcher.webp
 
       - name: Configure Android SDK
