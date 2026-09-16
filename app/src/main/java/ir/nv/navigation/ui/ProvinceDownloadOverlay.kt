@@ -56,6 +56,9 @@ fun ProvinceDownloadOverlay(
     var publishedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var availabilityLoaded by remember { mutableStateOf(false) }
     var availabilityError by remember { mutableStateOf<String?>(null) }
+    var activeProvinceId by remember {
+        mutableStateOf(OfflinePackCatalog.provinces.firstOrNull { manager.isActive(it) }?.id)
+    }
 
     LaunchedEffect(open) {
         if (!open) return@LaunchedEffect
@@ -84,6 +87,7 @@ fun ProvinceDownloadOverlay(
                         manager.installDownloaded(pack)
                             .onSuccess {
                                 installFailures.remove(pack.id)
+                                activeProvinceId = pack.id
                                 statuses[pack.id] = ProvincePackDownloadManager.Status.Ready
                             }
                             .onFailure {
@@ -102,55 +106,63 @@ fun ProvinceDownloadOverlay(
     Button(onClick = { open = true }, modifier = modifier) {
         Icon(Icons.Rounded.CloudDownload, contentDescription = null)
         Spacer(Modifier.width(6.dp))
-        Text("دانلود آفلاین")
+        Text("دانلود استان‌ها")
     }
 
     if (open) {
         AlertDialog(
             onDismissRequest = { open = false },
-            title = { Text("نقشه آفلاین", fontWeight = FontWeight.Black) },
+            title = { Text("دانلود نقشه استان‌ها", fontWeight = FontWeight.Black) },
             text = {
                 Column(
                     Modifier.fillMaxWidth().heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("بسته کامل ایران اکنون قابل دانلود است. بسته‌های ۳۱ استان نیز هر زمان روی سرور منتشر شوند به‌صورت مستقل فعال می‌شوند.")
+                    Text(
+                        "حالت اصلی NV آنلاین است. فقط استان‌هایی را که برای استفاده بدون اینترنت نیاز دارید از این بخش دانلود کنید. آخرین استان انتخاب‌شده، بسته فعال آفلاین خواهد بود."
+                    )
                     if (!availabilityLoaded) LinearProgressIndicator(Modifier.fillMaxWidth())
                     availabilityError?.let {
-                        Text("بررسی بسته‌های استانی ناموفق بود. دانلود کامل ایران همچنان در دسترس است. $it")
+                        Text("بررسی فایل‌های استانی ناموفق بود. اتصال اینترنت را بررسی کنید. $it")
                     }
 
-                    if (availabilityLoaded && publishedIds.isEmpty()) {
-                        Text(
-                            "هنوز هیچ بسته استانی مستقلی روی سرور منتشر نشده است؛ به‌جای دکمه‌های غیرفعال می‌توانید همین حالا بسته کامل ایران را دانلود کنید.",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    IranPackFallbackRow(
-                        status = iranPackStatus,
-                        onStart = onStartIranDownload,
-                        onRetry = onRetryIranDownload,
-                        onCancel = onCancelIranDownload
-                    )
-
-                    Text("بسته‌های استانی", fontWeight = FontWeight.Black)
+                    Text("استان‌ها", fontWeight = FontWeight.Black)
                     OfflinePackCatalog.provinces.forEach { pack ->
                         ProvincePackRow(
                             pack = pack,
                             status = statuses[pack.id] ?: manager.status(pack),
                             manager = manager,
+                            active = activeProvinceId == pack.id,
                             published = availabilityLoaded && pack.id in publishedIds,
                             availabilityLoaded = availabilityLoaded,
+                            onActivate = {
+                                if (manager.activate(pack)) activeProvinceId = pack.id
+                            },
                             onRetry = {
                                 installFailures.remove(pack.id)
                                 manager.deleteInstalled(pack)
+                                if (activeProvinceId == pack.id) activeProvinceId = null
                                 if (publishedIds.contains(pack.id)) manager.start(pack)
+                                statuses[pack.id] = manager.status(pack)
+                            },
+                            onDelete = {
+                                manager.deleteInstalled(pack)
+                                if (activeProvinceId == pack.id) activeProvinceId = null
                                 statuses[pack.id] = manager.status(pack)
                             }
                         ) {
                             statuses[pack.id] = manager.status(pack)
                         }
                     }
+
+                    Text("گزینه اضافی", fontWeight = FontWeight.Black)
+                    Text("اگر به کل کشور به‌صورت آفلاین نیاز دارید، بسته کامل ایران نیز جداگانه قابل دریافت است.")
+                    IranPackFallbackRow(
+                        status = iranPackStatus,
+                        onStart = onStartIranDownload,
+                        onRetry = onRetryIranDownload,
+                        onCancel = onCancelIranDownload
+                    )
                 }
             },
             confirmButton = {},
@@ -170,7 +182,7 @@ private fun IranPackFallbackRow(
         Row(Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
                 Text("کل ایران", fontWeight = FontWeight.Black)
-                Text("بسته رسمی منتشرشده؛ نقشه، جستجو و مسیریابی آفلاین")
+                Text("نقشه، جستجو و مسیریابی آفلاین سراسر کشور")
             }
             when (status) {
                 IranPackManager.Status.NotStarted -> Button(onClick = onStart) { Text("دانلود") }
@@ -203,9 +215,12 @@ private fun ProvincePackRow(
     pack: OfflineRegionPack,
     status: ProvincePackDownloadManager.Status,
     manager: ProvincePackDownloadManager,
+    active: Boolean,
     published: Boolean,
     availabilityLoaded: Boolean,
+    onActivate: () -> Unit,
     onRetry: () -> Unit,
+    onDelete: () -> Unit,
     refresh: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -213,15 +228,17 @@ private fun ProvincePackRow(
             Column(Modifier.weight(1f)) {
                 Text(pack.title, fontWeight = FontWeight.Bold)
                 Text("حدود ${pack.estimatedSizeMb} مگابایت")
-                if (availabilityLoaded && !published && status == ProvincePackDownloadManager.Status.NotStarted) {
-                    Text("بسته استانی هنوز روی سرور منتشر نشده است")
+                if (active && status == ProvincePackDownloadManager.Status.Ready) {
+                    Text("بسته فعال آفلاین", fontWeight = FontWeight.Bold)
+                } else if (availabilityLoaded && !published && status == ProvincePackDownloadManager.Status.NotStarted) {
+                    Text("فایل این استان روی سرور پیدا نشد")
                 }
             }
             when (status) {
                 ProvincePackDownloadManager.Status.NotStarted -> Button(
                     onClick = { manager.start(pack); refresh() },
                     enabled = published
-                ) { Text(if (published) "دانلود" else "منتظر انتشار") }
+                ) { Text(if (published) "دانلود" else "ناموجود") }
 
                 is ProvincePackDownloadManager.Status.Downloading -> OutlinedButton(
                     onClick = { manager.cancel(pack); refresh() }
@@ -231,18 +248,18 @@ private fun ProvincePackRow(
                     onClick = { manager.cancel(pack); refresh() }
                 ) { Text("در حال نصب…") }
 
-                ProvincePackDownloadManager.Status.Ready -> OutlinedButton(
-                    onClick = { manager.deleteInstalled(pack); refresh() }
-                ) {
-                    Icon(Icons.Rounded.DeleteOutline, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("حذف")
+                ProvincePackDownloadManager.Status.Ready -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (!active) Button(onClick = onActivate) { Text("فعال") }
+                    else OutlinedButton(onClick = {}, enabled = false) { Text("فعال") }
+                    OutlinedButton(onClick = onDelete) {
+                        Icon(Icons.Rounded.DeleteOutline, contentDescription = "حذف")
+                    }
                 }
 
                 is ProvincePackDownloadManager.Status.Failed -> Button(
                     onClick = onRetry,
                     enabled = published
-                ) { Text(if (published) "تلاش دوباره" else "منتظر انتشار") }
+                ) { Text(if (published) "تلاش دوباره" else "ناموجود") }
             }
         }
         when (status) {
@@ -256,7 +273,7 @@ private fun ProvincePackRow(
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text("در حال اعتبارسنجی و نصب امن بسته استان")
             }
-            ProvincePackDownloadManager.Status.Ready -> Text("نصب و اعتبارسنجی کامل شد")
+            ProvincePackDownloadManager.Status.Ready -> Text(if (active) "برای قطع اینترنت و حالت آفلاین آماده است" else "دانلود و نصب کامل شد")
             is ProvincePackDownloadManager.Status.Failed -> Text(status.reason)
             ProvincePackDownloadManager.Status.NotStarted -> Unit
         }
