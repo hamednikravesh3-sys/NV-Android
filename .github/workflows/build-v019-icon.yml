@@ -1,0 +1,100 @@
+name: Build NV v0.19 Reference APK
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-v019:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct v0.19 reference source
+        shell: bash
+        run: |
+          set -euo pipefail
+          count="$(find platform/reference-v019-overlay -maxdepth 1 -type f -name 'part*' | wc -l)"
+          test "$count" -eq 16
+          cat platform/reference-v019-overlay/part* | base64 -d > /tmp/v019-overlay.tar.xz
+          echo "d418bf838835984cfe0caf76d8dc797486df850a284a8be0e840bb91222da7e1  /tmp/v019-overlay.tar.xz" | sha256sum -c -
+          xz -t /tmp/v019-overlay.tar.xz
+          tar -xJf /tmp/v019-overlay.tar.xz -C .
+
+      - name: Install requested NV launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/res/mipmap-nodpi
+          rm -f app/src/main/res/mipmap-nodpi/nv_launcher.png app/src/main/res/mipmap-nodpi/nv_launcher.webp
+          rm -f app/src/main/res/mipmap-nodpi/nv_launcher_round.png app/src/main/res/mipmap-nodpi/nv_launcher_round.webp
+          base64 -d platform/reference-v019-icon256.b64 > app/src/main/res/mipmap-nodpi/nv_launcher.webp
+          echo "e8e1eeee87e85a5ed1c1b7f89ef2d4368082fbb26e8a4623839a68def63c49d1  app/src/main/res/mipmap-nodpi/nv_launcher.webp" | sha256sum -c -
+          cp app/src/main/res/mipmap-nodpi/nv_launcher.webp app/src/main/res/mipmap-nodpi/nv_launcher_round.webp
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/AndroidManifest.xml')
+          s = p.read_text(encoding='utf-8')
+          import re
+          s = re.sub(r'android:icon="[^"]+"', 'android:icon="@mipmap/nv_launcher"', s)
+          if 'android:roundIcon=' in s:
+              s = re.sub(r'android:roundIcon="[^"]+"', 'android:roundIcon="@mipmap/nv_launcher_round"', s)
+          else:
+              s = s.replace('<application', '<application\n        android:roundIcon="@mipmap/nv_launcher_round"', 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+          grep -n 'android:icon\|android:roundIcon' app/src/main/AndroidManifest.xml
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Unit tests and debug APK
+        shell: bash
+        env:
+          NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Validate APK package and icon resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "package: name='ir.nv.navigation.debug'" /tmp/badging.txt
+          grep -q "application-icon" /tmp/badging.txt
+          sha256sum "$APK" | tee /tmp/NV-v0.19.0-reference-custom-icon.apk.sha256
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.19.0-reference-custom-icon-debug-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            /tmp/NV-v0.19.0-reference-custom-icon.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
