@@ -1,9 +1,9 @@
-name: Build NV v0.22 Map UI Persian Tehran APK
+name: Build NV v0.23 Usable UI Precise Location APK
 
 on:
   push:
     branches:
-      - nv-organic-v022-map-ui
+      - nv-organic-v023-usable-ui-location
   workflow_dispatch:
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
           cd organicmaps
           git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
 
-      - name: Integrate NV Persian map UI and Tehran default
+      - name: Integrate NV usable Persian UI and Tehran default
         shell: bash
         run: |
           set -euo pipefail
@@ -44,17 +44,6 @@ jobs:
           import re
 
           root = Path('organicmaps')
-
-          overlay = root / 'android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java'
-          value = overlay.read_text(encoding='utf-8')
-          value = value.replace('() -> search(items[i][1])', 'searchAction(items[i][1])')
-          value = value.replace('() -> search(items[i + 1][1])', 'searchAction(items[i + 1][1])')
-          marker = '    private void search(String query) {\n'
-          helper = '    private Runnable searchAction(String query) {\n      return () -> search(query);\n    }\n\n'
-          if marker not in value:
-              raise SystemExit('NV overlay search helper anchor not found')
-          value = value.replace(marker, helper + marker, 1)
-          overlay.write_text(value, encoding='utf-8')
 
           build_gradle = root / 'android/build.gradle'
           text = build_gradle.read_text(encoding='utf-8')
@@ -120,11 +109,11 @@ jobs:
           downloader.write_text(text, encoding='utf-8')
 
           (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text(
-              'NV v0.22 uses the Organic Maps Project engine and OpenStreetMap data.\n'
-              'NV adds a Persian map-first menu layer and selects Tehran as the initial regional map.\n'
+              'NV v0.23 uses the Organic Maps Project engine and OpenStreetMap data.\n'
+              'NV adds a cleaner Persian map-first menu layer, precise-location checks, and Tehran as the initial regional map.\n'
               'Organic Maps Project: https://organicmaps.app\n'
               'Source: https://github.com/organicmaps/organicmaps\n', encoding='utf-8')
-          print('NV v0.22 map-first Persian/Tehran integration applied')
+          print('NV v0.23 usability/location integration applied')
           PY
 
           grep -q "appId = 'ir.nv.navigation.om'" organicmaps/android/build.gradle
@@ -132,8 +121,9 @@ jobs:
           grep -q '35.6892' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
           grep -q 'دانلود نقشه تهران' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
           grep -q 'MapLanguageCode.setMapLanguageCode("fa")' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          grep -q 'همه منوهای NV' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          grep -q 'searchAction(items\[i\]\[1\])' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NV موقعیت تقریبی را به‌عنوان دقیق قبول نمی‌کند' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'LocationState.nativeSwitchToNextMode()' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          ! grep -q 'nativeShowCountry' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           test -s organicmaps/android/libs/branding/src/main/res/mipmap-nodpi/nv_launcher.webp
 
       - name: Configure Android SDK
@@ -146,7 +136,7 @@ jobs:
       - name: Configure ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: nv-organic-v022-map-ui-arm64
+          key: nv-organic-v023-usable-ui-location-arm64
           max-size: 2G
 
       - name: Build and test
@@ -166,22 +156,22 @@ jobs:
           test -s "$APK"
           unzip -t "$APK" >/dev/null
           AAPT=$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aapt | sort -V | tail -n 1)
-          "$AAPT" dump badging "$APK" | tee /tmp/nv-v022-badging.txt
-          grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-v022-badging.txt
-          grep -q "application-label:'NV'" /tmp/nv-v022-badging.txt
-          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v022-badging.txt
-          grep -q "locales:.*'fa'" /tmp/nv-v022-badging.txt
-          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v022-badging.txt
+          "$AAPT" dump badging "$APK" | tee /tmp/nv-v023-badging.txt
+          grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-v023-badging.txt
+          grep -q "application-label:'NV'" /tmp/nv-v023-badging.txt
+          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v023-badging.txt
+          grep -q "locales:.*'fa'" /tmp/nv-v023-badging.txt
+          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v023-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.22.0-map-ui-fa-tehran-arm64-debug.apk
-          sha256sum dist/NV-v0.22.0-map-ui-fa-tehran-arm64-debug.apk | tee dist/NV-v0.22.0-map-ui-fa-tehran-arm64-debug.apk.sha256
+          cp "$APK" dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk
+          sha256sum dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk | tee dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk.sha256
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.22.0-map-ui-fa-tehran-arm64-debug
+          name: NV-v0.23.0-usable-ui-precise-location-arm64-debug
           path: |
-            dist/NV-v0.22.0-map-ui-fa-tehran-arm64-debug.apk
-            dist/NV-v0.22.0-map-ui-fa-tehran-arm64-debug.apk.sha256
+            dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk
+            dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
