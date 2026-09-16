@@ -1,0 +1,154 @@
+name: Build NV v0.19.1 Hotfix B APK
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-v0191b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct v0.19 reference source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('platform/reference-v019-overlay')
+          p8 = root / 'part08'
+          s8 = p8.read_text(encoding='utf-8')
+          assert len(s8) == 15000, len(s8)
+          a = list(s8)
+          assert a[1752] == 'a'
+          assert a[13157] == 'b'
+          a[1752] = 'e'
+          a[13157] = 'B'
+          p8.write_text(''.join(a), encoding='utf-8')
+          p12 = root / 'part12'
+          s12 = p12.read_text(encoding='utf-8')
+          tail = Path('platform/reference-v019-part12-tail.txt').read_text(encoding='utf-8').strip()
+          assert len(s12) == 21630, len(s12)
+          assert len(tail) == 4383, len(tail)
+          p12.write_text(s12[:10617] + tail, encoding='utf-8')
+          p14 = root / 'part14'
+          s14 = p14.read_text(encoding='utf-8')
+          assert len(s14) == 14999, len(s14)
+          p14.write_text(s14[:7279] + 'C' + s14[7279:], encoding='utf-8')
+          PY
+          count="$(find platform/reference-v019-overlay -maxdepth 1 -type f -name 'part*' | wc -l)"
+          test "$count" -eq 16
+          test "$(wc -c < platform/reference-v019-overlay/part08)" -eq 15000
+          test "$(wc -c < platform/reference-v019-overlay/part12)" -eq 15000
+          test "$(wc -c < platform/reference-v019-overlay/part14)" -eq 15000
+          cat platform/reference-v019-overlay/part* | base64 -d > /tmp/v019-overlay.tar.xz
+          echo "acd2ddace0b15b76c3267a79a4fa3dcaa6c1b6bc3ae1702a68e5ffe219bbb5ef  /tmp/v019-overlay.tar.xz" | sha256sum -c -
+          xz -t /tmp/v019-overlay.tar.xz
+          tar -xJf /tmp/v019-overlay.tar.xz -C .
+          rm -rf app/src/main/java/ir/nv/navigation/core
+          rm -rf app/src/main/java/ir/nv/navigation/location
+          rm -f app/src/main/java/ir/nv/navigation/navigation/RouteContracts.kt
+          rm -f app/src/main/java/ir/nv/navigation/routing/AStarRouter.kt
+          rm -f app/src/main/java/ir/nv/navigation/routing/RoutingGraph.kt
+          rm -f app/src/main/java/ir/nv/navigation/routing/SqliteRoutingGraph.kt
+          test -f core/common/src/main/java/ir/nv/navigation/core/Models.kt
+          test -f core/location/src/main/java/ir/nv/navigation/location/DeviceLocationProvider.kt
+          test -f routing/src/main/java/ir/nv/navigation/navigation/RouteContracts.kt
+          test -f routing/src/main/java/ir/nv/navigation/routing/AStarRouter.kt
+
+      - name: Apply v0.19.1 user feedback hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 platform/reference-v0191-hotfix.py
+          python3 platform/reference-v0191-hotfix-extra.py
+          grep -q 'versionName = "0.19.1-hotfix"' app/build.gradle.kts
+          grep -q 'HOME_LOCATION_ACCURACY_METERS = 8f' app/src/main/java/ir/nv/navigation/ui/NvViewModel.kt
+          grep -q 'ONLINE_SEARCH_BUDGET_MS = 9_000L' app/src/main/java/ir/nv/navigation/search/HybridSearchEngine.kt
+          grep -q 'TextSecondaryDark = Color(0xFFDCE7F3)' app/src/main/java/ir/nv/navigation/ui/theme/NvDesignTokens.kt
+          grep -q 'METRO("metro"' app/src/main/java/ir/nv/navigation/places/NearbySearchPolicy.kt
+          grep -q 'NearbyCategory.METRO -> Icons.Rounded.Subway' app/src/main/java/ir/nv/navigation/ui/NvReferenceV14.kt
+
+      - name: Install requested NV launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/res/mipmap-nodpi
+          rm -f app/src/main/res/mipmap-nodpi/nv_launcher.png app/src/main/res/mipmap-nodpi/nv_launcher.webp
+          rm -f app/src/main/res/mipmap-nodpi/nv_launcher_round.png app/src/main/res/mipmap-nodpi/nv_launcher_round.webp
+          base64 -d platform/reference-v019-icon256.b64 > app/src/main/res/mipmap-nodpi/nv_launcher.webp
+          echo "e8e1eeee87e85a5ed1c1b7f89ef2d4368082fbb26e8a4623839a68def63c49d1  app/src/main/res/mipmap-nodpi/nv_launcher.webp" | sha256sum -c -
+          cp app/src/main/res/mipmap-nodpi/nv_launcher.webp app/src/main/res/mipmap-nodpi/nv_launcher_round.webp
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('app/src/main/AndroidManifest.xml')
+          s = p.read_text(encoding='utf-8')
+          s = re.sub(r'android:icon="[^"]+"', 'android:icon="@mipmap/nv_launcher"', s)
+          if 'android:roundIcon=' in s:
+              s = re.sub(r'android:roundIcon="[^"]+"', 'android:roundIcon="@mipmap/nv_launcher_round"', s)
+          else:
+              s = s.replace('<application', '<application\n        android:roundIcon="@mipmap/nv_launcher_round"', 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Unit tests and debug APK
+        shell: bash
+        env:
+          NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
+          NV_GOOGLE_MAPS_API_KEY: ${{ secrets.NV_GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Validate APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee /tmp/badging.txt
+          grep -q "package: name='ir.nv.navigation.debug'" /tmp/badging.txt
+          grep -q "versionName='0.19.1-hotfix-debug'" /tmp/badging.txt
+          grep -q "application-icon" /tmp/badging.txt
+          sha256sum "$APK" | tee /tmp/NV-v0.19.1-hotfix-custom-icon.apk.sha256
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.19.1-hotfix-custom-icon-debug-apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            /tmp/NV-v0.19.1-hotfix-custom-icon.apk.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,26 @@
+name: Diagnose v0.19 Overlay
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-overlay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show overlay checksums
+        run: |
+          wc -c platform/reference-v019-overlay/part*
+          sha1sum platform/reference-v019-overlay/part*
+      - name: Upload raw overlay
+        uses: actions/upload-artifact@v4
+        with:
+          name: v019-overlay-raw
+          path: platform/reference-v019-overlay/part*
+          if-no-files-found: error
+          retention-days: 1
