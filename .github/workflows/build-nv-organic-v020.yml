@@ -42,7 +42,7 @@ jobs:
 
           root = Path('organicmaps')
 
-          # Keep the upstream engine/code intact; only use a distinct NV package id.
+          # Preserve the proven Organic Maps engine while assigning NV its own package id.
           p = root / 'android/build.gradle'
           s = p.read_text(encoding='utf-8')
           s = s.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation.om'")
@@ -50,7 +50,16 @@ jobs:
               raise SystemExit('Failed to patch application id')
           p.write_text(s, encoding='utf-8')
 
-          # Visible NV product name. Organic Maps attribution remains available in the About/help UI.
+          # Update Organic Maps' APK permission whitelist for the new package id.
+          app_gradle = root / 'android/app/build.gradle'
+          text = app_gradle.read_text(encoding='utf-8')
+          old = r"~/name='app\.organicmaps(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
+          new = r"~/name='ir\.nv\.navigation\.om(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
+          if old not in text:
+              raise SystemExit('Organic Maps permission whitelist pattern not found')
+          app_gradle.write_text(text.replace(old, new), encoding='utf-8')
+
+          # Visible NV product name. Upstream About/help attribution remains in the app.
           for rel in [
               'android/libs/branding/src/main/res/values/donottranslate.xml',
               'android/libs/branding/src/debug/res/values/donottranslate.xml',
@@ -62,7 +71,7 @@ jobs:
                   text = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', text)
                   f.write_text(text, encoding='utf-8')
 
-          # User-provided NV launcher icon, already stored in the NV repository.
+          # User-provided NV launcher icon already stored in this repository.
           icon_b64 = Path('platform/reference-v019-icon256.b64').read_text(encoding='utf-8').strip()
           icon = base64.b64decode(icon_b64)
           icon_dir = root / 'android/libs/branding/src/main/res/mipmap-nodpi'
@@ -74,7 +83,6 @@ jobs:
           text = text.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/nv_launcher"')
           manifest.write_text(text, encoding='utf-8')
 
-          # Make the About page explicit about the engine provenance for license attribution.
           attr = root / 'NV_ENGINE_ATTRIBUTION.txt'
           attr.write_text(
               'NV v0.20 uses the Organic Maps Project engine and OpenStreetMap data.\n'
@@ -82,10 +90,11 @@ jobs:
               'Source: https://github.com/organicmaps/organicmaps\n',
               encoding='utf-8'
           )
-          print('NV Organic Core branding applied')
+          print('NV Organic Core branding and package whitelist applied')
           PY
 
           grep -q "appId = 'ir.nv.navigation.om'" organicmaps/android/build.gradle
+          grep -q "ir\\\\.nv\\\\.navigation\\\\.om" organicmaps/android/app/build.gradle
           grep -q '>NV<' organicmaps/android/libs/branding/src/debug/res/values/donottranslate.xml
           test -s organicmaps/android/libs/branding/src/main/res/mipmap-nodpi/nv_launcher.webp
 
