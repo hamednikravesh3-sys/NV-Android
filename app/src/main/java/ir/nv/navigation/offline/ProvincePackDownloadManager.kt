@@ -20,13 +20,17 @@ class ProvincePackDownloadManager(private val context: Context) {
     private val downloads = context.getSystemService(DownloadManager::class.java)
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val installer = OfflineRegionPackInstaller(context.applicationContext)
+    private val selectionStore = ProvincePackSelectionStore(context.applicationContext)
     private val preferenceStore = DownloadPreferencesStore(context.applicationContext)
     private val downloadPolicy = OfflineDownloadPolicy(context.applicationContext)
 
     fun start(pack: OfflineRegionPack): Long {
         require(pack.id != OfflinePackCatalog.iran.id) { "برای بسته کل ایران از IranPackManager استفاده کنید" }
         require(OfflinePackCatalog.provinceById(pack.id) != null) { "استان ناشناخته است: ${pack.id}" }
-        if (installer.installed(pack) != null) return READY_DOWNLOAD_ID
+        if (installer.installed(pack) != null) {
+            selectionStore.setActive(pack.id)
+            return READY_DOWNLOAD_ID
+        }
 
         val existing = downloadId(pack.id)
         if (existing != NO_DOWNLOAD_ID && existing != READY_DOWNLOAD_ID) {
@@ -99,12 +103,21 @@ class ProvincePackDownloadManager(private val context: Context) {
     suspend fun installDownloaded(pack: OfflineRegionPack): Result<OfflineRegionPackInstaller.InstalledFiles> {
         val file = downloadedFile(pack)
         return installer.install(pack, file).onSuccess {
+            selectionStore.setActive(pack.id)
             file.delete()
             val id = downloadId(pack.id)
             if (id != NO_DOWNLOAD_ID && id != READY_DOWNLOAD_ID) runCatching { downloads.remove(id) }
             prefs.edit().putLong(key(pack.id), READY_DOWNLOAD_ID).apply()
         }
     }
+
+    fun activate(pack: OfflineRegionPack): Boolean {
+        if (installer.installed(pack) == null) return false
+        selectionStore.setActive(pack.id)
+        return true
+    }
+
+    fun isActive(pack: OfflineRegionPack): Boolean = selectionStore.activePackId() == pack.id
 
     fun cancel(pack: OfflineRegionPack) {
         val id = downloadId(pack.id)
@@ -116,6 +129,7 @@ class ProvincePackDownloadManager(private val context: Context) {
     fun deleteInstalled(pack: OfflineRegionPack) {
         cancel(pack)
         installer.delete(pack)
+        selectionStore.clearIfActive(pack.id)
     }
 
     fun downloadedFile(pack: OfflineRegionPack): File =
