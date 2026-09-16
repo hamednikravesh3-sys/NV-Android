@@ -57,12 +57,28 @@ class SmartMobilityEngineTest {
     }
 
     @Test
-    fun `assistant routes Persian intent to product screens`() {
+    fun `assistant routes only operational Persian intents to product screens`() {
         val engine = SmartMobilityEngine()
         assertEquals(SmartFeatureScreen.RUSH, engine.assistant("خیلی عجله دارم سریع‌ترین مسیر", true, true).suggestedScreen)
-        assertEquals(SmartFeatureScreen.TAXI, engine.assistant("تاکسی می‌خواهم", true, true).suggestedScreen)
+
+        val taxi = engine.assistant("تاکسی می‌خواهم", true, true)
+        assertNull(taxi.suggestedScreen)
+        assertTrue(taxi.messageFa.contains("رزرو") || taxi.messageFa.contains("مسیر"))
+
+        val transit = engine.assistant("با مترو بروم", true, true)
+        assertNull(transit.suggestedScreen)
+        assertTrue(transit.messageFa.contains("منبع واقعی") || transit.messageFa.contains("حمل‌ونقل"))
+
         assertEquals(SmartFeatureScreen.WALKING, engine.assistant("پیاده چقدر طول می‌کشد", true, true).suggestedScreen)
     }
+
+    @Test
+    fun `assistant exposes provider backed screens when providers are connected`() {
+        val engine = SmartMobilityEngine(DeterministicMockTransitRealtimeProvider(), DeterministicMockTaxiProvider())
+        assertEquals(SmartFeatureScreen.TAXI, engine.assistant("تاکسی می‌خواهم", true, true).suggestedScreen)
+        assertEquals(SmartFeatureScreen.MULTIMODAL, engine.assistant("با مترو بروم", true, true).suggestedScreen)
+    }
+
     @Test
     fun `explicit mocks are labelled non live and non bookable`() {
         val engine = SmartMobilityEngine(DeterministicMockTransitRealtimeProvider(), DeterministicMockTaxiProvider())
@@ -104,5 +120,4 @@ class SmartMobilityEngineTest {
         assertTrue(plans.isNotEmpty())
         assertTrue(plans.flatMap { it.legs }.any { it.source.contains("mock") })
     }
-
 }
