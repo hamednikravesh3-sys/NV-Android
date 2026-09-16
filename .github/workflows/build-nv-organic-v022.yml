@@ -45,7 +45,6 @@ jobs:
 
           root = Path('organicmaps')
 
-          # Fix Java loop lambdas so they capture immutable query values.
           overlay = root / 'android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java'
           value = overlay.read_text(encoding='utf-8')
           value = value.replace('() -> search(items[i][1])', 'searchAction(items[i][1])')
@@ -57,7 +56,6 @@ jobs:
           value = value.replace(marker, helper + marker, 1)
           overlay.write_text(value, encoding='utf-8')
 
-          # Keep the proven Organic Maps engine but use NV's own package id.
           build_gradle = root / 'android/build.gradle'
           text = build_gradle.read_text(encoding='utf-8')
           text = text.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation.om'")
@@ -65,7 +63,6 @@ jobs:
               raise SystemExit('Failed to patch application id')
           build_gradle.write_text(text, encoding='utf-8')
 
-          # Keep APK permission validation valid for the changed package name.
           app_gradle = root / 'android/app/build.gradle'
           text = app_gradle.read_text(encoding='utf-8')
           old = r"~/name='app\.organicmaps(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
@@ -74,7 +71,6 @@ jobs:
               raise SystemExit('Organic Maps permission whitelist pattern not found')
           app_gradle.write_text(text.replace(old, new), encoding='utf-8')
 
-          # NV name in all variants that can participate in the WebDebug build.
           for rel in [
               'android/libs/branding/src/main/res/values/donottranslate.xml',
               'android/libs/branding/src/debug/res/values/donottranslate.xml',
@@ -86,72 +82,48 @@ jobs:
                   value = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', value)
                   f.write_text(value, encoding='utf-8')
 
-          # Existing NV launcher icon from the project.
           icon_b64 = Path('platform/reference-v019-icon256.b64').read_text(encoding='utf-8').strip()
           icon = base64.b64decode(icon_b64)
           icon_dir = root / 'android/libs/branding/src/main/res/mipmap-nodpi'
           icon_dir.mkdir(parents=True, exist_ok=True)
           (icon_dir / 'nv_launcher.webp').write_bytes(icon)
 
-          # Make SplashActivity the single launcher entry. This keeps the normal
-          # resource bootstrap while avoiding launcher-alias ambiguity after package renaming.
           manifest = root / 'android/app/src/main/AndroidManifest.xml'
           text = manifest.read_text(encoding='utf-8')
           text = text.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/nv_launcher"')
-          launcher_filter = '''      <intent-filter>
-        <action android:name="android.intent.action.MAIN"/>
-        <category android:name="android.intent.category.LAUNCHER"/>
-      </intent-filter>
-'''
+          launcher_filter = '      <intent-filter>\n        <action android:name="android.intent.action.MAIN"/>\n        <category android:name="android.intent.category.LAUNCHER"/>\n      </intent-filter>\n'
           if launcher_filter not in text:
               raise SystemExit('Original launcher alias filter not found')
           text = text.replace(launcher_filter, '', 1)
-          splash_head = '''    <activity
-      android:name="app.organicmaps.SplashActivity"
-      android:theme="@style/MwmTheme.Splash"
-      android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|uiMode|keyboard|keyboardHidden|navigation"
-      android:screenOrientation="fullUser"
-      android:exported="true">
-'''
+          splash_head = '    <activity\n      android:name="app.organicmaps.SplashActivity"\n      android:theme="@style/MwmTheme.Splash"\n      android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|uiMode|keyboard|keyboardHidden|navigation"\n      android:screenOrientation="fullUser"\n      android:exported="true">\n'
           if splash_head not in text:
               raise SystemExit('SplashActivity manifest anchor not found')
-          splash_launcher = '''
-      <intent-filter>
-        <action android:name="android.intent.action.MAIN"/>
-        <category android:name="android.intent.category.LAUNCHER"/>
-      </intent-filter>
-'''
+          splash_launcher = '\n      <intent-filter>\n        <action android:name="android.intent.action.MAIN"/>\n        <category android:name="android.intent.category.LAUNCHER"/>\n      </intent-filter>\n'
           text = text.replace(splash_head, splash_head + splash_launcher, 1)
           manifest.write_text(text, encoding='utf-8')
 
-          # Install the NV controls directly over the real map screen.
           mwm = root / 'android/app/src/main/java/app/organicmaps/MwmActivity.java'
           text = mwm.read_text(encoding='utf-8')
           anchor = '    setContentView(R.layout.activity_map);\n'
           if anchor not in text:
               raise SystemExit('MwmActivity map layout anchor not found')
-          replacement = anchor + '    NvMapMenuOverlay.install(this);\n'
-          text = text.replace(anchor, replacement, 1)
+          text = text.replace(anchor, anchor + '    NvMapMenuOverlay.install(this);\n', 1)
           mwm.write_text(text, encoding='utf-8')
 
-          # Fresh installs offer Tehran as the only initial regional map.
           downloader = root / 'android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java'
           text = downloader.read_text(encoding='utf-8')
           anchor = '    initViewsAndListeners();\n'
           if anchor not in text:
               raise SystemExit('Downloader init anchor not found')
-          tehran = '''    // NV default regional map: Tehran only on a clean installation.\n    mCurrentCountry = MapManager.nativeFindCountry(35.6892, 51.3890);\n    if (!TextUtils.isEmpty(mCurrentCountry))\n    {\n      final int nvTehranStatus = MapManager.nativeGetStatus(mCurrentCountry);\n      if (nvTehranStatus != CountryItem.STATUS_DONE)\n      {\n        UiUtils.show(mChbDownloadCountry);\n        mChbDownloadCountry.setChecked(true);\n        mChbDownloadCountry.setText("دانلود نقشه تهران");\n      }\n    }\n'''
+          tehran = '    // NV default regional map: Tehran only on a clean installation.\n    mCurrentCountry = MapManager.nativeFindCountry(35.6892, 51.3890);\n    if (!TextUtils.isEmpty(mCurrentCountry))\n    {\n      final int nvTehranStatus = MapManager.nativeGetStatus(mCurrentCountry);\n      if (nvTehranStatus != CountryItem.STATUS_DONE)\n      {\n        UiUtils.show(mChbDownloadCountry);\n        mChbDownloadCountry.setChecked(true);\n        mChbDownloadCountry.setText("دانلود نقشه تهران");\n      }\n    }\n'
           text = text.replace(anchor, anchor + tehran, 1)
           downloader.write_text(text, encoding='utf-8')
 
-          attr = root / 'NV_ENGINE_ATTRIBUTION.txt'
-          attr.write_text(
+          (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text(
               'NV v0.22 uses the Organic Maps Project engine and OpenStreetMap data.\n'
               'NV adds a Persian map-first menu layer and selects Tehran as the initial regional map.\n'
               'Organic Maps Project: https://organicmaps.app\n'
-              'Source: https://github.com/organicmaps/organicmaps\n',
-              encoding='utf-8'
-          )
+              'Source: https://github.com/organicmaps/organicmaps\n', encoding='utf-8')
           print('NV v0.22 map-first Persian/Tehran integration applied')
           PY
 
