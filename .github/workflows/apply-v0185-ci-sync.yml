@@ -1,0 +1,45 @@
+name: Apply v0.18.5 CI Sync
+
+on:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+    paths:
+      - tools/trigger-v0185-ci-sync.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nv-persian-rtl-master-spec
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Sync version and GPS test expectations
+        run: |
+          set -euo pipefail
+          python tools/apply_v0185_ci_sync.py
+          git diff --check
+          python -m unittest discover -s tools -p "test_*.py"
+      - name: Commit CI sync
+        run: |
+          set -euo pipefail
+          rm -f tools/trigger-v0185-ci-sync.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No CI changes to commit"
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m "Sync v0.18.5 CI and release expectations"
+          git push origin HEAD:nv-persian-rtl-master-spec
