@@ -16,22 +16,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Export raw overlay diagnostics
-        uses: actions/upload-artifact@v4
-        with:
-          name: v019-overlay-raw
-          path: platform/reference-v019-overlay/part*
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Reconstruct v0.19 reference source
+      - name: Repair and reconstruct v0.19 reference source
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('platform/reference-v019-overlay')
+
+          p8 = root / 'part08'
+          s8 = p8.read_text(encoding='utf-8')
+          assert len(s8) == 15000, len(s8)
+          a = list(s8)
+          assert a[1752] == 'a'
+          assert a[13157] == 'b'
+          a[1752] = 'e'
+          a[13157] = 'B'
+          p8.write_text(''.join(a), encoding='utf-8')
+
+          p12 = root / 'part12'
+          s12 = p12.read_text(encoding='utf-8')
+          tail = Path('platform/reference-v019-part12-tail.txt').read_text(encoding='utf-8').strip()
+          assert len(s12) == 21630, len(s12)
+          assert len(tail) == 4383, len(tail)
+          p12.write_text(s12[:10617] + tail, encoding='utf-8')
+
+          p14 = root / 'part14'
+          s14 = p14.read_text(encoding='utf-8')
+          assert len(s14) == 14999, len(s14)
+          p14.write_text(s14[:7279] + 'C' + s14[7279:], encoding='utf-8')
+          PY
           count="$(find platform/reference-v019-overlay -maxdepth 1 -type f -name 'part*' | wc -l)"
           test "$count" -eq 16
-          wc -c platform/reference-v019-overlay/part*
-          sha1sum platform/reference-v019-overlay/part*
+          test "$(wc -c < platform/reference-v019-overlay/part08)" -eq 15000
+          test "$(wc -c < platform/reference-v019-overlay/part12)" -eq 15000
+          test "$(wc -c < platform/reference-v019-overlay/part14)" -eq 15000
           cat platform/reference-v019-overlay/part* | base64 -d > /tmp/v019-overlay.tar.xz
           echo "acd2ddace0b15b76c3267a79a4fa3dcaa6c1b6bc3ae1702a68e5ffe219bbb5ef  /tmp/v019-overlay.tar.xz" | sha256sum -c -
           xz -t /tmp/v019-overlay.tar.xz
