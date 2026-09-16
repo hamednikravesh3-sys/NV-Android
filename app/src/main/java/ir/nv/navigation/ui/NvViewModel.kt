@@ -27,6 +27,7 @@ import ir.nv.navigation.data.PlaceRepository
 import ir.nv.navigation.data.RecentPlaceStore
 import ir.nv.navigation.entitlement.TrialManager
 import ir.nv.navigation.map.IranPackManager
+import ir.nv.navigation.offline.ProvinceOfflineRuntime
 import ir.nv.navigation.location.DeviceLocationProvider
 import ir.nv.navigation.location.NavigationFix
 import ir.nv.navigation.navigation.ContinuousRerouteEngine
@@ -139,6 +140,7 @@ data class NvUiState(
 
 class NvViewModel(application: Application) : AndroidViewModel(application) {
     private val packManager = IranPackManager(application)
+    private val provinceRuntime = ProvinceOfflineRuntime(application)
     private val personalPlaces = PersonalPlaceStore(application)
     private val recentPlaces = RecentPlaceStore(application)
     private val online = OnlineNavigationService()
@@ -175,6 +177,7 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
     private var places: PlaceRepository? = null
     private var graph: SqliteRoutingGraph? = null
     private var router: AStarRouter? = null
+    private var activeOfflineMapFile: java.io.File? = null
     private val navigationPlatform by lazy {
         NvNavigationPlatform(
             onlineService = online,
@@ -220,11 +223,18 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     )
                 }
-                if (available) syncCommunityReports()
+                if (available) {
+                    syncCommunityReports()
+                } else if (!mutableState.value.offlineReady) {
+                    ensureOfflineDataOpen()
+                }
             }
         }
-        if (packManager.isReady()) viewModelScope.launch { openDataPack() }
-        else if (packManager.status() !is IranPackManager.Status.NotStarted) monitorDownload()
+        when {
+            packManager.isReady() -> viewModelScope.launch { openDataPack() }
+            provinceRuntime.hasReadyPack() -> viewModelScope.launch { openProvinceDataPack() }
+            packManager.status() !is IranPackManager.Status.NotStarted -> monitorDownload()
+        }
     }
 
     fun startMapDownload() {
@@ -257,21 +267,30 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
         graph?.close(); graph = null
         router = null
         packManager.deleteInstalledPack()
+        val provinceReady = provinceRuntime.hasReadyPack()
         mutableState.update {
             it.copy(
                 packStatus = IranPackManager.Status.NotStarted,
-                offlineReady = false,
+                offlineReady = provinceReady,
                 preferOffline = false,
-                message = "نقشه آفلاین حذف شد"
+                message = if (provinceReady) "بسته کامل ایران حذف شد؛ بسته استانی همچنان آماده است" else "نقشه آفلاین حذف شد"
             )
         }
+        if (provinceReady) viewModelScope.launch { openProvinceDataPack() }
     }
 
     fun setPreferOffline(value: Boolean) {
-        if (value && !packManager.isReady()) {
-            mutableState.update { it.copy(message = "ابتدا نقشه آفلاین را دانلود کنید") }
-        } else {
-            mutableState.update { it.copy(preferOffline = value, message = null) }
+        if (!value) {
+            mutableState.update { it.copy(preferOffline = false, message = null) }
+            return
+        }
+        viewModelScope.launch {
+            val ready = ensureOfflineDataOpen()
+            if (ready) {
+                mutableState.update { it.copy(preferOffline = true, offlineReady = true, message = null) }
+            } else {
+                mutableState.update { it.copy(preferOffline = false, offlineReady = false, message = "ابتدا از بخش «دانلود استان‌ها» یک استان را دانلود کنید") }
+            }
         }
     }
 
@@ -1122,14 +1141,47 @@ class NvViewModel(application: Application) : AndroidViewModel(application) {
             places = PlaceRepository(packManager.placesFile)
             graph = SqliteRoutingGraph(packManager.routingFile)
             router = AStarRouter(requireNotNull(graph))
+            activeOfflineMapFile = packManager.mapFile
         }.onSuccess {
             mutableState.update { it.copy(packStatus = IranPackManager.Status.Ready, offlineReady = true) }
         }.onFailure { error ->
+            activeOfflineMapFile = null
             mutableState.update { it.copy(packStatus = IranPackManager.Status.Failed(error.message ?: "داده نامعتبر"), offlineReady = false) }
         }
     }
 
-    fun mapFile() = packManager.mapFile
+    private suspend fun openProvinceDataPack(): Boolean = withContext(Dispatchers.IO) {
+        val active = provinceRuntime.active() ?: return@withContext false
+        runCatching {
+            places?.close(); graph?.close()
+            places = PlaceRepository(active.files.placesFile)
+            graph = SqliteRoutingGraph(active.files.routingFile)
+            router = AStarRouter(requireNotNull(graph))
+            activeOfflineMapFile = active.files.mapFile
+        }.onSuccess {
+            mutableState.update { state ->
+                state.copy(
+                    offlineReady = true,
+                    message = if (!state.onlineAvailable) "اینترنت قطع است؛ بسته آفلاین ${active.pack.title} فعال شد" else state.message
+                )
+            }
+        }.onFailure { error ->
+            activeOfflineMapFile = null
+            router = null
+            mutableState.update { it.copy(offlineReady = false, message = error.message ?: "بسته استانی قابل استفاده نیست") }
+        }.isSuccess
+    }
+
+    private suspend fun ensureOfflineDataOpen(): Boolean = when {
+        packManager.isReady() -> {
+            openDataPack()
+            router != null && activeOfflineMapFile?.isFile == true
+        }
+        provinceRuntime.hasReadyPack() -> openProvinceDataPack()
+        else -> false
+    }
+
+    fun mapFile() = activeOfflineMapFile ?: packManager.mapFile
 
     private suspend fun loadRouteNotices(route: Route, ownerRoute: Route) {
         val onlineNow = networkMonitor.isOnline()

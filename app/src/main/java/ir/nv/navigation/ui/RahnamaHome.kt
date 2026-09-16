@@ -227,17 +227,19 @@ fun RahnamaHomeScreen(
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column {
-                        Text("نقشه آفلاین ایران")
-                        Text(if (state.offlineReady) "آماده استفاده" else "هنوز دانلود نشده", color = NvColors.TextSecondaryDark, style = MaterialTheme.typography.labelSmall)
+                        Text("حالت آفلاین")
+                        Text(
+                            if (state.offlineReady) "بسته آفلاین آماده است؛ حالت اصلی همچنان آنلاین است" else "برای استفاده بدون اینترنت، استان موردنیاز را دانلود کنید",
+                            color = NvColors.TextSecondaryDark,
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                     Switch(
                         checked = state.preferOffline,
-                        onCheckedChange = { enabled ->
-                            if (enabled && !state.offlineReady) viewModel.startMapDownload() else viewModel.setPreferOffline(enabled)
-                        }
+                        onCheckedChange = viewModel::setPreferOffline
                     )
                 }
-                Text("نقشه‌های آفلاین منطقه‌ای", color = NvColors.TextSecondaryDark)
+                Text("دانلود استان‌ها", color = NvColors.TextSecondaryDark)
                 ProvinceDownloadOverlay(
                     iranPackStatus = state.packStatus,
                     onStartIranDownload = viewModel::startMapDownload,
