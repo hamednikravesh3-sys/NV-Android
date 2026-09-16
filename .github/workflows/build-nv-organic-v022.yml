@@ -93,9 +93,35 @@ jobs:
           icon_dir.mkdir(parents=True, exist_ok=True)
           (icon_dir / 'nv_launcher.webp').write_bytes(icon)
 
+          # Make SplashActivity the single launcher entry. This keeps the normal
+          # resource bootstrap while avoiding launcher-alias ambiguity after package renaming.
           manifest = root / 'android/app/src/main/AndroidManifest.xml'
           text = manifest.read_text(encoding='utf-8')
           text = text.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/nv_launcher"')
+          launcher_filter = '''      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+'''
+          if launcher_filter not in text:
+              raise SystemExit('Original launcher alias filter not found')
+          text = text.replace(launcher_filter, '', 1)
+          splash_head = '''    <activity
+      android:name="app.organicmaps.SplashActivity"
+      android:theme="@style/MwmTheme.Splash"
+      android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|uiMode|keyboard|keyboardHidden|navigation"
+      android:screenOrientation="fullUser"
+      android:exported="true">
+'''
+          if splash_head not in text:
+              raise SystemExit('SplashActivity manifest anchor not found')
+          splash_launcher = '''
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+'''
+          text = text.replace(splash_head, splash_head + splash_launcher, 1)
           manifest.write_text(text, encoding='utf-8')
 
           # Install the NV controls directly over the real map screen.
@@ -108,13 +134,13 @@ jobs:
           text = text.replace(anchor, replacement, 1)
           mwm.write_text(text, encoding='utf-8')
 
-          # Fresh installs must offer/download Tehran, not the device's current region.
+          # Fresh installs offer Tehran as the only initial regional map.
           downloader = root / 'android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java'
           text = downloader.read_text(encoding='utf-8')
           anchor = '    initViewsAndListeners();\n'
           if anchor not in text:
               raise SystemExit('Downloader init anchor not found')
-          tehran = '''    // NV default regional map: Tehran only on a clean installation.\n    mCurrentCountry = MapManager.nativeFindCountry(35.6892, 51.3890);\n    if (!TextUtils.isEmpty(mCurrentCountry))\n    {\n      final int nvTehranStatus = MapManager.nativeGetStatus(mCurrentCountry);\n      if (nvTehranStatus != CountryItem.STATUS_DONE)\n      {\n        UiUtils.show(mChbDownloadCountry);\n        mChbDownloadCountry.setChecked(true);\n        mChbDownloadCountry.setText(String.format(getString(R.string.download_country_ask),\n                                                  MapManager.nativeGetName(mCurrentCountry)));\n      }\n    }\n'''
+          tehran = '''    // NV default regional map: Tehran only on a clean installation.\n    mCurrentCountry = MapManager.nativeFindCountry(35.6892, 51.3890);\n    if (!TextUtils.isEmpty(mCurrentCountry))\n    {\n      final int nvTehranStatus = MapManager.nativeGetStatus(mCurrentCountry);\n      if (nvTehranStatus != CountryItem.STATUS_DONE)\n      {\n        UiUtils.show(mChbDownloadCountry);\n        mChbDownloadCountry.setChecked(true);\n        mChbDownloadCountry.setText("دانلود نقشه تهران");\n      }\n    }\n'''
           text = text.replace(anchor, anchor + tehran, 1)
           downloader.write_text(text, encoding='utf-8')
 
@@ -132,6 +158,7 @@ jobs:
           grep -q "appId = 'ir.nv.navigation.om'" organicmaps/android/build.gradle
           grep -q 'NvMapMenuOverlay.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
           grep -q '35.6892' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
+          grep -q 'دانلود نقشه تهران' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
           grep -q 'MapLanguageCode.setMapLanguageCode("fa")' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'همه منوهای NV' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'searchAction(items\[i\]\[1\])' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
@@ -170,7 +197,9 @@ jobs:
           "$AAPT" dump badging "$APK" | tee /tmp/nv-v022-badging.txt
           grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-v022-badging.txt
           grep -q "application-label:'NV'" /tmp/nv-v022-badging.txt
-          grep -q "launchable-activity: name='app.organicmaps.DownloadResourcesActivity'" /tmp/nv-v022-badging.txt
+          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v022-badging.txt
+          grep -q "locales:.*'fa'" /tmp/nv-v022-badging.txt
+          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v022-badging.txt
           mkdir -p dist
           cp "$APK" dist/NV-v0.22.0-map-ui-fa-tehran-arm64-debug.apk
           sha256sum dist/NV-v0.22.0-map-ui-fa-tehran-arm64-debug.apk | tee dist/NV-v0.22.0-map-ui-fa-tehran-arm64-debug.apk.sha256
