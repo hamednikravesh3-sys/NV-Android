@@ -56,6 +56,21 @@ jobs:
           xz -t /tmp/v019-overlay.tar.xz
           tar -xJf /tmp/v019-overlay.tar.xz -C .
 
+          # v0.19 moved these shared contracts/engines into dedicated modules.
+          # The base branch still contains obsolete app-local copies, so remove
+          # only those stale duplicates after applying the v0.19 overlay.
+          rm -rf app/src/main/java/ir/nv/navigation/core
+          rm -rf app/src/main/java/ir/nv/navigation/location
+          rm -f app/src/main/java/ir/nv/navigation/navigation/RouteContracts.kt
+          rm -f app/src/main/java/ir/nv/navigation/routing/AStarRouter.kt
+          rm -f app/src/main/java/ir/nv/navigation/routing/RoutingGraph.kt
+          rm -f app/src/main/java/ir/nv/navigation/routing/SqliteRoutingGraph.kt
+
+          test -f core/common/src/main/java/ir/nv/navigation/core/Models.kt
+          test -f core/location/src/main/java/ir/nv/navigation/location/DeviceLocationProvider.kt
+          test -f routing/src/main/java/ir/nv/navigation/navigation/RouteContracts.kt
+          test -f routing/src/main/java/ir/nv/navigation/routing/AStarRouter.kt
+
       - name: Install requested NV launcher icon
         shell: bash
         run: |
