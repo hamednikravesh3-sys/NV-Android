@@ -1,0 +1,73 @@
+name: Apply v0.18.5 CI Sync Simple
+
+on:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+    paths:
+      - tools/trigger-v0185-ci-sync-simple.txt
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nv-persian-rtl-master-spec
+          fetch-depth: 0
+      - name: Sync hard-coded expectations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          test = Path('tools/test_android16_completion.py')
+          text = test.read_text(encoding='utf-8')
+          pairs = [
+              (r"versionCode\s*=\s*21", r"versionCode\s*=\s*22"),
+              ('versionName = "0.18.2"', 'versionName = "0.18.5"'),
+              ("versionCode='21'", "versionCode='22'"),
+              ("versionName='0.18.2'", "versionName='0.18.5'"),
+              ('MAX_CURRENT_LOCATION_ACCURACY_METERS = 18f', 'MAX_CURRENT_LOCATION_ACCURACY_METERS = 10f'),
+              ('MAX_NAVIGATION_ACCURACY_METERS = 35f', 'MAX_NAVIGATION_ACCURACY_METERS = 20f'),
+          ]
+          for old, new in pairs:
+              if old not in text:
+                  raise SystemExit(f'missing test token: {old}')
+              text = text.replace(old, new)
+          test.write_text(text, encoding='utf-8')
+
+          release = Path('.github/workflows/release.yml')
+          text = release.read_text(encoding='utf-8')
+          pairs = [
+              ("versionCode='21'", "versionCode='22'"),
+              ("versionName='0.18.2'", "versionName='0.18.5'"),
+              ('version_code=21', 'version_code=22'),
+              ('version_name=0.18.2', 'version_name=0.18.5'),
+              ('"version_code": 21', '"version_code": 22'),
+              ('"version_name": "0.18.2"', '"version_name": "0.18.5"'),
+              ('m["version_code"] == 21', 'm["version_code"] == 22'),
+              ('m["version_name"] == "0.18.2"', 'm["version_name"] == "0.18.5"'),
+          ]
+          for old, new in pairs:
+              if old not in text:
+                  raise SystemExit(f'missing release token: {old}')
+              text = text.replace(old, new)
+          release.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+      - name: Commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f tools/trigger-v0185-ci-sync-simple.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Sync v0.18.5 release and test expectations"
+          git push origin HEAD:nv-persian-rtl-master-spec

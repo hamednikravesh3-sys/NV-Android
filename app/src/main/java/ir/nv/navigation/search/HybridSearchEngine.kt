@@ -1,7 +1,9 @@
 package ir.nv.navigation.search
 
 import ir.nv.navigation.core.Place
+import ir.nv.navigation.data.NvCodeAllocationService
 import ir.nv.navigation.data.PersianText
+import ir.nv.navigation.data.PlaceCodes
 
 fun interface PlaceSearchProvider {
     suspend fun search(query: String): List<Place>
@@ -15,7 +17,8 @@ data class HybridSearchResult(
 
 class HybridSearchEngine(
     private val offline: PlaceSearchProvider,
-    private val online: PlaceSearchProvider
+    private val online: PlaceSearchProvider,
+    private val nvCodeService: NvCodeAllocationService = NvCodeAllocationService()
 ) {
     suspend fun search(
         query: String,
@@ -36,6 +39,28 @@ class HybridSearchEngine(
         val variants = expandQuery(clean)
         val local = variants
             .flatMap { variant -> runCatching { offline.search(variant) }.getOrDefault(emptyList()) }
+
+        val publicCode = PlaceCodes.publicCode(query)
+        val explicitNvCode = publicCode != null && PlaceCodes.isExplicitNvCode(query)
+        val centralCode = publicCode != null && (PlaceCodes.isRegistryCode(publicCode) || explicitNvCode)
+        if (centralCode) {
+            // An explicit NV: code is an instruction to resolve the shared registry identity.
+            // Try it even during the immediate/local phase so legacy low-number codes are not
+            // blocked by the ViewModel's generic online-search gate. Failures remain non-fatal.
+            val mayResolveRegistry = nvCodeService.isConfigured() &&
+                (onlineAvailable || explicitNvCode) &&
+                (!preferOffline || explicitNvCode)
+            val registryResult = if (mayResolveRegistry) nvCodeService.resolveOnline(query) else Result.success(null)
+            val registryPlace = registryResult.getOrNull()
+            if (registryPlace != null || mayResolveRegistry) {
+                return HybridSearchResult(
+                    items = if (registryPlace != null) listOf(registryPlace) else rankAndDeduplicate(local, clean, limit),
+                    onlineAttempted = mayResolveRegistry,
+                    onlineFailed = registryResult.isFailure
+                )
+            }
+            return HybridSearchResult(rankAndDeduplicate(local, clean, limit), false, false)
+        }
 
         if (!onlineAvailable || preferOffline) {
             return HybridSearchResult(rankAndDeduplicate(local, clean, limit), false, false)
@@ -65,9 +90,6 @@ class HybridSearchEngine(
                 (it.coordinate.longitude * 10_000).toInt()
             )
         }
-        // Kotlin's sortedWith is stable. Equal relevance therefore preserves provider order:
-        // exact/local data stays ahead of an equally relevant remote result, while genuinely
-        // better fuzzy matches can still move upward.
         .sortedWith(compareBy<Place> { smartScore(it, query) })
         .take(limit)
 

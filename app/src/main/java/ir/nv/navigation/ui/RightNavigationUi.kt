@@ -122,15 +122,26 @@ fun RightNavigationBottomBar(
     remainingDistanceMeters: Double,
     remainingSeconds: Long,
     speedKmh: Int,
+    speedLimitKmh: Int? = null,
     modifier: Modifier = Modifier
 ) {
     val eta = Instant.now().plusSeconds(remainingSeconds.coerceAtLeast(0L)).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
     Surface(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = DriveNavy, border = BorderStroke(1.dp, DriveCyan.copy(alpha = .42f)), shadowElevation = 16.dp) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Surface(shape = CircleShape, color = DrivePanel, border = BorderStroke(2.dp, DriveLime)) {
+            val overLimit = speedLimitKmh?.let { speedKmh > it + 5 } == true
+            Surface(
+                shape = CircleShape,
+                color = DrivePanel,
+                border = BorderStroke(2.dp, if (overLimit) Color(0xFFFF7185) else DriveLime)
+            ) {
                 Column(Modifier.size(62.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    Text("$speedKmh", color = DriveLime, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge)
-                    Text("km/h", color = DriveMuted, style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        "$speedKmh",
+                        color = if (overLimit) Color(0xFFFF7185) else DriveLime,
+                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Text(speedLimitKmh?.let { "حد $it" } ?: "km/h", color = DriveMuted, style = MaterialTheme.typography.labelSmall)
                 }
             }
             Metric(eta, "زمان رسیدن")

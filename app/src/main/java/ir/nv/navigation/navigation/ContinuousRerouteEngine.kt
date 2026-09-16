@@ -20,7 +20,10 @@ class ContinuousRerouteEngine(
         val lastRerouteMillis: Long,
         val offRoute: Boolean = false,
         val currentRouteBlocked: Boolean = false,
-        val profile: RouteProfile = RouteProfile.SMART
+        val profile: RouteProfile = RouteProfile.SMART,
+        val vehicleProfile: VehicleProfile = VehicleProfile.CAR,
+        val truck: TruckRestrictions = TruckRestrictions(),
+        val ev: EvRoutePreferences = EvRoutePreferences()
     )
 
     data class Result(
@@ -43,9 +46,12 @@ class ContinuousRerouteEngine(
                 origin = request.currentPosition,
                 destination = request.destination,
                 profile = request.profile,
+                vehicleProfile = request.vehicleProfile,
                 preferOffline = request.preferOffline,
                 onlineAvailable = request.onlineAvailable,
-                offlineAvailable = request.offlineAvailable
+                offlineAvailable = request.offlineAvailable,
+                truck = request.truck,
+                ev = request.ev
             ),
             context
         )

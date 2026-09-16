@@ -1,0 +1,159 @@
+name: Build v0.18.6 Acceptance APK
+
+on:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+    paths:
+      - tools/build-v0186-trigger.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Build test sign and verify v0.18.6
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Install Android 16 SDK
+        run: |
+          set -euo pipefail
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Verify user acceptance fixes are present
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 23' app/build.gradle.kts
+          grep -q 'versionName = "0.18.6"' app/build.gradle.kts
+          grep -q 'RahnamaSmartMobilityHub(' app/src/main/java/ir/nv/navigation/ui/NvReferenceV17.kt
+          grep -q 'focusedTextColor = NvColors.TextPrimaryDark' app/src/main/java/ir/nv/navigation/ui/RahnamaSmartMobilityHub.kt
+          grep -q 'fun destinationQueries(raw: String)' app/src/main/java/ir/nv/navigation/smart/SmartJourneyIntentParser.kt
+          grep -q 'MAX_NAVIGATION_ACCURACY_METERS = 10f' core/location/src/main/java/ir/nv/navigation/location/DeviceLocationProvider.kt
+          grep -q 'میخوام برم خیابانی بهشتی تهران بعد میرداماد' app/src/test/java/ir/nv/navigation/smart/SmartJourneyIntentParserTest.kt
+          bash -n .github/scripts/verify-v0186-smart-hub.sh
+          bash -n .github/scripts/verify-nv-launch-modern.sh
+
+      - name: Backend tests
+        run: |
+          set -euo pipefail
+          node --test backend/nv-code-registry/worker.test.mjs
+          node --test backend/cloud-sync/worker.test.mjs
+
+      - name: Lint unit tests and build APKs
+        env:
+          NV_TRAFFIC_API_KEY: ${{ secrets.NV_TRAFFIC_API_KEY }}
+          NV_CODE_REGISTRY_URL: ${{ secrets.NV_CODE_REGISTRY_URL }}
+        run: |
+          set -euo pipefail
+          gradle --no-daemon \
+            :app:lintDebug \
+            :app:testDebugUnitTest \
+            :app:assembleDebugAndroidTest \
+            :app:assembleDebug \
+            :app:testReleaseUnitTest \
+            :app:assembleRelease
+
+      - name: Sign and verify installable v0.18.6 APK
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          INPUT_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          OUTPUT_APK="app/build/outputs/apk/release/Rahnama-Android16-v0.18.6-acceptance.apk"
+          test -s "$INPUT_APK"
+          test -s keystore/nv-debug.jks
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks keystore/nv-debug.jks \
+            --ks-pass pass:nvdebug \
+            --ks-key-alias nvdebug \
+            --key-pass pass:nvdebug \
+            --out "$OUTPUT_APK" \
+            "$INPUT_APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$OUTPUT_APK" | tee v0186-apksigner.txt
+          "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$OUTPUT_APK" | tee v0186-zipalign.txt
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging "$OUTPUT_APK")"
+          echo "$BADGING" | tee v0186-badging.txt
+          echo "$BADGING" | grep -q "package: name='ir.nv.navigation'"
+          echo "$BADGING" | grep -q "versionCode='23'"
+          echo "$BADGING" | grep -q "versionName='0.18.6'"
+          echo "$BADGING" | grep -q "sdkVersion:'29'"
+          echo "$BADGING" | grep -q "targetSdkVersion:'36'"
+          sha256sum "$OUTPUT_APK" | tee v0186-sha256.txt
+
+      - name: Enable KVM acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Android 16 Smart Hub and real-flow acceptance
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          NV_VERIFY_APK: app/build/outputs/apk/release/Rahnama-Android16-v0.18.6-acceptance.apk
+          NV_VERIFY_PACKAGE: ir.nv.navigation
+          NV_VERIFY_ACTIVITY: ir.nv.navigation.MainActivity
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          cores: 2
+          disable-animations: true
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
+          script: |
+            bash .github/scripts/verify-v0186-smart-hub.sh
+            bash .github/scripts/verify-nv-launch-modern.sh
+            gradle --no-daemon :app:connectedDebugAndroidTest
+
+      - name: Upload final APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rahnama-Android16-v0.18.6-acceptance-final
+          path: |
+            app/build/outputs/apk/release/Rahnama-Android16-v0.18.6-acceptance.apk
+            v0186-apksigner.txt
+            v0186-zipalign.txt
+            v0186-badging.txt
+            v0186-sha256.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload acceptance diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rahnama-v0.18.6-acceptance-diagnostics
+          path: |
+            nv-v0186-smart-screen.png
+            nv-v0186-smart-ui.xml
+            nv-v0186-smart-logcat.txt
+            nv-modern-launch-screen.png
+            nv-modern-window-state.txt
+            nv-modern-activity-state.txt
+            nv-modern-logcat.txt
+            nv-modern-app-logcat.txt
+            nv-modern-ui.xml
+            nv-modern-nearby-ui.xml
+            nv-modern-search-ui.xml
+            nv-modern-route-ui.xml
+            nv-modern-comparison-ui.xml
+            nv-modern-emergency-ui.xml
+          if-no-files-found: warn

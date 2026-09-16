@@ -1,0 +1,104 @@
+name: Build Online First APK
+
+on:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+    paths:
+      - tools/build-v0184-trigger.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: nv-persian-rtl-master-spec
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Install Android 16 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Static source checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python -m unittest discover -s tools -p 'test_*.py'
+          node --test backend/nv-code-registry/worker.test.mjs
+          node --test backend/cloud-sync/worker.test.mjs
+
+      - name: Gradle compile, lint and unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace \
+            :app:lintDebug \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:testReleaseUnitTest \
+            :app:assembleRelease
+
+      - name: Sign and verify installable APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          AAPT="$BUILD_TOOLS/aapt"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          INPUT_APK='app/build/outputs/apk/release/app-release-unsigned.apk'
+          OUTPUT_APK='NV-Android16-online-first.apk'
+          test -s "$INPUT_APK"
+          test -f 'keystore/nv-debug.jks'
+          "$APKSIGNER" sign \
+            --ks keystore/nv-debug.jks \
+            --ks-pass pass:nvdebug \
+            --ks-key-alias nvdebug \
+            --key-pass pass:nvdebug \
+            --out "$OUTPUT_APK" \
+            "$INPUT_APK"
+          "$APKSIGNER" verify --verbose --print-certs "$OUTPUT_APK" | tee apk-signature.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$OUTPUT_APK" | tee apk-zipalign.txt
+          "$AAPT" dump badging "$OUTPUT_APK" | tee apk-badging.txt
+          sha256sum "$OUTPUT_APK" | tee apk-sha256.txt
+          test -s "$OUTPUT_APK"
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-Android16-online-first
+          path: |
+            NV-Android16-online-first.apk
+            apk-signature.txt
+            apk-zipalign.txt
+            apk-badging.txt
+            apk-sha256.txt
+          if-no-files-found: error
+          retention-days: 30

@@ -1,5 +1,6 @@
 package ir.nv.navigation.navigation
 
+import ir.nv.navigation.ai.route.NvPredictiveRouteOptimizer
 import ir.nv.navigation.core.RouteSource
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -9,12 +10,16 @@ class HybridRouteCoordinator(
     private val offlineProvider: RouteProvider,
     private val trafficProvider: TrafficProvider,
     private val ranker: RouteRanker,
-    private val signalProvider: RouteSignalProvider = RouteSignalProvider { _, _ -> RouteSignals() }
+    private val signalProvider: RouteSignalProvider = RouteSignalProvider { _, _ -> RouteSignals() },
+    private val predictiveOptimizer: NvPredictiveRouteOptimizer? = null
 ) {
     suspend fun plan(
         request: RouteRequest,
         context: RouteIntelligenceContext = RouteIntelligenceContext(request.profile)
     ): RoutePlan {
+        val effectiveContext = context.copy(
+            electricVehicle = context.electricVehicle || request.vehicleProfile == VehicleProfile.EV
+        )
         val primaryOffline = request.preferOffline || !request.onlineAvailable
         var fallbackUsed = false
         var warning: String? = null
@@ -27,7 +32,7 @@ class HybridRouteCoordinator(
                 .getOrDefault(emptyList())
         }
 
-        val routes = when {
+        val resolvedRoutes = when {
             initial.isNotEmpty() -> initial
             !primaryOffline && request.offlineAvailable -> {
                 fallbackUsed = true
@@ -41,6 +46,16 @@ class HybridRouteCoordinator(
             }
             else -> emptyList()
         }
+        val evRangeMeters = request.ev.normalized().usableRangeMeters()
+        val rangeFilteredRoutes = if (request.vehicleProfile == VehicleProfile.EV && evRangeMeters != null) {
+            resolvedRoutes.filter { it.distanceMeters <= evRangeMeters }
+        } else {
+            resolvedRoutes
+        }
+        if (resolvedRoutes.isNotEmpty() && rangeFilteredRoutes.isEmpty() && evRangeMeters != null) {
+            warning = "برد قابل‌استفاده باتری برای این مسیر کافی نیست؛ توقف شارژ یا مقصد نزدیک‌تر لازم است"
+        }
+        val routes = rangeFilteredRoutes.take(MAX_ROUTE_ALTERNATIVES)
 
         val source = when {
             routes.isEmpty() -> RouteSource.NONE
@@ -56,7 +71,7 @@ class HybridRouteCoordinator(
                     val traffic = if (source == RouteSource.ONLINE && request.onlineAvailable) {
                         runCatching { trafficProvider.traffic(route) }.getOrNull()
                     } else null
-                    val signals = runCatching { signalProvider.signals(route, context) }
+                    val signals = runCatching { signalProvider.signals(route, effectiveContext) }
                         .getOrDefault(RouteSignals())
                         .normalized()
                     traffic to signals
@@ -73,12 +88,17 @@ class HybridRouteCoordinator(
                 signals = enrichment?.second ?: RouteSignals()
             )
         }
-        val ranked = ranker.rank(candidates, context)
+        val adaptiveRanked = ranker.rank(candidates, effectiveContext)
+        val ranked = predictiveOptimizer?.optimize(adaptiveRanked, effectiveContext) ?: adaptiveRanked
         return RoutePlan(
             candidates = ranked,
             selectedIndex = if (ranked.isEmpty()) -1 else 0,
             fallbackUsed = fallbackUsed,
             warning = warning
         )
+    }
+
+    private companion object {
+        const val MAX_ROUTE_ALTERNATIVES = 4
     }
 }

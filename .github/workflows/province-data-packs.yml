@@ -1,0 +1,199 @@
+name: Build province data packs
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [nv-persian-rtl-master-spec]
+    paths:
+      - "tools/extract_province_boundary.py"
+      - "tools/build_places.py"
+      - "tools/build_routing.py"
+      - "tools/enrich_routing.py"
+      - "tools/build_pack.py"
+      - ".github/workflows/province-data-packs.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: province-data-packs-v1
+  cancel-in-progress: false
+
+jobs:
+  province-pack:
+    name: Province ${{ matrix.province }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        province:
+          - alborz
+          - ardabil
+          - bushehr
+          - chaharmahal-bakhtiari
+          - east-azerbaijan
+          - fars
+          - gilan
+          - golestan
+          - hamadan
+          - hormozgan
+          - ilam
+          - isfahan
+          - kerman
+          - kermanshah
+          - khuzestan
+          - kohgiluyeh-boyer-ahmad
+          - kordestan
+          - lorestan
+          - markazi
+          - mazandaran
+          - north-khorasan
+          - qazvin
+          - qom
+          - razavi-khorasan
+          - semnan
+          - sistan-baluchestan
+          - south-khorasan
+          - tehran
+          - west-azerbaijan
+          - yazd
+          - zanjan
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install OSM and Mapsforge tooling
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes osmium-tool sqlite3 osmosis
+          python -m pip install --disable-pip-version-check "osmium>=4,<5"
+          mkdir -p "$HOME/.openstreetmap/osmosis/plugins" work dist
+          curl --fail --location --retry 5 \
+            --output "$HOME/.openstreetmap/osmosis/plugins/mapsforge-map-writer.jar" \
+            https://github.com/mapsforge/mapsforge/releases/download/0.30.0/mapsforge-map-writer-0.30.0-jar-with-dependencies.jar
+          echo "2ed0f79498916259826e0b6ef132ecc427e27999b26736036358733279825626  $HOME/.openstreetmap/osmosis/plugins/mapsforge-map-writer.jar" | sha256sum --check --strict
+
+      - name: Download Iran OSM and pinned province boundaries
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --output work/iran.osm.pbf \
+            https://download.geofabrik.de/asia/iran-latest.osm.pbf
+          curl --fail --location --retry 5 --output work/provinces.geojson \
+            https://raw.githubusercontent.com/hosseinhabibi2004/iran-geojson/890ff6c107c54d852328bbf7f9472d146c151ebf/data/provinces/provinces.min.geojson
+          test -s work/iran.osm.pbf
+          test -s work/provinces.geojson
+
+      - name: Extract province OSM data
+        env:
+          PROVINCE: ${{ matrix.province }}
+        run: |
+          set -euo pipefail
+          python tools/extract_province_boundary.py \
+            --input work/provinces.geojson \
+            --province-id "$PROVINCE" \
+            --output "work/$PROVINCE.geojson"
+          osmium extract \
+            --polygon "work/$PROVINCE.geojson" \
+            --strategy complete_ways \
+            --set-bounds \
+            --overwrite \
+            --output "work/$PROVINCE.osm.pbf" \
+            work/iran.osm.pbf
+          osmium fileinfo "work/$PROVINCE.osm.pbf"
+          test "$(stat --format=%s "work/$PROVINCE.osm.pbf")" -gt 100000
+
+      - name: Build province vector map
+        env:
+          PROVINCE: ${{ matrix.province }}
+          JAVACMD_OPTIONS: -Xmx3g
+        run: |
+          set -euo pipefail
+          osmosis \
+            --rb file="work/$PROVINCE.osm.pbf" \
+            --mapfile-writer \
+              file="work/$PROVINCE.map" \
+              type=hd \
+              preferred-languages=fa,en \
+              progress-logs=false \
+              comment="NV offline province $PROVINCE"
+          test -s "work/$PROVINCE.map"
+
+      - name: Build province place index
+        env:
+          PROVINCE: ${{ matrix.province }}
+        run: |
+          set -euo pipefail
+          osmium tags-filter --overwrite --output work/named.osm.pbf \
+            "work/$PROVINCE.osm.pbf" n/name w/name r/name
+          osmium export --overwrite --format geojsonseq \
+            --output work/named.geojsonseq work/named.osm.pbf
+          python tools/build_places.py work/named.geojsonseq work/places.db
+          sqlite3 work/places.db "SELECT COUNT(*) FROM places;"
+
+      - name: Build province routing graph
+        env:
+          PROVINCE: ${{ matrix.province }}
+        run: |
+          set -euo pipefail
+          python tools/build_routing.py "work/$PROVINCE.osm.pbf" work/routing.db
+          python tools/enrich_routing.py "work/$PROVINCE.osm.pbf" work/routing.db
+          test "$(sqlite3 work/routing.db 'SELECT COUNT(*) FROM nodes;')" -gt 0
+          test "$(sqlite3 work/routing.db 'SELECT COUNT(*) FROM edges;')" -gt 0
+
+      - name: Package and verify province pack
+        env:
+          PROVINCE: ${{ matrix.province }}
+        run: |
+          set -euo pipefail
+          python tools/build_pack.py \
+            --map "work/$PROVINCE.map" \
+            --places work/places.db \
+            --routing work/routing.db \
+            --region-id "$PROVINCE" \
+            --output "dist/province-$PROVINCE.nvpack"
+          python -m zipfile --test "dist/province-$PROVINCE.nvpack"
+          sha256sum "dist/province-$PROVINCE.nvpack" | tee "dist/province-$PROVINCE.nvpack.sha256"
+          PROVINCE="$PROVINCE" python - <<'PY'
+          import json, os, zipfile
+          province = os.environ['PROVINCE']
+          path = f'dist/province-{province}.nvpack'
+          with zipfile.ZipFile(path) as z:
+              manifest = json.loads(z.read('manifest.json'))
+              assert manifest['schemaVersion'] == 2, manifest
+              assert manifest['regionId'] == province, manifest
+              required = {f'{province}.map', 'places.db', 'routing.db'}
+              assert required.issubset(z.namelist()), z.namelist()
+          print(f'verified {path}')
+          PY
+
+      - name: Publish province pack to map-v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROVINCE: ${{ matrix.province }}
+        run: |
+          set -euo pipefail
+          gh release view map-v1 >/dev/null
+          gh release upload map-v1 \
+            "dist/province-$PROVINCE.nvpack" \
+            "dist/province-$PROVINCE.nvpack.sha256" \
+            --clobber
+
+      - name: Verify published asset is visible
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROVINCE: ${{ matrix.province }}
+        run: |
+          set -euo pipefail
+          gh release view map-v1 --json assets --jq '.assets[].name' | grep -Fx "province-$PROVINCE.nvpack"

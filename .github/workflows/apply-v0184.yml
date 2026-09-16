@@ -1,0 +1,47 @@
+name: Apply v0.18.4 Online First Runtime
+
+on:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+    paths:
+      - tools/trigger-v0184.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nv-persian-rtl-master-spec
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply online-first province runtime patch
+        run: |
+          set -euo pipefail
+          python tools/apply_v0184_online_first.py
+          git diff --check
+          python -m unittest discover -s tools -p "test_*.py"
+          node --test backend/nv-code-registry/worker.test.mjs
+          node --test backend/cloud-sync/worker.test.mjs
+      - name: Commit source changes
+        run: |
+          set -euo pipefail
+          rm -f tools/trigger-v0184.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m "Wire online-first province offline runtime"
+          git push origin HEAD:nv-persian-rtl-master-spec
