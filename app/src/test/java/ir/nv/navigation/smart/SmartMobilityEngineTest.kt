@@ -67,7 +67,7 @@ class SmartMobilityEngineTest {
 
         val transit = engine.assistant("با مترو بروم", true, true)
         assertNull(transit.suggestedScreen)
-        assertTrue(transit.messageFa.contains("منبع واقعی") || transit.messageFa.contains("حمل‌ونقل"))
+        assertTrue(transit.messageFa.contains("منبع رسمی") || transit.messageFa.contains("مترو"))
 
         assertEquals(SmartFeatureScreen.WALKING, engine.assistant("پیاده چقدر طول می‌کشد", true, true).suggestedScreen)
     }
