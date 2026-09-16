@@ -6,9 +6,9 @@ import org.junit.Test
 
 class NavigationModeResolverTest {
     @Test
-    fun installed_offline_map_is_default_even_when_online() {
+    fun online_is_default_even_when_offline_map_is_installed() {
         assertEquals(
-            RouteSource.OFFLINE,
+            RouteSource.ONLINE,
             NavigationModeResolver.preferredSource(
                 onlineAvailable = true,
                 offlineReady = true,
@@ -36,6 +36,18 @@ class NavigationModeResolverTest {
             NavigationModeResolver.preferredSource(
                 onlineAvailable = true,
                 offlineReady = true,
+                preferOffline = true
+            )
+        )
+    }
+
+    @Test
+    fun online_is_used_when_offline_is_requested_but_not_downloaded() {
+        assertEquals(
+            RouteSource.ONLINE,
+            NavigationModeResolver.preferredSource(
+                onlineAvailable = true,
+                offlineReady = false,
                 preferOffline = true
             )
         )
