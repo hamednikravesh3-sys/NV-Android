@@ -1,0 +1,44 @@
+name: Apply v0.18.5 Smart Runtime
+
+on:
+  push:
+    branches:
+      - nv-persian-rtl-master-spec
+    paths:
+      - tools/trigger-v0185-smart.txt
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nv-persian-rtl-master-spec
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Apply smart runtime and precision location patch
+        run: |
+          set -euo pipefail
+          python tools/apply_v0185_smart_runtime.py
+          git diff --check
+      - name: Commit source changes
+        run: |
+          set -euo pipefail
+          rm -f tools/trigger-v0185-smart.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m "Make smart hub operational and tighten GPS accuracy"
+          git push origin HEAD:nv-persian-rtl-master-spec
