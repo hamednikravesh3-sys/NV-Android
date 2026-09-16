@@ -23,6 +23,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Apply online-first province patch
+        run: |
+          python3 - <<'PY'
+          import base64
+          import gzip
+          from pathlib import Path
+
+          encoded = Path('.github/online-provinces.patch.gz.b64').read_text()
+          Path('/tmp/online-provinces.patch').write_bytes(gzip.decompress(base64.b64decode(encoded)))
+          PY
+          git apply --check /tmp/online-provinces.patch
+          git apply /tmp/online-provinces.patch
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
