@@ -1,4 +1,4 @@
-name: Build v0.18.4 APK
+name: Build Online First APK
 
 on:
   push:
@@ -14,7 +14,7 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -30,7 +30,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
 
       - name: Install Android 16 SDK
         shell: bash
@@ -54,31 +58,47 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+          gradle --no-daemon --stacktrace \
+            :app:lintDebug \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:testReleaseUnitTest \
+            :app:assembleRelease
 
-      - name: Verify APK
+      - name: Sign and verify installable APK
         shell: bash
         run: |
           set -euo pipefail
-          APK='app/build/outputs/apk/debug/app-debug.apk'
-          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner"
-          AAPT="$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt"
-          test -s "$APK"
-          test -x "$APKSIGNER"
-          test -x "$AAPT"
-          "$APKSIGNER" verify --verbose "$APK"
-          "$AAPT" dump badging "$APK" | tee apk-badging.txt
-          sha256sum "$APK" | tee app-debug.apk.sha256
-          cp "$APK" 'NV-Android16-v0.18.4-online-first.apk'
+          BUILD_TOOLS="$ANDROID_SDK_ROOT/build-tools/36.0.0"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          AAPT="$BUILD_TOOLS/aapt"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          INPUT_APK='app/build/outputs/apk/release/app-release-unsigned.apk'
+          OUTPUT_APK='NV-Android16-online-first.apk'
+          test -s "$INPUT_APK"
+          test -f 'keystore/nv-debug.jks'
+          "$APKSIGNER" sign \
+            --ks keystore/nv-debug.jks \
+            --ks-pass pass:nvdebug \
+            --ks-key-alias nvdebug \
+            --key-pass pass:nvdebug \
+            --out "$OUTPUT_APK" \
+            "$INPUT_APK"
+          "$APKSIGNER" verify --verbose --print-certs "$OUTPUT_APK" | tee apk-signature.txt
+          "$ZIPALIGN" -c -P 16 -v 4 "$OUTPUT_APK" | tee apk-zipalign.txt
+          "$AAPT" dump badging "$OUTPUT_APK" | tee apk-badging.txt
+          sha256sum "$OUTPUT_APK" | tee apk-sha256.txt
+          test -s "$OUTPUT_APK"
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-Android16-v0.18.4-online-first
+          name: NV-Android16-online-first
           path: |
-            NV-Android16-v0.18.4-online-first.apk
-            app-debug.apk.sha256
+            NV-Android16-online-first.apk
+            apk-signature.txt
+            apk-zipalign.txt
             apk-badging.txt
+            apk-sha256.txt
           if-no-files-found: error
           retention-days: 30
