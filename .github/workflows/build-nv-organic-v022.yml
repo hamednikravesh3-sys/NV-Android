@@ -1,9 +1,9 @@
-name: Build NV v0.23 Usable UI Precise Location APK
+name: Build NV v0.24 Search + NV Code APK
 
 on:
   push:
     branches:
-      - nv-organic-v023-usable-ui-location
+      - nv-organic-v024-search-nvcode
   workflow_dispatch:
 
 jobs:
@@ -31,12 +31,16 @@ jobs:
           cd organicmaps
           git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
 
-      - name: Integrate NV usable Persian UI and Tehran default
+      - name: Integrate NV v0.24 search, precise GPS and share codes
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p organicmaps/android/app/src/main/java/app/organicmaps
+          mkdir -p organicmaps/android/app/src/test/java/app/organicmaps
           cp platform/organic-ui/NvMapMenuOverlay.java organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          cp platform/organic-ui/NvRuntimeController.java organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          cp platform/organic-ui/NvCodeCodec.java organicmaps/android/app/src/main/java/app/organicmaps/NvCodeCodec.java
+          cp platform/organic-ui/NvCodeCodecTest.java organicmaps/android/app/src/test/java/app/organicmaps/NvCodeCodecTest.java
 
           python3 - <<'PY'
           from pathlib import Path
@@ -45,6 +49,7 @@ jobs:
 
           root = Path('organicmaps')
 
+          # Application id.
           build_gradle = root / 'android/build.gradle'
           text = build_gradle.read_text(encoding='utf-8')
           text = text.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation.om'")
@@ -52,14 +57,57 @@ jobs:
               raise SystemExit('Failed to patch application id')
           build_gradle.write_text(text, encoding='utf-8')
 
+          # Permission whitelist + ZXing core for QR and Code-128 generation.
           app_gradle = root / 'android/app/build.gradle'
           text = app_gradle.read_text(encoding='utf-8')
           old = r"~/name='app\.organicmaps(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
           new = r"~/name='ir\.nv\.navigation\.om(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
           if old not in text:
               raise SystemExit('Organic Maps permission whitelist pattern not found')
-          app_gradle.write_text(text.replace(old, new), encoding='utf-8')
+          text = text.replace(old, new)
+          dep_anchor = "  implementation libs.google.material\n"
+          if dep_anchor not in text:
+              raise SystemExit('Material dependency anchor not found')
+          text = text.replace(dep_anchor, dep_anchor + "  implementation 'com.google.zxing:core:3.5.3'\n", 1)
+          app_gradle.write_text(text, encoding='utf-8')
 
+          # Make runtime controller the owner of search/location/code UX. The old overlay remains the visual home shell.
+          overlay = root / 'android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java'
+          value = overlay.read_text(encoding='utf-8')
+          old_location = '      locationQuick = quickButton("◎", "مکان من", GREEN, this::showLocationPrecision);\n'
+          new_location = ('      locationQuick = quickButton("◎", "مکان من", GREEN, '
+                          '() -> NvRuntimeController.showLocationStatus(activity));\n'
+                          '      locationQuick.setTag("nv-location-quick");\n')
+          if old_location not in value:
+              raise SystemExit('Location quick-button anchor not found')
+          value = value.replace(old_location, new_location, 1)
+
+          nv_anchor = '      nv.setBackground(round(PANEL_2, OUTLINE, 14));\n'
+          if nv_anchor not in value:
+              raise SystemExit('NV logo anchor not found')
+          value = value.replace(nv_anchor, nv_anchor +
+              '      nv.setClickable(true);\n'
+              '      nv.setOnClickListener(v -> NvRuntimeController.showCodeMenu(activity));\n', 1)
+
+          value = value.replace('activity.showSearch(', 'NvRuntimeController.openSearch(activity, ')
+
+          menu_anchor = '      panel.addView(sheetHeader("همه منوهای NV", "۲۲ بخش؛ همه در همین صفحه نقشه", this::closeSheet));\n'
+          if menu_anchor not in value:
+              raise SystemExit('All-menu header anchor not found')
+          value = value.replace(menu_anchor, menu_anchor +
+              '      panel.addView(primary("کد NV و QR برای نقطه دلخواه", GREEN, () -> { closeSheet(); NvRuntimeController.startCodePicker(activity); }));\n', 1)
+          overlay.write_text(value, encoding='utf-8')
+
+          # Java/Android compatibility: use the classic UTF-8 overload and clear stale sheet listeners.
+          runtime = root / 'android/app/src/main/java/app/organicmaps/NvRuntimeController.java'
+          value = runtime.read_text(encoding='utf-8')
+          value = value.replace('URLEncoder.encode(query, StandardCharsets.UTF_8)', 'URLEncoder.encode(query, "UTF-8")')
+          value = value.replace(
+              '    customLayer.setClickable(true);\n    updateBaseVisibility();\n  }\n\n  private void beginSheet',
+              '    customLayer.setClickable(true);\n    customLayer.setOnClickListener(null);\n    updateBaseVisibility();\n  }\n\n  private void beginSheet', 1)
+          runtime.write_text(value, encoding='utf-8')
+
+          # App branding.
           for rel in [
               'android/libs/branding/src/main/res/values/donottranslate.xml',
               'android/libs/branding/src/debug/res/values/donottranslate.xml',
@@ -67,9 +115,9 @@ jobs:
           ]:
               f = root / rel
               if f.exists():
-                  value = f.read_text(encoding='utf-8')
-                  value = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', value)
-                  f.write_text(value, encoding='utf-8')
+                  branded = f.read_text(encoding='utf-8')
+                  branded = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', branded)
+                  f.write_text(branded, encoding='utf-8')
 
           icon_b64 = Path('platform/reference-v019-icon256.b64').read_text(encoding='utf-8').strip()
           icon = base64.b64decode(icon_b64)
@@ -77,6 +125,7 @@ jobs:
           icon_dir.mkdir(parents=True, exist_ok=True)
           (icon_dir / 'nv_launcher.webp').write_bytes(icon)
 
+          # Launcher stays SplashActivity so first-run/resource initialization remains correct.
           manifest = root / 'android/app/src/main/AndroidManifest.xml'
           text = manifest.read_text(encoding='utf-8')
           text = text.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/nv_launcher"')
@@ -91,39 +140,47 @@ jobs:
           text = text.replace(splash_head, splash_head + splash_launcher, 1)
           manifest.write_text(text, encoding='utf-8')
 
+          # Install both NV UI layers on the real Organic Maps screen.
           mwm = root / 'android/app/src/main/java/app/organicmaps/MwmActivity.java'
           text = mwm.read_text(encoding='utf-8')
           anchor = '    setContentView(R.layout.activity_map);\n'
           if anchor not in text:
               raise SystemExit('MwmActivity map layout anchor not found')
-          text = text.replace(anchor, anchor + '    NvMapMenuOverlay.install(this);\n', 1)
+          text = text.replace(anchor, anchor +
+              '    NvMapMenuOverlay.install(this);\n'
+              '    NvRuntimeController.install(this);\n', 1)
           mwm.write_text(text, encoding='utf-8')
 
+          # Tehran is the only initial regional map and is now actually enqueued for download.
           downloader = root / 'android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java'
           text = downloader.read_text(encoding='utf-8')
           anchor = '    initViewsAndListeners();\n'
           if anchor not in text:
               raise SystemExit('Downloader init anchor not found')
-          tehran = '    // NV default regional map: Tehran only on a clean installation.\n    mCurrentCountry = MapManager.nativeFindCountry(35.6892, 51.3890);\n    if (!TextUtils.isEmpty(mCurrentCountry))\n    {\n      final int nvTehranStatus = MapManager.nativeGetStatus(mCurrentCountry);\n      if (nvTehranStatus != CountryItem.STATUS_DONE)\n      {\n        UiUtils.show(mChbDownloadCountry);\n        mChbDownloadCountry.setChecked(true);\n        mChbDownloadCountry.setText("دانلود نقشه تهران");\n      }\n    }\n'
+          tehran = '''    // NV default regional map: Tehran only on a clean installation.\n    mCurrentCountry = MapManager.nativeFindCountry(35.6892, 51.3890);\n    if (!TextUtils.isEmpty(mCurrentCountry))\n    {\n      final int nvTehranStatus = MapManager.nativeGetStatus(mCurrentCountry);\n      if (nvTehranStatus != CountryItem.STATUS_DONE)\n      {\n        UiUtils.show(mChbDownloadCountry);\n        mChbDownloadCountry.setChecked(true);\n        mChbDownloadCountry.setText("دانلود نقشه تهران");\n        if (nvTehranStatus == CountryItem.STATUS_DOWNLOADABLE || nvTehranStatus == CountryItem.STATUS_PARTLY)\n          MapManager.startDownload(mCurrentCountry);\n        else if (nvTehranStatus == CountryItem.STATUS_FAILED)\n          MapManager.retryDownload(mCurrentCountry);\n      }\n    }\n'''
           text = text.replace(anchor, anchor + tehran, 1)
           downloader.write_text(text, encoding='utf-8')
 
           (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text(
-              'NV v0.23 uses the Organic Maps Project engine and OpenStreetMap data.\n'
-              'NV adds a cleaner Persian map-first menu layer, precise-location checks, and Tehran as the initial regional map.\n'
+              'NV v0.24 uses the Organic Maps Project engine and OpenStreetMap data.\n'
+              'NV adds Persian map UI, visible online search, real GPS accuracy, reversible NV location codes, QR and Code-128 sharing.\n'
               'Organic Maps Project: https://organicmaps.app\n'
               'Source: https://github.com/organicmaps/organicmaps\n', encoding='utf-8')
-          print('NV v0.23 usability/location integration applied')
+          print('NV v0.24 search/location/code integration applied')
           PY
 
           grep -q "appId = 'ir.nv.navigation.om'" organicmaps/android/build.gradle
+          grep -q "com.google.zxing:core:3.5.3" organicmaps/android/app/build.gradle
           grep -q 'NvMapMenuOverlay.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
-          grep -q '35.6892' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
-          grep -q 'دانلود نقشه تهران' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
-          grep -q 'MapLanguageCode.setMapLanguageCode("fa")' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          grep -q 'NV موقعیت تقریبی را به‌عنوان دقیق قبول نمی‌کند' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          grep -q 'LocationState.nativeSwitchToNextMode()' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          ! grep -q 'nativeShowCountry' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NvRuntimeController.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
+          grep -q 'nv-location-quick' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NvRuntimeController.openSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'کد NV و QR برای نقطه دلخواه' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'nominatim.openstreetmap.org' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          grep -q 'BarcodeFormat.CODE_128' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          grep -q 'nativeGetScreenRectCenter' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          grep -q 'MapManager.startDownload(mCurrentCountry)' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
+          grep -q 'NV-' organicmaps/android/app/src/main/java/app/organicmaps/NvCodeCodec.java
           test -s organicmaps/android/libs/branding/src/main/res/mipmap-nodpi/nv_launcher.webp
 
       - name: Configure Android SDK
@@ -136,7 +193,7 @@ jobs:
       - name: Configure ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: nv-organic-v023-usable-ui-location-arm64
+          key: nv-organic-v024-search-nvcode-arm64
           max-size: 2G
 
       - name: Build and test
@@ -156,22 +213,22 @@ jobs:
           test -s "$APK"
           unzip -t "$APK" >/dev/null
           AAPT=$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aapt | sort -V | tail -n 1)
-          "$AAPT" dump badging "$APK" | tee /tmp/nv-v023-badging.txt
-          grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-v023-badging.txt
-          grep -q "application-label:'NV'" /tmp/nv-v023-badging.txt
-          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v023-badging.txt
-          grep -q "locales:.*'fa'" /tmp/nv-v023-badging.txt
-          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v023-badging.txt
+          "$AAPT" dump badging "$APK" | tee /tmp/nv-v024-badging.txt
+          grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-v024-badging.txt
+          grep -q "application-label:'NV'" /tmp/nv-v024-badging.txt
+          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v024-badging.txt
+          grep -q "locales:.*'fa'" /tmp/nv-v024-badging.txt
+          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v024-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk
-          sha256sum dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk | tee dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk.sha256
+          cp "$APK" dist/NV-v0.24.0-search-nvcode-arm64-debug.apk
+          sha256sum dist/NV-v0.24.0-search-nvcode-arm64-debug.apk | tee dist/NV-v0.24.0-search-nvcode-arm64-debug.apk.sha256
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.23.0-usable-ui-precise-location-arm64-debug
+          name: NV-v0.24.0-search-nvcode-arm64-debug
           path: |
-            dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk
-            dist/NV-v0.23.0-usable-ui-precise-location-arm64-debug.apk.sha256
+            dist/NV-v0.24.0-search-nvcode-arm64-debug.apk
+            dist/NV-v0.24.0-search-nvcode-arm64-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
