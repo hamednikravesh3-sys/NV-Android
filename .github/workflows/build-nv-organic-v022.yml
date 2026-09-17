@@ -1,13 +1,13 @@
-name: Build NV v0.25 Functional Menus + Nearby + Smart Route APK
+name: Build NV v0.26 Final Functional APK
 
 on:
   push:
     branches:
-      - nv-organic-v025-functional-menus-nearby
+      - nv-organic-v026-final-functional
   workflow_dispatch:
 
 jobs:
-  build-map-ui:
+  build-final:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -31,7 +31,7 @@ jobs:
           cd organicmaps
           git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
 
-      - name: Integrate NV v0.25 functional menus, nearby POIs and smart routing
+      - name: Integrate NV v0.26 final functional layer
         shell: bash
         run: |
           set -euo pipefail
@@ -76,10 +76,14 @@ jobs:
           value = value.replace('URLEncoder.encode(query, StandardCharsets.UTF_8)', 'URLEncoder.encode(query, "UTF-8")')
           value = value.replace('text = "◎  ±" + accuracy + "م";', 'text = "◎  GPS " + accuracy + "م";')
           value = value.replace('text = "⚠  ±" + accuracy + "م";', 'text = "⚠  GPS " + accuracy + "م";')
-          value = value.replace('final String accuracy = loc.hasAccuracy() ? "±" + Math.round(loc.getAccuracy()) + " متر" : "نامشخص";', 'final String accuracy = loc.hasAccuracy() ? "خطای برآوردی " + Math.round(loc.getAccuracy()) + " متر" : "نامشخص";')
-          value = value.replace('loc.hasAccuracy() && loc.getAccuracy() <= 10 ? GREEN : AMBER);', 'loc.hasAccuracy() && loc.getAccuracy() <= 30 ? GREEN : (loc.hasAccuracy() && loc.getAccuracy() <= 100 ? AMBER : RED));')
-          value = value.replace('loc.getAccuracy() > 50f', 'loc.getAccuracy() > 1000f')
-          value = value.replace('    customLayer.setClickable(true);\n    updateBaseVisibility();\n  }\n\n  private void beginSheet', '    customLayer.setClickable(true);\n    customLayer.setOnClickListener(null);\n    updateBaseVisibility();\n  }\n\n  private void beginSheet', 1)
+          value = value.replace('final String accuracy = loc.hasAccuracy() ? "±" + Math.round(loc.getAccuracy()) + " متر" : "نامشخص";',
+                                'final String accuracy = loc.hasAccuracy() ? "خطای GPS: " + Math.round(loc.getAccuracy()) + " متر" : "نامشخص";')
+          value = value.replace('loc.hasAccuracy() && loc.getAccuracy() <= 10 ? GREEN : AMBER);',
+                                'loc.hasAccuracy() && loc.getAccuracy() <= 30 ? GREEN : (loc.hasAccuracy() && loc.getAccuracy() <= 100 ? AMBER : RED));')
+          value = value.replace('loc.getAccuracy() > 50f', 'loc.getAccuracy() > 250f')
+          value = value.replace(
+              '    customLayer.setClickable(true);\n    updateBaseVisibility();\n  }\n\n  private void beginSheet',
+              '    customLayer.setClickable(true);\n    customLayer.setOnClickListener(null);\n    updateBaseVisibility();\n  }\n\n  private void beginSheet', 1)
           runtime.write_text(value, encoding='utf-8')
 
           for rel in [
@@ -118,7 +122,8 @@ jobs:
           anchor = '    setContentView(R.layout.activity_map);\n'
           if anchor not in text:
               raise SystemExit('MwmActivity map layout anchor not found')
-          text = text.replace(anchor, anchor + '    NvMapMenuOverlay.install(this);\n    NvRuntimeController.install(this);\n', 1)
+          text = text.replace(anchor,
+              anchor + '    NvMapMenuOverlay.install(this);\n    NvRuntimeController.install(this);\n', 1)
           mwm.write_text(text, encoding='utf-8')
 
           downloader = root / 'android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java'
@@ -130,8 +135,10 @@ jobs:
           text = text.replace(anchor, anchor + tehran, 1)
           downloader.write_text(text, encoding='utf-8')
 
-          (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text('NV v0.25 uses Organic Maps and OpenStreetMap. Functional NV menus use real location, Overpass nearby POIs and Organic Maps routing.\n', encoding='utf-8')
-          print('NV v0.25 integration applied')
+          (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text(
+              'NV v0.26 uses Organic Maps and OpenStreetMap. Nearby results are bounded to the live device location; smart trip text is mapped to real Organic Maps vehicle, transit or pedestrian routing.\n',
+              encoding='utf-8')
+          print('NV v0.26 final integration applied')
           PY
 
           grep -q "appId = 'ir.nv.navigation.om'" organicmaps/android/build.gradle
@@ -140,9 +147,13 @@ jobs:
           grep -q 'NvRuntimeController.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
           grep -q 'NvSmartActions.openPlanner' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'NvSmartActions.openNearby' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          grep -q 'overpass-api.de' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
+          grep -q 'MAX_NEARBY_ACCURACY_M = 100f' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
+          grep -q 'overpass.kumi.systems' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
+          grep -q 'overpass.private.coffee' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
+          grep -q 'category.radiusMeters \* 1.05d' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
           grep -q 'Router.Transit' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
-          grep -q 'خطای برآوردی' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          grep -q 'intent.hurry' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
+          grep -q 'خطای GPS:' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           ! grep -q '◎  ±' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           grep -q 'BarcodeFormat.CODE_128' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           grep -q 'MapManager.startDownload(mCurrentCountry)' organicmaps/android/app/src/main/java/app/organicmaps/DownloadResourcesLegacyActivity.java
@@ -158,7 +169,7 @@ jobs:
       - name: Configure ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: nv-organic-v025-functional-menus-nearby-arm64
+          key: nv-organic-v026-final-arm64
           max-size: 2G
 
       - name: Build and test
@@ -169,7 +180,7 @@ jobs:
         run: |
           ./gradlew --no-daemon -Parm64 :app:testWebDebugUnitTest :sdk:testDebug :app:assembleWebDebug
 
-      - name: Validate APK
+      - name: Validate installable Android 16 APK
         shell: bash
         run: |
           set -euo pipefail
@@ -177,23 +188,28 @@ jobs:
           test -n "$APK"
           test -s "$APK"
           unzip -t "$APK" >/dev/null
-          AAPT=$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name aapt | sort -V | tail -n 1)
-          "$AAPT" dump badging "$APK" | tee /tmp/nv-v025-badging.txt
-          grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-v025-badging.txt
-          grep -q "application-label:'NV'" /tmp/nv-v025-badging.txt
-          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v025-badging.txt
-          grep -q "locales:.*'fa'" /tmp/nv-v025-badging.txt
-          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v025-badging.txt
+          BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          AAPT="$BUILD_TOOLS/aapt"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          "$APKSIGNER" verify --verbose "$APK"
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK"
+          "$AAPT" dump badging "$APK" | tee /tmp/nv-v026-badging.txt
+          grep -q "package: name='ir.nv.navigation.om.web.debug'" /tmp/nv-v026-badging.txt
+          grep -q "application-label:'NV'" /tmp/nv-v026-badging.txt
+          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v026-badging.txt
+          grep -q "locales:.*'fa'" /tmp/nv-v026-badging.txt
+          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v026-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.25.0-functional-menus-nearby-arm64-debug.apk
-          sha256sum dist/NV-v0.25.0-functional-menus-nearby-arm64-debug.apk | tee dist/NV-v0.25.0-functional-menus-nearby-arm64-debug.apk.sha256
+          cp "$APK" dist/NV-v0.26.0-final-functional-arm64-debug.apk
+          sha256sum dist/NV-v0.26.0-final-functional-arm64-debug.apk | tee dist/NV-v0.26.0-final-functional-arm64-debug.apk.sha256
 
-      - name: Upload APK
+      - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.25.0-functional-menus-nearby-arm64-debug
+          name: NV-v0.26.0-final-functional-arm64-debug
           path: |
-            dist/NV-v0.25.0-functional-menus-nearby-arm64-debug.apk
-            dist/NV-v0.25.0-functional-menus-nearby-arm64-debug.apk.sha256
+            dist/NV-v0.26.0-final-functional-arm64-debug.apk
+            dist/NV-v0.26.0-final-functional-arm64-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
