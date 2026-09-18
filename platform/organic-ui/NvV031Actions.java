@@ -1474,7 +1474,13 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     if (titleHits>=Math.max(1,tokens.length-1)) score+=45;
     boolean rail=containsAny(query,"راه آهن","راه اهن","راه‌آهن","ایستگاه قطار");
     if(rail){ if(cat.contains("railway")||type.contains("station"))score+=120; if(t.contains("ایستگاه"))score+=45; if(t.contains("راه آهن")||t.contains("راه‌آهن"))score+=55; if(a.contains("کوی راه آهن")&&!t.contains("ایستگاه"))score-=45; }
-    boolean metro=containsAny(query,"مترو","زیرزمینی"); if(metro&&(cat.contains("railway")||type.contains("station")))score+=80;
+    boolean metro=containsAny(query,"مترو","زیرزمینی");
+    if(metro){
+      if(t.contains("مترو")||a.contains("مترو"))score+=130;
+      if(cat.contains("railway")||type.contains("station"))score+=35;
+      if((t.contains("راه آهن")||t.contains("راه‌آهن")||a.contains("راه آهن")||a.contains("راه‌آهن"))
+          && !t.contains("مترو"))score-=100;
+    }
     if(p.distanceMeters>=0){ if(p.distanceMeters<20_000)score+=20; else if(p.distanceMeters<80_000)score+=10; }
     return score;
   }
