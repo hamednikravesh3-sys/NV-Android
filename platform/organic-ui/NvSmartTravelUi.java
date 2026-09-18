@@ -312,23 +312,7 @@ public final class NvSmartTravelUi {
     return c;
   }
 
-  private static View routeStrip(MwmActivity a) {
-    LinearLayout row = panel(a, GREEN);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.addView(node(a, "🚶", "۷ دقیقه", AMBER), weight(a));
-    row.addView(node(a, "🚇", "۱۴ دقیقه", BLUE), weight(a));
-    row.addView(node(a, "🚕", "۷ دقیقه", GREEN), weight(a));
-    row.addView(node(a, "۲۸", "دقیقه", CYAN), weight(a));
-    return row;
-  }
 
-  private static View node(MwmActivity a, String icon, String sub, int color) {
-    LinearLayout b = new LinearLayout(a);
-    b.setOrientation(LinearLayout.VERTICAL); b.setGravity(Gravity.CENTER);
-    TextView i = text(a, icon, 18, color, Typeface.BOLD); i.setGravity(Gravity.CENTER); b.addView(i);
-    TextView s = text(a, sub, 10, MUTED, Typeface.NORMAL); s.setGravity(Gravity.CENTER); b.addView(s);
-    return b;
-  }
 
   private static View step(MwmActivity a, String n, String icon, String title, String sub, int accent) {
     LinearLayout r = new LinearLayout(a);
