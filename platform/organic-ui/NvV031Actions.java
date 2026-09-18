@@ -1226,31 +1226,124 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private static List<Place> geocodeRanked(String query, Location origin) throws Exception {
+    List<Place> out = new ArrayList<>();
+    Exception firstError = null;
+    try { out.addAll(geocodeNominatim(query, origin)); }
+    catch (Exception e) { firstError = e; }
+
+    if (out.size() < 4) {
+      try {
+        List<Place> fallback = geocodePhoton(query, origin);
+        Set<String> seen = new HashSet<>();
+        for (Place p : out) seen.add(String.format(Locale.US, "%.5f,%.5f", p.lat, p.lon));
+        for (Place p : fallback) {
+          String key = String.format(Locale.US, "%.5f,%.5f", p.lat, p.lon);
+          if (seen.add(key)) out.add(p);
+        }
+      } catch (Exception ignored) {}
+    }
+
+    if (out.isEmpty() && firstError != null) throw firstError;
+    String normalized = normalize(query);
+    for (Place p : out) p.score = scorePlace(normalized, p);
+    out.sort((p1,p2)-> {
+      int s1=Integer.compare(p2.score,p1.score);
+      if(s1!=0)return s1;
+      return Double.compare(p1.distanceMeters<0?Double.MAX_VALUE:p1.distanceMeters,
+                            p2.distanceMeters<0?Double.MAX_VALUE:p2.distanceMeters);
+    });
+    if (out.size()>10) return new ArrayList<>(out.subList(0,10));
+    return out;
+  }
+
+  private static List<Place> geocodeNominatim(String query, Location origin) throws Exception {
     String normalized = normalize(query);
     String searchQ = query;
     if (containsAny(normalized, "راه آهن", "راه اهن", "راه‌آهن") && !containsAny(normalized, "ایستگاه"))
       searchQ = "ایستگاه " + query;
-    StringBuilder u = new StringBuilder("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=20&addressdetails=1&namedetails=1&extratags=1&accept-language=fa&q=")
+
+    StringBuilder u = new StringBuilder(
+        "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=20&addressdetails=1&namedetails=1&extratags=1&accept-language=fa&q=")
         .append(URLEncoder.encode(searchQ, "UTF-8"));
     if (origin != null) {
       double dLat = 2.2, dLon = 2.5;
-      u.append(String.format(Locale.US, "&viewbox=%.6f,%.6f,%.6f,%.6f", origin.getLongitude()-dLon, origin.getLatitude()+dLat, origin.getLongitude()+dLon, origin.getLatitude()-dLat));
+      u.append(String.format(Locale.US, "&viewbox=%.6f,%.6f,%.6f,%.6f",
+          origin.getLongitude()-dLon, origin.getLatitude()+dLat,
+          origin.getLongitude()+dLon, origin.getLatitude()-dLat));
     }
-    HttpURLConnection c = (HttpURLConnection)new URL(u.toString()).openConnection();
-    c.setConnectTimeout(8000); c.setReadTimeout(12000); c.setRequestMethod("GET"); c.setRequestProperty("User-Agent", "NV-Android/0.31"); c.setRequestProperty("Accept", "application/json");
-    if (c.getResponseCode() < 200 || c.getResponseCode() >= 300) throw new IllegalStateException("HTTP " + c.getResponseCode());
-    JSONArray a = new JSONArray(readAll(c.getInputStream())); c.disconnect();
+
+    HttpURLConnection conn = (HttpURLConnection)new URL(u.toString()).openConnection();
+    conn.setConnectTimeout(8000); conn.setReadTimeout(12000); conn.setRequestMethod("GET");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
+    conn.setRequestProperty("Accept", "application/json");
+    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300)
+      throw new IllegalStateException("Nominatim HTTP " + conn.getResponseCode());
+    JSONArray arr = new JSONArray(readAll(conn.getInputStream()));
+    conn.disconnect();
+
     List<Place> out = new ArrayList<>();
-    for (int i=0;i<a.length();i++) {
-      JSONObject o=a.getJSONObject(i); double lat=Double.parseDouble(o.getString("lat")), lon=Double.parseDouble(o.getString("lon"));
-      String display=o.optString("display_name", ""); String title=o.optString("name", "").trim();
-      if (title.isEmpty()) { JSONObject names=o.optJSONObject("namedetails"); if (names!=null) title=names.optString("name:fa", names.optString("name", "")).trim(); }
-      if (title.isEmpty()) { int comma=display.indexOf(','); title=comma>0?display.substring(0,comma).trim():display; }
-      String category=o.optString("category", ""), type=o.optString("type", ""); double dist=origin==null?-1:haversine(origin.getLatitude(),origin.getLongitude(),lat,lon);
-      Place p=new Place(title,display,lat,lon,dist,category,type,0); p.score=scorePlace(normalized,p); out.add(p);
+    for (int i=0;i<arr.length();i++) {
+      JSONObject o=arr.optJSONObject(i); if(o==null)continue;
+      double lat=Double.parseDouble(o.getString("lat")), lon=Double.parseDouble(o.getString("lon"));
+      String display=o.optString("display_name", "");
+      String title=o.optString("name", "").trim();
+      if (title.isEmpty()) {
+        JSONObject names=o.optJSONObject("namedetails");
+        if (names!=null) title=names.optString("name:fa", names.optString("name", "")).trim();
+      }
+      if (title.isEmpty()) {
+        int comma=display.indexOf(',');
+        title=comma>0?display.substring(0,comma).trim():display;
+      }
+      String category=o.optString("category", ""), type=o.optString("type", "");
+      double dist=origin==null?-1:haversine(origin.getLatitude(),origin.getLongitude(),lat,lon);
+      out.add(new Place(title,display,lat,lon,dist,category,type,0));
     }
-    out.sort((p1,p2)-> { int s=Integer.compare(p2.score,p1.score); if(s!=0)return s; return Double.compare(p1.distanceMeters<0?Double.MAX_VALUE:p1.distanceMeters,p2.distanceMeters<0?Double.MAX_VALUE:p2.distanceMeters); });
-    if (out.size()>10) return new ArrayList<>(out.subList(0,10));
+    return out;
+  }
+
+  private static List<Place> geocodePhoton(String query, Location origin) throws Exception {
+    StringBuilder u = new StringBuilder("https://photon.komoot.io/api/?limit=20&lang=fa&q=")
+        .append(URLEncoder.encode(query, "UTF-8"));
+    if (origin != null) {
+      u.append(String.format(Locale.US, "&lat=%.6f&lon=%.6f",
+          origin.getLatitude(), origin.getLongitude()));
+    }
+
+    HttpURLConnection conn=(HttpURLConnection)new URL(u.toString()).openConnection();
+    conn.setConnectTimeout(8000); conn.setReadTimeout(12000); conn.setRequestMethod("GET");
+    conn.setRequestProperty("User-Agent","NV-Android/0.31");
+    conn.setRequestProperty("Accept","application/json");
+    if(conn.getResponseCode()<200||conn.getResponseCode()>=300)
+      throw new IllegalStateException("Photon HTTP " + conn.getResponseCode());
+
+    JSONObject root=new JSONObject(readAll(conn.getInputStream()));
+    conn.disconnect();
+    JSONArray features=root.optJSONArray("features");
+    List<Place> out=new ArrayList<>();
+    if(features==null)return out;
+
+    for(int i=0;i<features.length();i++){
+      JSONObject f=features.optJSONObject(i); if(f==null)continue;
+      JSONObject geom=f.optJSONObject("geometry");
+      JSONObject prop=f.optJSONObject("properties");
+      if(geom==null||prop==null)continue;
+      JSONArray xy=geom.optJSONArray("coordinates");
+      if(xy==null||xy.length()<2)continue;
+      double lon=xy.optDouble(0,Double.NaN), lat=xy.optDouble(1,Double.NaN);
+      if(!Double.isFinite(lat)||!Double.isFinite(lon))continue;
+      String title=prop.optString("name", "").trim();
+      if(title.isEmpty())title=prop.optString("street", "مکان");
+      StringBuilder address=new StringBuilder();
+      for(String key:new String[]{"street","district","city","county","state","country"}){
+        String v=prop.optString(key,"").trim();
+        if(!v.isEmpty() && address.indexOf(v)<0){ if(address.length()>0)address.append("، "); address.append(v); }
+      }
+      String category=prop.optString("osm_key","");
+      String type=prop.optString("osm_value","");
+      double dist=origin==null?-1:haversine(origin.getLatitude(),origin.getLongitude(),lat,lon);
+      out.add(new Place(title,address.toString(),lat,lon,dist,category,type,0));
+    }
     return out;
   }
 
