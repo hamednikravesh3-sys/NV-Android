@@ -691,8 +691,12 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     double egressDirect = haversine(bestTo.lat, bestTo.lon, dest.lat, dest.lon);
 
     if (taxi && accessDirect > 900d) {
-      access = osrm(origin.getLatitude(), origin.getLongitude(), bestFrom.lat, bestFrom.lon);
-      accessMode = "تاکسی";
+      RoadEstimate tmp=null;
+      try{tmp=osrm(origin.getLatitude(), origin.getLongitude(), bestFrom.lat, bestFrom.lon);}catch(Throwable ignored){}
+      if(tmp!=null){access=tmp;accessMode="تاکسی";}
+      else{
+        double d=accessDirect*1.20d;access=new RoadEstimate(d,walkingSeconds(accessDirect));accessMode="پیاده";
+      }
     } else {
       double d = accessDirect * 1.20d;
       access = new RoadEstimate(d, walkingSeconds(accessDirect));
@@ -700,8 +704,12 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     }
 
     if (taxi && egressDirect > 900d) {
-      egress = osrm(bestTo.lat, bestTo.lon, dest.lat, dest.lon);
-      egressMode = "تاکسی";
+      RoadEstimate tmp=null;
+      try{tmp=osrm(bestTo.lat,bestTo.lon,dest.lat,dest.lon);}catch(Throwable ignored){}
+      if(tmp!=null){egress=tmp;egressMode="تاکسی";}
+      else{
+        double d=egressDirect*1.20d;egress=new RoadEstimate(d,walkingSeconds(egressDirect));egressMode="پیاده";
+      }
     } else {
       double d = egressDirect * 1.20d;
       egress = new RoadEstimate(d, walkingSeconds(egressDirect));
