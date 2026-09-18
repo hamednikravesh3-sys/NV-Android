@@ -104,9 +104,12 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private long lastGpsAlertMs;
   private boolean destroyed;
   private final ArrayDeque<Float> speedSamples = new ArrayDeque<>();
+  private final ArrayDeque<Float> progressSpeedSamples = new ArrayDeque<>();
   private final ArrayDeque<Location> locationSamples = new ArrayDeque<>();
   private long lastSpeedSampleTime;
   private long lastLocationSampleTime;
+  private double lastRemainingMeters = -1d;
+  private long lastRemainingSampleTime;
   private volatile int onlineEtaSec = -1;
   private volatile double onlineEtaDistanceM = -1d;
   private volatile long onlineEtaUpdatedAt;
@@ -170,6 +173,9 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     if (!busy) {
       etaChip.setVisibility(View.GONE);
       speedSamples.clear();
+      progressSpeedSamples.clear();
+      lastRemainingMeters=-1d;
+      lastRemainingSampleTime=0L;
       onlineEtaSec = -1;
       return;
     }
@@ -185,6 +191,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
 
       int engine = info.totalTimeInSeconds;
       double meters = distanceMeters(info.distToTarget);
+      recordProgressSample(meters);
       MapObject endPoint = RoutingController.get().getEndPoint();
       requestOnlineEtaIfNeeded(loc, endPoint);
 
@@ -308,6 +315,34 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     }, "nv-v031-online-eta").start();
   }
 
+  private void recordProgressSample(double remainingMeters) {
+    if (!(remainingMeters > 0d)) return;
+    long now=System.currentTimeMillis();
+    if (lastRemainingMeters > 0d && lastRemainingSampleTime > 0L) {
+      double dt=(now-lastRemainingSampleTime)/1000d;
+      double progressed=lastRemainingMeters-remainingMeters;
+      if (dt>=4d && progressed>0d) {
+        double mps=progressed/dt;
+        if (mps>=1d && mps<=60d) {
+          progressSpeedSamples.addLast((float)mps);
+          while(progressSpeedSamples.size()>16)progressSpeedSamples.removeFirst();
+        }
+      }
+    }
+    if(lastRemainingSampleTime==0L || now-lastRemainingSampleTime>=4000L){
+      lastRemainingMeters=remainingMeters;
+      lastRemainingSampleTime=now;
+    }
+  }
+
+  private double medianProgressSpeedMps() {
+    if(progressSpeedSamples.size()<4)return -1d;
+    List<Float> v=new ArrayList<>(progressSpeedSamples);
+    Collections.sort(v);
+    int n=v.size();
+    return (n&1)==1?v.get(n/2):(v.get(n/2-1)+v.get(n/2))/2d;
+  }
+
   private int correctedActiveEta(int engineSec, double remainingMeters) {
     int base = Math.max(60, engineSec);
 
@@ -324,6 +359,16 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         base = online;
       else
         base = (int)Math.round(online * 0.78d + base * 0.22d);
+    }
+
+    // Use actual route progress—not one instantaneous GPS speed—to gently calibrate long trips.
+    if (remainingMeters > 12_000d) {
+      double progressMedian=medianProgressSpeedMps();
+      if(progressMedian>=3d) {
+        double progressEta=remainingMeters/progressMedian;
+        progressEta=Math.max(base*0.78d,Math.min(base*1.28d,progressEta));
+        base=(int)Math.round(base*0.88d+progressEta*0.12d);
+      }
     }
 
     // Never extrapolate a long trip from instantaneous speed. For the last 12 km,
