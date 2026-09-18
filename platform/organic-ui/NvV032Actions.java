@@ -106,6 +106,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private volatile double onlineOriginLat = Double.NaN;
   private volatile double onlineOriginLon = Double.NaN;
   private volatile long lastOnlineEtaAttemptAt;
+  private int smoothedEtaSec = -1;
   private static final long ONLINE_ETA_TTL_MS = 30_000L;
   private static final double ONLINE_ETA_REFRESH_MOVE_M = 500d;
 
@@ -130,8 +131,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     etaChip.setElevation(dp(a, 12));
     etaChip.setVisibility(View.GONE);
     if (host != null) {
-      FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(a, 250), dp(a, 44), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-      lp.setMargins(0, dp(a, 150), 0, 0);
+      FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(a, 340), dp(a, 58), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+      lp.setMargins(0, dp(a, 148), 0, 0);
       host.addView(etaChip, lp);
     }
 
@@ -170,6 +171,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       etaChip.setVisibility(View.GONE);
       speedSamples.clear();
       onlineEtaSec = -1;
+      smoothedEtaSec = -1;
       return;
     }
     try {
@@ -190,8 +192,14 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       int nv = correctedActiveEta(engine, meters);
       boolean onlineAllowed = onlineServicesEnabled(activity);
       String source = onlineEtaFresh() ? "NV جاده‌ای" : "NV آفلاین";
-      String suffix = onlineAllowed ? " • بدون ترافیک زنده" : " • حالت خصوصی";
-      etaChip.setText(source + "  " + formatMinutes(nv) + (meters > 0 ? "  •  " + formatDistance(meters) : "") + suffix);
+      int low = Math.max(60, (int)Math.round(nv * (onlineEtaFresh() ? 0.86d : 0.80d)));
+      int high = Math.max(low + 60, (int)Math.round(nv * (onlineEtaFresh() ? 1.22d : 1.35d)));
+      String line1 = source + "  " + formatMinutes(nv) + (meters > 0 ? "  •  " + formatDistance(meters) : "");
+      String line2 = onlineAllowed
+          ? "بازه بدون ترافیک زنده: " + formatMinutes(low) + " تا " + formatMinutes(high)
+          : "حالت خصوصی • تخمین آفلاین";
+      etaChip.setText(line1 + "\n" + line2);
+      etaChip.setMaxLines(2);
       etaChip.setVisibility(View.VISIBLE);
 
       // Keep the native route-plan card consistent with NV's corrected ETA.
@@ -312,7 +320,18 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       }
     }
 
-    return Math.max(60, base);
+    base = Math.max(60, base);
+    if (smoothedEtaSec <= 0) {
+      smoothedEtaSec = base;
+    } else {
+      int jump = Math.abs(base - smoothedEtaSec);
+      int resetThreshold = Math.max(8 * 60, (int)Math.round(smoothedEtaSec * 0.35d));
+      if (jump >= resetThreshold)
+        smoothedEtaSec = base;
+      else
+        smoothedEtaSec = (int)Math.round(smoothedEtaSec * 0.72d + base * 0.28d);
+    }
+    return Math.max(60, smoothedEtaSec);
   }
 
   private void updateMixedTripChip() {
