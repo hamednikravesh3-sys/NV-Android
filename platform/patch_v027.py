@@ -20,8 +20,11 @@ for name in ['NvMapMenuOverlay.java', 'NvRuntimeController.java', 'NvCodeCodec.j
 
 # Application id.
 f = root / 'android/build.gradle'
-t = f.read_text(encoding='utf-8').replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation.om'")
-if "appId = 'ir.nv.navigation.om'" not in t:
+t = f.read_text(encoding='utf-8')
+t = t.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation.clean029'")
+t = t.replace("versionCode = ver.V1", "versionCode = 29")
+t = t.replace("versionName = ver.V2", "versionName = '0.29.0'")
+if "appId = 'ir.nv.navigation.clean029'" not in t:
     raise SystemExit('app id patch failed')
 f.write_text(t, encoding='utf-8')
 
@@ -29,7 +32,7 @@ f.write_text(t, encoding='utf-8')
 f = root / 'android/app/build.gradle'
 t = f.read_text(encoding='utf-8')
 old = r"~/name='app\.organicmaps(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
-new = r"~/name='ir\.nv\.navigation\.om(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
+new = r"~/name='ir\.nv\.navigation\.clean029(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
 if old not in t:
     raise SystemExit('permission whitelist anchor missing')
 t = t.replace(old, new)
@@ -152,7 +155,7 @@ for rel in [
     f = root / rel
     if f.exists():
         s = f.read_text(encoding='utf-8')
-        s = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', s)
+        s = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV 0.29\2', s)
         f.write_text(s, encoding='utf-8')
 icon = base64.b64decode((repo_root / 'platform/reference-v019-icon256.b64').read_text(encoding='utf-8').strip())
 icon_dir = root / 'android/libs/branding/src/main/res/mipmap-nodpi'
@@ -180,6 +183,7 @@ if anchor not in t:
     raise SystemExit('SplashActivity anchor missing')
 if 'NvAnimatedBrand.install(this);' not in t:
     t = t.replace(anchor, anchor + '    NvAnimatedBrand.install(this);\n', 1)
+t = t.replace('private static final long DELAY = 100;', 'private static final long DELAY = 1600;')
 f.write_text(t, encoding='utf-8')
 
 # Install layers on map activity.
@@ -237,17 +241,18 @@ app_fa.mkdir(parents=True, exist_ok=True)
 ''', encoding='utf-8')
 
 (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text(
-    'NV v0.27 uses Organic Maps/OpenStreetMap. Semantic search ranks name/type/city; railway destinations are separate from subway routing; mixed trips verify metro availability; ETA blends route time with live speed; nearby radius is configurable.\n',
+    'NV v0.29 clean build uses Organic Maps/OpenStreetMap. Semantic search ranks name/type/city; railway destinations are separate from subway routing; mixed trips verify metro availability; ETA blends route time with live speed; nearby radius is configurable.\n',
     encoding='utf-8')
 
 # Build-time assertions.
 assert 'NvV027Actions.openSmartSearch' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'NvV027Actions.openRouteAlerts' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'NvSmartTravelUi.open(activity, id)' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert 'addSmartTravelPill' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert (dst / 'NvAnimatedBrand.java').exists()
 assert (dst / 'NvSmartTravelUi.java').exists()
 assert 'getSearchRadius' in (dst / 'NvSmartActions.java').read_text(encoding='utf-8')
 assert 'ensureCurrentRegionMap' in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert 'ensureTehranMap' not in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert (icon_dir / 'nv_launcher.webp').stat().st_size > 0
-print('NV v0.27 integration applied')
+print('NV v0.29 clean UI integration applied')
