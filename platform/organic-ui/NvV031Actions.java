@@ -169,8 +169,8 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
       requestOnlineEtaIfNeeded(loc, endPoint);
 
       int nv = correctedActiveEta(engine, meters);
-      String source = onlineEtaFresh() ? "NV آنلاین" : "NV";
-      etaChip.setText(source + "  " + formatMinutes(nv) + (meters > 0 ? "  •  " + formatDistance(meters) : ""));
+      String source = onlineEtaFresh() ? "NV جاده‌ای" : "NV آفلاین";
+      etaChip.setText(source + "  " + formatMinutes(nv) + (meters > 0 ? "  •  " + formatDistance(meters) : "") + "  • بدون ترافیک زنده");
       etaChip.setVisibility(View.VISIBLE);
 
       // Keep the native route-plan card consistent with NV's corrected ETA.
@@ -220,31 +220,42 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private boolean onlineEtaFresh() {
-    return onlineEtaSec > 0 && System.currentTimeMillis() - onlineEtaUpdatedAt <= 90_000L;
+    return onlineEtaSec > 0 && System.currentTimeMillis() - onlineEtaUpdatedAt <= ONLINE_ETA_TTL_MS;
   }
 
   private void requestOnlineEtaIfNeeded(Location loc, MapObject endPoint) {
     if (loc == null || endPoint == null || !RoutingController.get().isVehicleRouterType()) return;
     if (loc.hasAccuracy() && loc.getAccuracy() > 100f) return;
 
-    double tLat = endPoint.getLat(), tLon = endPoint.getLon();
-    boolean targetChanged = !Double.isFinite(onlineTargetLat)
-        || haversine(onlineTargetLat, onlineTargetLon, tLat, tLon) > 100d;
-    if (!targetChanged && onlineEtaFresh()) return;
-    if (onlineEtaLoading) return;
-
-    onlineEtaLoading = true;
+    final long now = System.currentTimeMillis();
     final double sLat = loc.getLatitude(), sLon = loc.getLongitude();
+    final double tLat = endPoint.getLat(), tLon = endPoint.getLon();
+
+    final boolean targetChanged = !Double.isFinite(onlineTargetLat)
+        || haversine(onlineTargetLat, onlineTargetLon, tLat, tLon) > 100d;
+    final boolean originMoved = !Double.isFinite(onlineOriginLat)
+        || haversine(onlineOriginLat, onlineOriginLon, sLat, sLon) >= ONLINE_ETA_REFRESH_MOVE_M;
+    final boolean expired = !onlineEtaFresh();
+
+    if (!targetChanged && !originMoved && !expired) return;
+    if (onlineEtaLoading || now - lastOnlineEtaAttemptAt < 8_000L) return;
+
+    lastOnlineEtaAttemptAt = now;
+    onlineEtaLoading = true;
     new Thread(() -> {
       try {
         RoadEstimate estimate = osrm(sLat, sLon, tLat, tLon);
-        onlineEtaSec = estimate.durationSec;
-        onlineEtaDistanceM = estimate.distanceM;
-        onlineEtaUpdatedAt = System.currentTimeMillis();
-        onlineTargetLat = tLat;
-        onlineTargetLon = tLon;
+        if (estimate.durationSec > 0 && estimate.distanceM > 0) {
+          onlineEtaSec = estimate.durationSec;
+          onlineEtaDistanceM = estimate.distanceM;
+          onlineEtaUpdatedAt = System.currentTimeMillis();
+          onlineTargetLat = tLat;
+          onlineTargetLon = tLon;
+          onlineOriginLat = sLat;
+          onlineOriginLon = sLon;
+        }
       } catch (Throwable ignored) {
-        // Keep route-engine ETA if the online estimator is unavailable.
+        // Keep the native route-engine estimate when the online road estimator is unavailable.
       } finally {
         onlineEtaLoading = false;
       }
