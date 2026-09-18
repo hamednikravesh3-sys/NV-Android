@@ -88,6 +88,11 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static final String PREFS = "nv_v031";
   private static final long FRESH_ROUTE_MS = 120_000L;
   private static final float MAX_ROUTE_ACCURACY = 75f;
+  private static final String[] OVERPASS_ENDPOINTS = {
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://overpass.private.coffee/api/interpreter"
+  };
   private static final Map<MwmActivity, NvV031Actions> INSTANCES = new WeakHashMap<>();
 
   private final MwmActivity activity;
@@ -718,22 +723,33 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         bestPath.lineSummary, bestPath.stationCount, bestPath.transfers);
   }
 
+  private static JSONObject overpassJson(String query,int readTimeoutMs) throws Exception {
+    Throwable last=null;
+    for(String endpoint:OVERPASS_ENDPOINTS){
+      HttpURLConnection conn=null;
+      try{
+        conn=(HttpURLConnection)new URL(endpoint).openConnection();
+        conn.setConnectTimeout(7000);conn.setReadTimeout(readTimeoutMs);conn.setRequestMethod("POST");conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
+        conn.setRequestProperty("User-Agent","NV-Android/0.31");
+        byte[] body=("data="+URLEncoder.encode(query,"UTF-8")).getBytes(StandardCharsets.UTF_8);
+        try(java.io.OutputStream os=conn.getOutputStream()){os.write(body);}
+        int code=conn.getResponseCode();
+        if(code<200||code>=300)throw new IllegalStateException("Overpass HTTP "+code);
+        return new JSONObject(readAll(conn.getInputStream()));
+      }catch(Throwable e){last=e;}
+      finally{if(conn!=null)conn.disconnect();}
+    }
+    throw new IllegalStateException("all Overpass endpoints failed",last);
+  }
+
   private static MetroNetwork fetchMetroNetwork(double lat1,double lon1,double lat2,double lon2) throws Exception {
     double midLat=(lat1+lat2)/2d, midLon=(lon1+lon2)/2d;
     double direct=haversine(lat1,lon1,lat2,lon2);
     int radius=(int)Math.max(12_000d,Math.min(45_000d,direct/2d+12_000d));
     String around=String.format(Locale.US,"(around:%d,%.7f,%.7f)",radius,midLat,midLon);
     String q="[out:json][timeout:22];relation"+around+"[\"route\"=\"subway\"];(._;>;);out body;";
-    HttpURLConnection conn=(HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
-    conn.setConnectTimeout(8000);conn.setReadTimeout(22000);conn.setRequestMethod("POST");conn.setDoOutput(true);
-    conn.setRequestProperty("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");
-    conn.setRequestProperty("User-Agent","NV-Android/0.31");
-    byte[] body=("data="+URLEncoder.encode(q,"UTF-8")).getBytes(StandardCharsets.UTF_8);
-    try(java.io.OutputStream os=conn.getOutputStream()){os.write(body);}
-    int code=conn.getResponseCode();
-    if(code<200||code>=300)throw new IllegalStateException("HTTP "+code);
-    JSONArray els=new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
-    conn.disconnect();
+    JSONArray els=overpassJson(q,22000).optJSONArray("elements");
     if(els==null)return null;
 
     Map<Long,MetroNode> nodes=new HashMap<>();
@@ -886,7 +902,9 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
           int adjusted = result.durationSec;
           setStatus(s, "مقصد: " + dest.title + (hurry ? " • اولویت سرعت" : ""), GREEN);
           s.results.addView(text(a, "برآورد NV آنلاین: " + formatMinutes(adjusted) + " • " + formatDistance(result.distanceM), 17, WHITE, Typeface.BOLD));
-          s.results.addView(text(a, "این زمان بر پایه مسیر جاده‌ای آنلاین است؛ ترافیک زنده در دسترس نیست.", 12, MUTED, Typeface.NORMAL));
+          String quality = origin.hasAccuracy() && origin.getAccuracy() <= 25f ? "کیفیت GPS: خوب" :
+                           origin.hasAccuracy() && origin.getAccuracy() <= 50f ? "کیفیت GPS: متوسط" : "کیفیت GPS: محدود";
+          s.results.addView(text(a, quality + " • ترافیک زنده در این برآورد وجود ندارد.", 12, MUTED, Typeface.NORMAL));
         } else {
           setStatus(s, "برآورد آنلاین در دسترس نیست؛ مسیر آفلاین موتور نقشه استفاده می‌شود.", AMBER);
         }
@@ -1331,26 +1349,32 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
 
   private static List<Place> metroStations(double lat,double lon,int radius) throws Exception {
     String around=String.format(Locale.US,"(around:%d,%.7f,%.7f)",radius,lat,lon);
-    String q="[out:json][timeout:12];(node"+around+"[\"railway\"=\"station\"][\"station\"=\"subway\"];node"+around+"[\"railway\"=\"station\"][\"subway\"=\"yes\"];);out tags;";
-    HttpURLConnection c=(HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();c.setConnectTimeout(7000);c.setReadTimeout(14000);c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");c.setRequestProperty("User-Agent","NV-Android/0.31");
-    byte[] body=("data="+URLEncoder.encode(q,"UTF-8")).getBytes(StandardCharsets.UTF_8);try(java.io.OutputStream os=c.getOutputStream()){os.write(body);} if(c.getResponseCode()<200||c.getResponseCode()>=300)throw new IllegalStateException("HTTP");
-    JSONArray els=new JSONObject(readAll(c.getInputStream())).optJSONArray("elements");c.disconnect();List<Place> out=new ArrayList<>(); if(els==null)return out;
-    for(int i=0;i<els.length();i++){JSONObject e=els.optJSONObject(i);if(e==null)continue;double la=e.optDouble("lat",Double.NaN),lo=e.optDouble("lon",Double.NaN);if(!Double.isFinite(la)||!Double.isFinite(lo))continue;JSONObject tags=e.optJSONObject("tags");String name=tags==null?"":tags.optString("name:fa",tags.optString("name","ایستگاه مترو"));double d=haversine(lat,lon,la,lo);out.add(new Place(name,"ایستگاه مترو",la,lo,d,"railway","station",0));}
-    out.sort(Comparator.comparingDouble(p->p.distanceMeters)); if(out.size()>12)return new ArrayList<>(out.subList(0,12));return out;
+    String q="[out:json][timeout:12];(node"+around+"[\"railway\"=\"station\"][\"station\"=\"subway\"];"
+        +"node"+around+"[\"railway\"=\"station\"][\"subway\"=\"yes\"];"
+        +"node"+around+"[\"public_transport\"=\"station\"][\"subway\"=\"yes\"];);out tags;";
+    JSONArray els=overpassJson(q,14000).optJSONArray("elements");
+    List<Place> out=new ArrayList<>(); if(els==null)return out;
+    Set<String> seen=new HashSet<>();
+    for(int i=0;i<els.length();i++){
+      JSONObject e=els.optJSONObject(i);if(e==null)continue;
+      double la=e.optDouble("lat",Double.NaN),lo=e.optDouble("lon",Double.NaN);
+      if(!Double.isFinite(la)||!Double.isFinite(lo))continue;
+      String key=String.format(Locale.US,"%.6f,%.6f",la,lo);if(!seen.add(key))continue;
+      JSONObject tags=e.optJSONObject("tags");
+      String name=tags==null?"":tags.optString("name:fa",tags.optString("name","ایستگاه مترو"));
+      if(TextUtils.isEmpty(name))name="ایستگاه مترو";
+      double d=haversine(lat,lon,la,lo);
+      out.add(new Place(name,"ایستگاه مترو",la,lo,d,"railway","station",0));
+    }
+    out.sort(Comparator.comparingDouble(p->p.distanceMeters));
+    if(out.size()>12)return new ArrayList<>(out.subList(0,12));
+    return out;
   }
 
   private static List<Place> subwayEntrances(Place station, MapObject target) throws Exception {
     String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", 700, station.lat, station.lon);
     String q = "[out:json][timeout:12];(node" + around + "[\"railway\"=\"subway_entrance\"];);out tags;";
-    HttpURLConnection conn = (HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
-    conn.setConnectTimeout(7000); conn.setReadTimeout(14000); conn.setRequestMethod("POST"); conn.setDoOutput(true);
-    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
-    byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
-    try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
-    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300) throw new IllegalStateException("HTTP");
-    JSONArray els = new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
-    conn.disconnect();
+    JSONArray els = overpassJson(q, 14000).optJSONArray("elements");
 
     List<Place> out = new ArrayList<>();
     if (els == null) return out;
@@ -1378,15 +1402,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static List<Place> taxiStands(double lat, double lon, int radius) throws Exception {
     String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", radius, lat, lon);
     String q = "[out:json][timeout:12];(node" + around + "[\"amenity\"=\"taxi\"];way" + around + "[\"amenity\"=\"taxi\"];);out center tags;";
-    HttpURLConnection conn = (HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
-    conn.setConnectTimeout(7000); conn.setReadTimeout(14000); conn.setRequestMethod("POST"); conn.setDoOutput(true);
-    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
-    byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
-    try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
-    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300) throw new IllegalStateException("HTTP");
-    JSONArray els = new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
-    conn.disconnect();
+    JSONArray els = overpassJson(q, 14000).optJSONArray("elements");
 
     List<Place> out = new ArrayList<>();
     if (els == null) return out;
