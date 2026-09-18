@@ -168,8 +168,16 @@ jobs:
           APK="$GITHUB_WORKSPACE/organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-32-web-debug.apk"
           test -s "$APK"
 
-          yes | sdkmanager "system-images;android-36;default;x86_64" >/tmp/nv-v032-sdkmanager.txt 2>&1 || true
-          echo "no" | avdmanager create avd -f -n nv_api36 -k "system-images;android-36;default;x86_64" -d pixel_6 >/tmp/nv-v032-avd-create.txt 2>&1
+          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)
+          AVDMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name avdmanager | sort | tail -n 1)
+          test -x "$SDKMANAGER"
+          test -x "$AVDMANAGER"
+          set +o pipefail
+          yes | "$SDKMANAGER" "system-images;android-36;default;x86_64" >/tmp/nv-v032-sdkmanager.txt 2>&1
+          SDK_RC=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$SDK_RC" -eq 0
+          echo "no" | "$AVDMANAGER" create avd -f -n nv_api36 -k "system-images;android-36;default;x86_64" -d pixel_6 >/tmp/nv-v032-avd-create.txt 2>&1
 
           "$ANDROID_SDK_ROOT/emulator/emulator" -avd nv_api36 -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -accel off > /tmp/nv-v032-emulator.txt 2>&1 &
           EMU_PID=$!
