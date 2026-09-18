@@ -83,7 +83,17 @@ jobs:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
         run: |
-          ./gradlew --no-daemon -Parm64 :app:testWebDebugUnitTest :sdk:testDebug :app:assembleWebProfileable
+          set -o pipefail
+          ./gradlew --no-daemon -Parm64 :app:testWebDebugUnitTest :sdk:testDebug :app:assembleWebProfileable 2>&1 | tee /tmp/nv-v030-build.log
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.30-build-diagnostics
+          path: /tmp/nv-v030-build.log
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Validate installable Android 16 APK
         run: |
