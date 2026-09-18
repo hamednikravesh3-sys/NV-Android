@@ -777,13 +777,28 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         Router egressRouter = "تاکسی".equals(result.egressMode) ? Router.Vehicle : Router.Pedestrian;
         s.results.addView(button(a, "مرحله ۱: رفتن به " + result.fromStation.title, GREEN,
             () -> routeTo(a, result.fromStation, accessRouter)));
-        s.results.addView(button(a, "مرحله ۲: مسیر مترو بین دو ایستگاه", BLUE,
-            () -> routeBetween(a, result.fromStation, result.toStation, Router.Transit)));
+        s.results.addView(button(a, "مرحله ۲: راهنمای ایستگاه‌به‌ایستگاه مترو", BLUE,
+            () -> showMetroLeg(a, result)));
         s.results.addView(button(a, "مرحله ۳: از " + result.toStation.title + " تا مقصد", PURPLE,
             () -> routeBetween(a, result.toStation, dest, egressRouter)));
         s.results.addView(button(a, "مقایسه دوباره با خودرو", PANEL2, () -> compareHurryOptions(a, s, origin, dest)));
       });
     }, "nv-v031-mixed").start();
+  }
+
+  private static void showMetroLeg(MwmActivity a, MixedEstimate plan) {
+    Screen s=screen(a,"راهنمای مترو","مسیر بر اساس توپولوژی واقعی خطوط ثبت‌شده در OpenStreetMap");
+    setStatus(s,plan.lineSummary+" • "+plan.stationCount+" ایستگاه • "+plan.transfers+" تعویض",GREEN);
+    int n=1;
+    for(String station:plan.stationNames){
+      s.results.addView(stepCard(a,String.valueOf(n++),"ایستگاه: "+station,
+          n==2?"شروع بخش مترو":(n>plan.stationNames.size()?"پایان بخش مترو":"ادامه در خط مشخص‌شده"),BLUE));
+    }
+    s.results.addView(text(a,
+        "زمان مترو برآورد شبکه است و زمان انتظار/تأخیر زنده فقط با GTFS-Realtime رسمی قابل محاسبه است.",
+        11,MUTED,Typeface.NORMAL));
+    s.results.addView(button(a,"تلاش با موتور Transit نقشه",PANEL2,
+        ()->routeBetween(a,plan.fromStation,plan.toStation,Router.Transit)));
   }
 
   private static MixedEstimate estimateMixed(MwmActivity a, Location origin, Place dest) throws Exception {
@@ -859,13 +874,18 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         egressDirect, "railway", "station", 0);
 
     int total = access.durationSec + bestPath.seconds + egress.durationSec;
+    List<String> stationNames=new ArrayList<>();
+    for(Long id:bestPath.nodeIds){
+      MetroNode n=network.nodes.get(id);
+      if(n!=null)stationNames.add(TextUtils.isEmpty(n.name)?"ایستگاه مترو":n.name);
+    }
     return new MixedEstimate(
         aStation, bStation,
         access.distanceM, access.durationSec,
         bestPath.distanceM, bestPath.seconds,
         egress.distanceM, egress.durationSec,
         total, accessMode, egressMode,
-        bestPath.lineSummary, bestPath.stationCount, bestPath.transfers);
+        bestPath.lineSummary, bestPath.stationCount, bestPath.transfers, stationNames);
   }
 
   private static JSONObject overpassJson(String query,int readTimeoutMs) throws Exception {
@@ -967,10 +987,14 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private static MetroPath shortestMetroPath(MetroNetwork net,long start,long goal){
-    if(start==goal)return new MetroPath(0,0d,1,0,"همان ایستگاه");
+    if(start==goal){
+      List<Long> only=new ArrayList<>();only.add(start);
+      return new MetroPath(0,0d,1,0,"همان ایستگاه",only);
+    }
     PriorityQueue<MetroState> pq=new PriorityQueue<>(Comparator.comparingInt(x->x.seconds));
     Map<String,Integer> best=new HashMap<>();
-    pq.add(new MetroState(start,"",0,0d,1,0,new ArrayList<>()));
+    List<Long> initialNodes=new ArrayList<>();initialNodes.add(start);
+    pq.add(new MetroState(start,"",0,0d,1,0,new ArrayList<>(),initialNodes));
     while(!pq.isEmpty()){
       MetroState s=pq.poll();
       String key=s.node+"|"+s.line;
@@ -978,7 +1002,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
       best.put(key,s.seconds);
       if(s.node==goal){
         String summary=s.lines.isEmpty()?"مترو":TextUtils.join(" → ",s.lines);
-        return new MetroPath(s.seconds,s.distanceM,s.stationCount,s.transfers,summary);
+        return new MetroPath(s.seconds,s.distanceM,s.stationCount,s.transfers,summary,s.nodes);
       }
       List<MetroEdge> edges=net.edges.get(s.node); if(edges==null)continue;
       for(MetroEdge e:edges){
@@ -986,8 +1010,9 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         int add=e.seconds+(transfer?240:0);
         List<String> lines=new ArrayList<>(s.lines);
         if(lines.isEmpty()||!lines.get(lines.size()-1).equals(e.line))lines.add(e.line);
+        List<Long> pathNodes=new ArrayList<>(s.nodes);pathNodes.add(e.to);
         pq.add(new MetroState(e.to,e.line,s.seconds+add,s.distanceM+e.distanceM,
-            s.stationCount+1,s.transfers+(transfer?1:0),lines));
+            s.stationCount+1,s.transfers+(transfer?1:0),lines,pathNodes));
       }
     }
     return null;
@@ -1697,12 +1722,14 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     final double accessDistanceM, metroDistanceM, egressDistanceM;
     final int accessSec, metroSec, egressSec, totalSec, stationCount, transfers;
     final String accessMode, egressMode, lineSummary;
+    final List<String> stationNames;
     MixedEstimate(Place f, Place t, double ad, int as, double md, int ms, double ed, int es,
-                  int total, String am, String em, String lines, int stations, int transferCount) {
+                  int total, String am, String em, String lines, int stations, int transferCount,
+                  List<String> names) {
       fromStation=f; toStation=t; accessDistanceM=ad; accessSec=as;
       metroDistanceM=md; metroSec=ms; egressDistanceM=ed; egressSec=es;
       totalSec=total; accessMode=am; egressMode=em; lineSummary=lines;
-      stationCount=stations; transfers=transferCount;
+      stationCount=stations; transfers=transferCount; stationNames=names;
     }
   }
   private static final class MetroNode {
@@ -1722,13 +1749,16 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
   private static final class MetroState {
     final long node; final String line; final int seconds,stationCount,transfers;
-    final double distanceM; final List<String> lines;
-    MetroState(long n,String l,int s,double d,int st,int tr,List<String> ls){
-      node=n;line=l;seconds=s;distanceM=d;stationCount=st;transfers=tr;lines=ls;
+    final double distanceM; final List<String> lines; final List<Long> nodes;
+    MetroState(long n,String l,int s,double d,int st,int tr,List<String> ls,List<Long> ns){
+      node=n;line=l;seconds=s;distanceM=d;stationCount=st;transfers=tr;lines=ls;nodes=ns;
     }
   }
   private static final class MetroPath {
     final int seconds,stationCount,transfers; final double distanceM; final String lineSummary;
-    MetroPath(int s,double d,int st,int tr,String l){seconds=s;distanceM=d;stationCount=st;transfers=tr;lineSummary=l;}
+    final List<Long> nodeIds;
+    MetroPath(int s,double d,int st,int tr,String l,List<Long> ids){
+      seconds=s;distanceM=d;stationCount=st;transfers=tr;lineSummary=l;nodeIds=ids;
+    }
   }
 }
