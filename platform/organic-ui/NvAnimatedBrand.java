@@ -3,6 +3,8 @@ package app.organicmaps;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
@@ -68,7 +70,9 @@ public final class NvAnimatedBrand {
 
     if (resId != 0) {
       final ImageView image = new ImageView(activity);
-      image.setImageResource(resId);
+      Bitmap source = BitmapFactory.decodeResource(activity.getResources(), resId);
+      if (source != null) image.setImageBitmap(removeNearWhiteBackground(source));
+      else image.setImageResource(resId);
       image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
       image.setAdjustViewBounds(true);
       return image;
@@ -81,6 +85,31 @@ public final class NvAnimatedBrand {
     fallback.setTextSize(38);
     fallback.setGravity(Gravity.CENTER);
     return fallback;
+  }
+
+  private static Bitmap removeNearWhiteBackground(Bitmap source) {
+    Bitmap src = source.copy(Bitmap.Config.ARGB_8888, false);
+    int w = src.getWidth(), h = src.getHeight();
+    int[] pixels = new int[w * h];
+    src.getPixels(pixels, 0, w, 0, 0, w, h);
+
+    for (int i = 0; i < pixels.length; i++) {
+      int p = pixels[i];
+      int r = Color.red(p), g = Color.green(p), b = Color.blue(p);
+      int min = Math.min(r, Math.min(g, b));
+      int max = Math.max(r, Math.max(g, b));
+      boolean neutral = max - min < 18;
+      if (neutral && min >= 248) {
+        pixels[i] = Color.argb(0, r, g, b);
+      } else if (neutral && min >= 228) {
+        int alpha = Math.max(0, Math.min(255, (248 - min) * 13));
+        pixels[i] = Color.argb(alpha, r, g, b);
+      }
+    }
+
+    Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+    out.setPixels(pixels, 0, w, 0, 0, w, h);
+    return out;
   }
 
   private static void startSoftPulse(View logo) {
