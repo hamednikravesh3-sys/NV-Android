@@ -1,4 +1,4 @@
-name: Build NV v0.27 Smart Routing APK
+name: Build NV v0.28 Smart Travel APK
 
 on:
   push:
@@ -40,7 +40,10 @@ jobs:
           grep -q 'NvV027Actions.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
           grep -q 'NvV027Actions.openSmartSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'NvV027Actions.openRouteAlerts' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          grep -q 'NvV027Actions.openMixed' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NvSmartTravelUi.open(activity, id)' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NvAnimatedBrand.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/SplashActivity.java
+          test -s organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
+          test -s organicmaps/android/app/src/main/java/app/organicmaps/NvAnimatedBrand.java
           grep -q 'getSearchRadius' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
           grep -q 'ensureCurrentRegionMap' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           ! grep -q 'ensureTehranMap' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
@@ -59,7 +62,7 @@ jobs:
       - name: Configure ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: nv-organic-v027-smart-routing-arm64
+          key: nv-organic-v028-smart-travel-arm64
           max-size: 2G
 
       - name: Build and test
@@ -87,15 +90,15 @@ jobs:
           grep -q "locales:.*'fa'" /tmp/nv-v027-badging.txt
           grep -q "native-code: 'arm64-v8a'" /tmp/nv-v027-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.27.0-smart-routing-arm64-debug.apk
-          sha256sum dist/NV-v0.27.0-smart-routing-arm64-debug.apk | tee dist/NV-v0.27.0-smart-routing-arm64-debug.apk.sha256
+          cp "$APK" dist/NV-v0.28.0-smart-travel-arm64-debug.apk
+          sha256sum dist/NV-v0.28.0-smart-travel-arm64-debug.apk | tee dist/NV-v0.28.0-smart-travel-arm64-debug.apk.sha256
 
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.27.0-smart-routing-arm64-debug
+          name: NV-v0.28.0-smart-travel-arm64-debug
           path: |
-            dist/NV-v0.27.0-smart-routing-arm64-debug.apk
-            dist/NV-v0.27.0-smart-routing-arm64-debug.apk.sha256
+            dist/NV-v0.28.0-smart-travel-arm64-debug.apk
+            dist/NV-v0.28.0-smart-travel-arm64-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
