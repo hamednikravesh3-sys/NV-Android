@@ -504,6 +504,13 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   private static void smartSearch(MwmActivity a, Screen s, String query, boolean detailMode) {
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, "حالت خصوصی فعال است؛ جستجوی آنلاین غیرفعال است.", AMBER);
+      s.results.removeAllViews();
+      s.results.addView(button(a, "جستجو با موتور داخلی نقشه", BLUE,
+          () -> { removeScreen(a); NvRuntimeController.openSearch(a, query); }));
+      return;
+    }
     setStatus(s, "در حال جستجو و رتبه‌بندی «" + query + "»…", CYAN);
     s.results.removeAllViews();
     Location origin = MwmApplication.from(a).getLocationHelper().getSavedLocation();
@@ -1240,6 +1247,11 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   public static void openStationTransfer(MwmActivity a) {
     Screen s = screen(a, "تعویض هوشمند ایستگاه", "ایستگاه، خروجی و ادامه مسیر بر اساس مقصد فعال");
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, "برای بررسی خروجی‌های مترو، خدمات آنلاین باید فعال باشد.", AMBER);
+      s.results.addView(button(a, "باز کردن تنظیمات", BLUE, () -> openPreferences(a)));
+      return;
+    }
     Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
     if (!freshEnough(loc)) { setStatus(s, "GPS تازه با دقت مناسب لازم است.", RED); return; }
 
@@ -1298,6 +1310,11 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   private static void showMetroStations(MwmActivity a, String title, String subtitle) {
     Screen s = screen(a, title, subtitle);
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, "حالت خصوصی فعال است؛ داده آنلاین ایستگاه‌ها دریافت نمی‌شود.", AMBER);
+      s.results.addView(button(a, "باز کردن تنظیمات", BLUE, () -> openPreferences(a)));
+      return;
+    }
     Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
     if (!freshEnough(loc)) { setStatus(s, "GPS تازه لازم است.", RED); return; }
     setStatus(s, "در حال یافتن ایستگاه‌های مترو نزدیک…", CYAN);
@@ -1324,6 +1341,11 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   public static void openTaxi(MwmActivity a) {
     Screen s = screen(a, "تاکسی و محل سوارشدن", "نزدیک‌ترین ایستگاه‌ها و نقاط تاکسی ثبت‌شده اطراف موقعیت فعلی");
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, "حالت خصوصی فعال است؛ جستجوی آنلاین نقاط تاکسی انجام نمی‌شود.", AMBER);
+      s.results.addView(button(a, "باز کردن تنظیمات", BLUE, () -> openPreferences(a)));
+      return;
+    }
     Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
     if (!freshEnough(loc)) { setStatus(s, "GPS تازه با دقت مناسب لازم است.", RED); return; }
 
