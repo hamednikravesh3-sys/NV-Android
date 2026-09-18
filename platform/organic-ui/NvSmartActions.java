@@ -61,9 +61,9 @@ public final class NvSmartActions {
   private static final String TAG = "nv-smart-actions";
 
   private static final long MAX_NEARBY_FIX_AGE_MS = 60_000L;
-  private static final long MAX_ROUTE_FIX_AGE_MS = 120_000L;
+  private static final long MAX_ROUTE_FIX_AGE_MS = 75_000L;
   private static final float MAX_NEARBY_ACCURACY_M = 100f;
-  private static final float MAX_ROUTE_ACCURACY_M = 250f;
+  private static final float MAX_ROUTE_ACCURACY_M = 100f;
   private static final String[] OVERPASS_ENDPOINTS = {
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
@@ -108,7 +108,7 @@ public final class NvSmartActions {
               () -> { removeScreen(activity); NvRuntimeController.openSearch(activity, category.fallbackQuery); }));
         });
       }
-    }, "nv-nearby-v026").start();
+    }, "nv-nearby-v031").start();
   }
 
   public static void openPlanner(MwmActivity activity, int menuId) {
@@ -217,7 +217,7 @@ public final class NvSmartActions {
           }));
         });
       }
-    }, "nv-trip-geocode-v026").start();
+    }, "nv-trip-geocode-v031").start();
   }
 
   private static void renderNearby(MwmActivity activity, Screen ui, NvNearbyCategory category,
@@ -295,7 +295,7 @@ public final class NvSmartActions {
     conn.setDoOutput(true);
     conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
     conn.setRequestProperty("Accept", "application/json");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.26");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
     final byte[] payload = ("data=" + URLEncoder.encode(query, "UTF-8")).getBytes(StandardCharsets.UTF_8);
     try (OutputStream out = conn.getOutputStream()) { out.write(payload); }
     final int code = conn.getResponseCode();
@@ -398,7 +398,7 @@ public final class NvSmartActions {
     conn.setReadTimeout(12000);
     conn.setRequestMethod("GET");
     conn.setRequestProperty("Accept", "application/json");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.26");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
     final int code = conn.getResponseCode();
     if (code < 200 || code >= 300) {
       conn.disconnect();
