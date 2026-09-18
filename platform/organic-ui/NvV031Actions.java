@@ -1262,11 +1262,39 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private static RoadEstimate osrm(double lat1,double lon1,double lat2,double lon2) throws Exception {
-    String u=String.format(Locale.US,"https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=false&alternatives=true&steps=false",lon1,lat1,lon2,lat2);
-    HttpURLConnection c=(HttpURLConnection)new URL(u).openConnection(); c.setConnectTimeout(8000);c.setReadTimeout(12000);c.setRequestMethod("GET");c.setRequestProperty("User-Agent","NV-Android/0.31");
-    if(c.getResponseCode()<200||c.getResponseCode()>=300)throw new IllegalStateException("HTTP"); JSONObject root=new JSONObject(readAll(c.getInputStream()));c.disconnect();
-    JSONArray routes=root.optJSONArray("routes"); if(routes==null||routes.length()==0)throw new IllegalStateException("no route"); JSONObject best=routes.getJSONObject(0);
-    return new RoadEstimate(best.optDouble("distance",0),Math.max(1,(int)Math.round(best.optDouble("duration",0))));
+    List<RoadEstimate> routes = osrmAlternatives(lat1, lon1, lat2, lon2);
+    if (routes.isEmpty()) throw new IllegalStateException("no route");
+    routes.sort(Comparator.comparingInt(x -> x.durationSec));
+    return routes.get(0);
+  }
+
+  private static List<RoadEstimate> osrmAlternatives(double lat1,double lon1,double lat2,double lon2) throws Exception {
+    String u=String.format(Locale.US,
+        "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=false&alternatives=3&steps=false",
+        lon1,lat1,lon2,lat2);
+    HttpURLConnection conn=(HttpURLConnection)new URL(u).openConnection();
+    conn.setConnectTimeout(8000);
+    conn.setReadTimeout(12000);
+    conn.setRequestMethod("GET");
+    conn.setRequestProperty("User-Agent","NV-Android/0.31");
+    if(conn.getResponseCode()<200||conn.getResponseCode()>=300)
+      throw new IllegalStateException("HTTP " + conn.getResponseCode());
+    JSONObject root=new JSONObject(readAll(conn.getInputStream()));
+    conn.disconnect();
+    JSONArray routes=root.optJSONArray("routes");
+    if(routes==null||routes.length()==0) throw new IllegalStateException("no route");
+
+    List<RoadEstimate> out=new ArrayList<>();
+    for(int i=0;i<routes.length();i++){
+      JSONObject rr=routes.optJSONObject(i);
+      if(rr==null) continue;
+      double d=rr.optDouble("distance",0d);
+      int sec=Math.max(1,(int)Math.round(rr.optDouble("duration",0d)));
+      if(d>0d && sec>0) out.add(new RoadEstimate(d,sec));
+    }
+    out.sort(Comparator.comparingInt(x -> x.durationSec));
+    if(out.size()>3) return new ArrayList<>(out.subList(0,3));
+    return out;
   }
 
   private static boolean hasMetroNear(double lat,double lon,int radius) throws Exception { return !metroStations(lat,lon,radius).isEmpty(); }
