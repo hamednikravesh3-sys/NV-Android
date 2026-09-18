@@ -747,8 +747,17 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
       if(id<0||!Double.isFinite(la)||!Double.isFinite(lo))continue;
       JSONObject tags=e.optJSONObject("tags");
       String name="";
-      if(tags!=null)name=tags.optString("name:fa",tags.optString("name",""));
-      nodes.put(id,new MetroNode(id,name.isEmpty()?"ایستگاه مترو":name,la,lo));
+      boolean stationLike=false;
+      if(tags!=null){
+        name=tags.optString("name:fa",tags.optString("name",""));
+        String railway=tags.optString("railway","");
+        String pt=tags.optString("public_transport","");
+        String subway=tags.optString("subway","");
+        stationLike="station".equals(railway)||"halt".equals(railway)||"tram_stop".equals(railway)
+            ||"station".equals(pt)||"platform".equals(pt)||"stop_position".equals(pt)
+            ||"yes".equals(subway);
+      }
+      nodes.put(id,new MetroNode(id,name,la,lo,stationLike));
     }
 
     MetroNetwork net=new MetroNetwork();
@@ -763,7 +772,11 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         long ref=m.optLong("ref",-1); if(ref<0||!nodes.containsKey(ref))continue;
         String role=m.optString("role","");
         MetroNode n=nodes.get(ref);
-        if(role.contains("stop")||role.contains("platform")||!TextUtils.isEmpty(n.name))ordered.add(ref);
+        if(role.contains("stop")||role.contains("platform")||n.stationLike){
+          n.stationLike=true;
+          if(TextUtils.isEmpty(n.name))n.name="ایستگاه مترو";
+          ordered.add(ref);
+        }
       }
       Long prev=null;
       for(Long id:ordered){
@@ -783,6 +796,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static List<MetroNode> nearestMetroNodes(MetroNetwork n,double lat,double lon,double max,int limit){
     List<MetroNode> out=new ArrayList<>();
     for(MetroNode m:n.nodes.values()){
+      if(!m.stationLike)continue;
       m.tempDistance=haversine(lat,lon,m.lat,m.lon);
       if(m.tempDistance<=max)out.add(m);
     }
@@ -1409,8 +1423,8 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     }
   }
   private static final class MetroNode {
-    final long id; final String name; final double lat,lon; double tempDistance;
-    MetroNode(long i,String n,double a,double o){id=i;name=n;lat=a;lon=o;}
+    final long id; String name; final double lat,lon; boolean stationLike; double tempDistance;
+    MetroNode(long i,String n,double a,double o,boolean s){id=i;name=n;lat=a;lon=o;stationLike=s;}
   }
   private static final class MetroEdge {
     final long to; final double distanceM; final int seconds; final String line;
