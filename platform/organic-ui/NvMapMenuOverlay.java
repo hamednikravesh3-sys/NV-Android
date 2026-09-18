@@ -193,7 +193,7 @@ public final class NvMapMenuOverlay {
 
     private void handleMenu(int id) {
       switch (id) {
-        case 1 -> NvV031Actions.returnHome(activity)
+        case 1 -> NvV031Actions.returnHome(activity);
         case 2 -> showNearby();
         case 3 -> NvSmartActions.openNearby(activity, "اورژانس");
         case 4 -> NvV031Actions.openPlaceDetails(activity);
