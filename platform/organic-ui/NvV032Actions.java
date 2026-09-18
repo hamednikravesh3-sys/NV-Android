@@ -594,10 +594,10 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   public static void openChat(MwmActivity a) { openTripInput(a, Mode.CHAT, "چت هوشمند سفر", "طبیعی بنویسید؛ مقصد، عجله و نوع جابه‌جایی استخراج می‌شود"); }
   public static void openHurry(MwmActivity a) { openTripInput(a, Mode.HURRY, "حالت عجله دارم", "سریع‌ترین گزینه عملی بررسی می‌شود و ETA پیش از شروع نمایش داده می‌شود"); }
   public static void openMixed(MwmActivity a) { openTripInput(a, Mode.MIXED, "مسیر ترکیبی", "NV ابتدا وجود مترو نزدیک مبدا و مقصد را بررسی می‌کند؛ در نبود مترو خطای ساختگی نشان نمی‌دهد"); }
-  public static void openEta(MwmActivity a) { openTripInput(a, Mode.ETA, "اطمینان زمان رسیدن", "برآورد موتور مسیر با فاصله و سرعت واقعی دستگاه تطبیق داده می‌شود"); }
-  public static void openTimeCost(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه زمان و مصرف", "زمان خودرو و پیاده و مصرف تقریبی سوخت را قبل از شروع مقایسه کنید"); }
+  public static void openEta(MwmActivity a) { openTripInput(a, Mode.ETA, "زمان رسیدن", "ETA با منبع مشخص، هموارسازی و بازه عدم‌قطعیت نمایش داده می‌شود"); }
+  public static void openTimeCost(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه زمان و هزینه", "چند مسیر خودرو، سفر ترکیبی، پیاده، مصرف و هزینه تقریبی مقایسه می‌شوند"); }
   public static void openWalk(MwmActivity a) { openTripInput(a, Mode.WALK, "راهنمای پیاده", "مسیر پیاده مستقل محاسبه می‌شود"); }
-  public static void openCompareRoutes(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه مسیرها", "خودرو، پیاده و امکان مترو جداگانه بررسی می‌شوند"); }
+  public static void openCompareRoutes(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه مسیرها", "مسیرهای جایگزین خودرو و گزینه‌های ترکیبی/پیاده در یک صفحه بررسی می‌شوند"); }
 
   private static void openTripInput(MwmActivity a, Mode mode, String title, String subtitle) {
     Screen s = screen(a, title, subtitle);
