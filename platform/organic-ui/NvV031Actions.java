@@ -93,6 +93,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final LocationHelper locationHelper;
   private final TextView etaChip;
+  private final TextView mixedTripChip;
   private long lastSpeedAlertMs;
   private long lastGpsAlertMs;
   private boolean destroyed;
@@ -114,6 +115,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     @Override public void run() {
       if (destroyed) return;
       updateEtaAndAlerts();
+      updateMixedTripChip();
       handler.postDelayed(this, 1000L);
     }
   };
@@ -134,6 +136,21 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
       lp.setMargins(0, dp(a, 150), 0, 0);
       host.addView(etaChip, lp);
     }
+
+    mixedTripChip = text(a, "", 12, WHITE, Typeface.BOLD);
+    mixedTripChip.setGravity(Gravity.CENTER);
+    mixedTripChip.setPadding(dp(a, 10), dp(a, 6), dp(a, 10), dp(a, 6));
+    mixedTripChip.setBackground(round(a, Color.argb(245, 7, 45, 72), GREEN, 14));
+    mixedTripChip.setElevation(dp(a, 12));
+    mixedTripChip.setVisibility(View.GONE);
+    mixedTripChip.setClickable(true);
+    mixedTripChip.setOnClickListener(v -> continueMixedSession());
+    if (host != null) {
+      FrameLayout.LayoutParams mp = new FrameLayout.LayoutParams(dp(a, 300), dp(a, 48), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+      mp.setMargins(0, dp(a, 202), 0, 0);
+      host.addView(mixedTripChip, mp);
+    }
+
     a.getLifecycle().addObserver(this);
     handler.post(poll);
   }
@@ -295,6 +312,116 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     }
 
     return Math.max(60, base);
+  }
+
+  private void updateMixedTripChip() {
+    SharedPreferences p = prefs(activity);
+    if (!p.getBoolean("mixed_active", false)) {
+      mixedTripChip.setVisibility(View.GONE);
+      return;
+    }
+    Location loc = locationHelper.getSavedLocation();
+    if (loc == null) {
+      mixedTripChip.setText("NV سفر ترکیبی • GPS لازم است");
+      mixedTripChip.setVisibility(View.VISIBLE);
+      return;
+    }
+
+    int stage = p.getInt("mixed_stage", 1);
+    double fromLat = Double.longBitsToDouble(p.getLong("mixed_from_lat", Double.doubleToLongBits(Double.NaN)));
+    double fromLon = Double.longBitsToDouble(p.getLong("mixed_from_lon", Double.doubleToLongBits(Double.NaN)));
+    double toLat = Double.longBitsToDouble(p.getLong("mixed_to_lat", Double.doubleToLongBits(Double.NaN)));
+    double toLon = Double.longBitsToDouble(p.getLong("mixed_to_lon", Double.doubleToLongBits(Double.NaN)));
+    double destLat = Double.longBitsToDouble(p.getLong("mixed_dest_lat", Double.doubleToLongBits(Double.NaN)));
+    double destLon = Double.longBitsToDouble(p.getLong("mixed_dest_lon", Double.doubleToLongBits(Double.NaN)));
+
+    if (!Double.isFinite(fromLat) || !Double.isFinite(toLat) || !Double.isFinite(destLat)) {
+      clearMixedSession();
+      return;
+    }
+
+    double dFrom = haversine(loc.getLatitude(), loc.getLongitude(), fromLat, fromLon);
+    double dTo = haversine(loc.getLatitude(), loc.getLongitude(), toLat, toLon);
+    double dDest = haversine(loc.getLatitude(), loc.getLongitude(), destLat, destLon);
+
+    if (stage == 1 && dFrom <= 450d) {
+      stage = 2;
+      p.edit().putInt("mixed_stage", 2).apply();
+    }
+    if (stage == 2 && dTo <= 600d) {
+      stage = 3;
+      p.edit().putInt("mixed_stage", 3).apply();
+    }
+    if (stage == 3 && dDest <= 220d) {
+      clearMixedSession();
+      Toast.makeText(activity, "NV: سفر ترکیبی به مقصد رسید", Toast.LENGTH_LONG).show();
+      return;
+    }
+
+    String label;
+    if (stage == 1) label = "مرحله ۱ • تا " + p.getString("mixed_from_name", "ایستگاه مترو");
+    else if (stage == 2) label = "مرحله ۲ • مترو تا " + p.getString("mixed_to_name", "ایستگاه مقصد");
+    else label = "مرحله ۳ • ادامه تا مقصد";
+    mixedTripChip.setText("NV سفر ترکیبی • " + label);
+    mixedTripChip.setVisibility(View.VISIBLE);
+  }
+
+  private void continueMixedSession() {
+    SharedPreferences p = prefs(activity);
+    if (!p.getBoolean("mixed_active", false)) return;
+    int stage = p.getInt("mixed_stage", 1);
+    if (stage == 1) {
+      Place from = placeFromSession(p, "mixed_from", "ایستگاه مترو");
+      String mode = p.getString("mixed_access_mode", "پیاده");
+      routeTo(activity, from, "تاکسی".equals(mode) ? Router.Vehicle : Router.Pedestrian);
+    } else if (stage == 2) {
+      Place to = placeFromSession(p, "mixed_to", "ایستگاه مقصد");
+      routeTo(activity, to, Router.Transit);
+    } else {
+      Place dest = placeFromSession(p, "mixed_dest", "مقصد");
+      String mode = p.getString("mixed_egress_mode", "پیاده");
+      routeTo(activity, dest, "تاکسی".equals(mode) ? Router.Vehicle : Router.Pedestrian);
+    }
+  }
+
+  private static Place placeFromSession(SharedPreferences p, String prefix, String fallback) {
+    double lat = Double.longBitsToDouble(p.getLong(prefix + "_lat", Double.doubleToLongBits(Double.NaN)));
+    double lon = Double.longBitsToDouble(p.getLong(prefix + "_lon", Double.doubleToLongBits(Double.NaN)));
+    String name = p.getString(prefix + "_name", fallback);
+    String address = p.getString(prefix + "_address", "");
+    return new Place(name, address, lat, lon, -1d, "", "", 0);
+  }
+
+  private void clearMixedSession() {
+    prefs(activity).edit()
+        .remove("mixed_active").remove("mixed_stage")
+        .remove("mixed_from_lat").remove("mixed_from_lon").remove("mixed_from_name").remove("mixed_from_address")
+        .remove("mixed_to_lat").remove("mixed_to_lon").remove("mixed_to_name").remove("mixed_to_address")
+        .remove("mixed_dest_lat").remove("mixed_dest_lon").remove("mixed_dest_name").remove("mixed_dest_address")
+        .remove("mixed_access_mode").remove("mixed_egress_mode")
+        .apply();
+    mixedTripChip.setVisibility(View.GONE);
+  }
+
+  private static void startMixedSession(MwmActivity a, MixedEstimate m, Place dest) {
+    SharedPreferences.Editor e = prefs(a).edit();
+    e.putBoolean("mixed_active", true).putInt("mixed_stage", 1);
+    putSessionPlace(e, "mixed_from", m.fromStation);
+    putSessionPlace(e, "mixed_to", m.toStation);
+    putSessionPlace(e, "mixed_dest", dest);
+    e.putString("mixed_access_mode", m.accessMode);
+    e.putString("mixed_egress_mode", m.egressMode);
+    e.apply();
+
+    Router first = "تاکسی".equals(m.accessMode) ? Router.Vehicle : Router.Pedestrian;
+    routeTo(a, m.fromStation, first);
+  }
+
+  private static void putSessionPlace(SharedPreferences.Editor e, String prefix, Place p) {
+    e.putLong(prefix + "_lat", Double.doubleToRawLongBits(p.lat));
+    e.putLong(prefix + "_lon", Double.doubleToRawLongBits(p.lon));
+    e.putString(prefix + "_name", p.title);
+    e.putString(prefix + "_address", p.address);
   }
 
   private static double distanceMeters(Distance d) {
@@ -653,7 +780,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
             formatMinutes(result.egressSec) + " • " + formatDistance(result.egressDistanceM), PURPLE));
         s.results.addView(text(a, "هزینه تقریبی کل: " + formatToman(estimateMixedCostToman(a, result)),
             13, CYAN, Typeface.BOLD));
-        s.results.addView(button(a, "شروع مسیر مترو/پیاده", GREEN, () -> routeTo(a, dest, Router.Transit)));
+        s.results.addView(button(a, "شروع سفر ترکیبی مرحله‌به‌مرحله", GREEN, () -> startMixedSession(a, result, dest)));
         s.results.addView(button(a, "مقایسه با خودرو", BLUE, () -> compareHurryOptions(a, s, origin, dest)));
       });
     }, "nv-v031-mixed").start();
