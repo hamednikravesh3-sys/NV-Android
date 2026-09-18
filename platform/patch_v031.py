@@ -172,6 +172,14 @@ for y in range(img.height):
         elif mx - mn < 20 and mn >= 228:
             alpha = max(0, min(255, (248 - mn) * 13))
             px[x, y] = (r, g, b, alpha)
+bbox = img.getbbox()
+if bbox:
+    img = img.crop(bbox)
+side = max(img.width, img.height)
+pad = max(8, int(side * 0.08))
+canvas = Image.new('RGBA', (side + pad * 2, side + pad * 2), (0, 0, 0, 0))
+canvas.alpha_composite(img, ((canvas.width - img.width)//2, (canvas.height - img.height)//2))
+img = canvas
 icon_dir = root / 'android/libs/branding/src/main/res/mipmap-nodpi'
 icon_dir.mkdir(parents=True, exist_ok=True)
 img.save(icon_dir / 'nv_launcher.webp', 'WEBP', lossless=True, quality=100)
