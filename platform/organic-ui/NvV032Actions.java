@@ -816,10 +816,51 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     List<Place> to = metroStations(dest.lat, dest.lon, 5_000);
     if (from.isEmpty() || to.isEmpty()) return null;
 
-    Place aStation = from.get(0), bStation = to.get(0);
     boolean minCost = prefs(a).getBoolean("min_cost", false);
     boolean lessWalking = prefs(a).getBoolean("less_walking", false);
     boolean taxi = prefs(a).getBoolean("use_taxi", true) && (!minCost || lessWalking);
+
+    // Do not blindly choose the nearest station on each side.
+    // Evaluate a few low-access-distance pairs and choose the best connected metro pair.
+    Place aStation = null, bStation = null;
+    MetroRouteEstimate metro = null;
+    double bestPreliminary = Double.MAX_VALUE;
+    int evaluated = 0;
+    int fromCount = Math.min(3, from.size());
+    int toCount = Math.min(3, to.size());
+
+    List<int[]> pairs = new ArrayList<>();
+    for (int i = 0; i < fromCount; i++) {
+      for (int j = 0; j < toCount; j++) pairs.add(new int[]{i,j});
+    }
+    pairs.sort((x,y) -> Double.compare(
+        from.get(x[0]).distanceMeters + to.get(x[1]).distanceMeters,
+        from.get(y[0]).distanceMeters + to.get(y[1]).distanceMeters));
+
+    for (int[] pair : pairs) {
+      if (evaluated >= 4) break;
+      Place f = from.get(pair[0]), t = to.get(pair[1]);
+      MetroRouteEstimate candidate = null;
+      try { candidate = metroNetworkEstimate(f, t); } catch (Throwable ignored) {}
+      evaluated++;
+      if (candidate == null) continue;
+
+      double accessApprox = f.distanceMeters / (taxi ? 8.0d : 1.35d);
+      double egressApprox = t.distanceMeters / (taxi ? 8.0d : 1.35d);
+      double preliminary = accessApprox + candidate.seconds + egressApprox
+          + candidate.transfers * 90d;
+      if (preliminary < bestPreliminary) {
+        bestPreliminary = preliminary;
+        aStation = f;
+        bStation = t;
+        metro = candidate;
+      }
+    }
+
+    if (aStation == null || bStation == null) {
+      aStation = from.get(0);
+      bStation = to.get(0);
+    }
 
     RoadEstimate access;
     RoadEstimate egress;
@@ -832,9 +873,6 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       access = new RoadEstimate(ad, walkingSeconds(ad / 1.20d));
       egress = new RoadEstimate(ed, walkingSeconds(ed / 1.20d));
     }
-
-    MetroRouteEstimate metro = null;
-    try { metro = metroNetworkEstimate(aStation, bStation); } catch (Throwable ignored) {}
 
     double metroDistance;
     int metroSec;
