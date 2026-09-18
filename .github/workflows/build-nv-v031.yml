@@ -7,7 +7,7 @@ concurrency:
 on:
   push:
     branches:
-      - nv-v031-real-eta-smart-travel
+      - nv-v031-production-hardening
   workflow_dispatch:
 
 jobs:
@@ -47,7 +47,6 @@ jobs:
           grep -q 'NvV031Actions.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
           grep -q 'NvV031Actions.openSmartSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'NvV031Actions.openRouteAlerts' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          grep -q 'NvSmartTravelUi.open(activity, id)' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'addSmartTravelPill' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'NvAnimatedBrand.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/SplashActivity.java
           test -s organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
@@ -116,8 +115,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v031-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.31.0-real-eta-smart-travel-arm64-profileable.apk
-          sha256sum dist/NV-v0.31.0-real-eta-smart-travel-arm64-profileable.apk | tee dist/NV-v0.31.0-real-eta-smart-travel-arm64-profileable.apk.sha256
+          cp "$APK" dist/NV-v0.31.0-production-hardening-arm64-profileable.apk
+          sha256sum dist/NV-v0.31.0-production-hardening-arm64-profileable.apk | tee dist/NV-v0.31.0-production-hardening-arm64-profileable.apk.sha256
           grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v031-badging.txt
           grep -q "application-label:'NV'" /tmp/nv-v031-badging.txt
           grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v031-badging.txt
@@ -137,9 +136,9 @@ jobs:
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.31.0-real-eta-smart-travel-arm64-profileable
+          name: NV-v0.31.0-production-hardening-arm64-profileable
           path: |
-            dist/NV-v0.31.0-real-eta-smart-travel-arm64-profileable.apk
-            dist/NV-v0.31.0-real-eta-smart-travel-arm64-profileable.apk.sha256
+            dist/NV-v0.31.0-production-hardening-arm64-profileable.apk
+            dist/NV-v0.31.0-production-hardening-arm64-profileable.apk.sha256
           if-no-files-found: error
           retention-days: 14
