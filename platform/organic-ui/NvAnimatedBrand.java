@@ -4,55 +4,26 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 /**
- * Highly visible animated NV brand.
- * The opening animation is deliberately long enough to be noticeable on real devices.
+ * NV v0.30 brand.
+ * Opening screen intentionally contains the NV symbol only: no title, subtitle or version text.
  */
 public final class NvAnimatedBrand {
-  private static final int CYAN = Color.rgb(39, 211, 255);
-  private static final int BLUE = Color.rgb(42, 120, 255);
-  private static final int NAVY = Color.rgb(3, 18, 31);
-
   private NvAnimatedBrand() {}
 
-  public static View createLogo(android.app.Activity activity, int textSp, Runnable action) {
-    final TextView logo = new TextView(activity);
-    logo.setText("NV");
-    logo.setTextSize(textSp);
-    logo.setTextColor(Color.WHITE);
-    logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-    logo.setGravity(Gravity.CENTER);
-    logo.setShadowLayer(dp(activity, 14), 0f, 0f, CYAN);
-    logo.setBackground(round(activity, Color.rgb(6, 39, 67), CYAN, 18, 2));
+  public static View createLogo(android.app.Activity activity, int unusedTextSp, Runnable action) {
+    final View logo = logoView(activity);
     logo.setClickable(action != null);
     if (action != null) logo.setOnClickListener(v -> action.run());
-
-    final ObjectAnimator sx = ObjectAnimator.ofFloat(logo, View.SCALE_X, 0.88f, 1.12f, 0.96f, 1.06f, 0.88f);
-    final ObjectAnimator sy = ObjectAnimator.ofFloat(logo, View.SCALE_Y, 0.88f, 1.12f, 0.96f, 1.06f, 0.88f);
-    final ObjectAnimator rot = ObjectAnimator.ofFloat(logo, View.ROTATION, -4f, 4f, 0f, -4f);
-    final ObjectAnimator alpha = ObjectAnimator.ofFloat(logo, View.ALPHA, 0.72f, 1f, 0.84f, 1f, 0.72f);
-    for (ObjectAnimator a : new ObjectAnimator[]{sx, sy, rot, alpha}) {
-      a.setDuration(1500);
-      a.setRepeatCount(ValueAnimator.INFINITE);
-      a.setInterpolator(new AccelerateDecelerateInterpolator());
-    }
-
-    final AnimatorSet set = new AnimatorSet();
-    set.playTogether(sx, sy, rot, alpha);
-    logo.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
-      @Override public void onViewAttachedToWindow(View v) { set.start(); }
-      @Override public void onViewDetachedFromWindow(View v) { set.cancel(); }
-    });
+    startSoftPulse(logo);
     return logo;
   }
 
@@ -63,65 +34,71 @@ public final class NvAnimatedBrand {
     final FrameLayout layer = new FrameLayout(activity);
     layer.setTag("nv-opening-brand");
     layer.setClickable(false);
-    layer.setBackgroundColor(Color.rgb(1, 11, 20));
+    layer.setBackgroundColor(Color.rgb(3, 10, 17));
     layer.setElevation(dp(activity, 100));
 
-    final LinearLayout center = new LinearLayout(activity);
-    center.setOrientation(LinearLayout.VERTICAL);
-    center.setGravity(Gravity.CENTER);
-    center.setPadding(dp(activity, 26), dp(activity, 26), dp(activity, 26), dp(activity, 22));
-    center.setBackground(round(activity, Color.rgb(5, 27, 47), BLUE, 30, 2));
-    center.setElevation(dp(activity, 30));
+    final View logo = logoView(activity);
+    logo.setAlpha(0f);
+    logo.setScaleX(0.82f);
+    logo.setScaleY(0.82f);
 
-    final View logo = createLogo(activity, 48, null);
-    center.addView(logo, new LinearLayout.LayoutParams(dp(activity, 136), dp(activity, 98)));
+    final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+        dp(activity, 286), dp(activity, 286), Gravity.CENTER);
+    layer.addView(logo, lp);
+    host.addView(layer, new ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-    final TextView title = text(activity, "NV", 28, Color.WHITE, Typeface.BOLD);
-    title.setGravity(Gravity.CENTER);
-    title.setPadding(0, dp(activity, 14), 0, 0);
-    center.addView(title);
+    final ObjectAnimator alpha = ObjectAnimator.ofFloat(logo, View.ALPHA, 0f, 1f);
+    final ObjectAnimator sx = ObjectAnimator.ofFloat(logo, View.SCALE_X, 0.82f, 1.04f, 1f);
+    final ObjectAnimator sy = ObjectAnimator.ofFloat(logo, View.SCALE_Y, 0.82f, 1.04f, 1f);
+    alpha.setDuration(620);
+    sx.setDuration(1050);
+    sy.setDuration(1050);
+    sx.setInterpolator(new AccelerateDecelerateInterpolator());
+    sy.setInterpolator(new AccelerateDecelerateInterpolator());
 
-    final TextView fa = text(activity, "مسیریابی هوشمند برای زندگی واقعی", 14, Color.rgb(221, 236, 247), Typeface.BOLD);
-    fa.setGravity(Gravity.CENTER);
-    fa.setPadding(0, dp(activity, 8), 0, 0);
-    center.addView(fa);
-
-    final TextView en = text(activity, "Navigate a Better Tomorrow", 11, CYAN, Typeface.NORMAL);
-    en.setGravity(Gravity.CENTER);
-    en.setPadding(0, dp(activity, 5), 0, 0);
-    center.addView(en);
-
-    final TextView version = text(activity, "v0.29 • CLEAN BUILD", 10, Color.rgb(128, 190, 225), Typeface.BOLD);
-    version.setGravity(Gravity.CENTER);
-    version.setPadding(0, dp(activity, 10), 0, 0);
-    center.addView(version);
-
-    final FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(dp(activity, 320), dp(activity, 292), Gravity.CENTER);
-    layer.addView(center, cp);
-    host.addView(layer, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-    layer.setAlpha(0f);
-    layer.animate().alpha(1f).setDuration(250).start();
+    final AnimatorSet intro = new AnimatorSet();
+    intro.playTogether(alpha, sx, sy);
+    intro.start();
   }
 
-  private static TextView text(android.content.Context c, String s, int sp, int color, int style) {
-    final TextView v = new TextView(c);
-    v.setText(s);
-    v.setTextSize(sp);
-    v.setTextColor(color);
-    v.setTypeface(Typeface.DEFAULT, style);
-    v.setGravity(Gravity.RIGHT);
-    v.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    v.setTextDirection(View.TEXT_DIRECTION_RTL);
-    return v;
+  private static View logoView(android.app.Activity activity) {
+    final int resId = activity.getResources().getIdentifier(
+        "nv_splash_logo", "drawable", activity.getPackageName());
+
+    if (resId != 0) {
+      final ImageView image = new ImageView(activity);
+      image.setImageResource(resId);
+      image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+      image.setAdjustViewBounds(true);
+      return image;
+    }
+
+    // Build-time fallback only; normal NV builds always package nv_splash_logo.
+    final TextView fallback = new TextView(activity);
+    fallback.setText("NV");
+    fallback.setTextColor(Color.WHITE);
+    fallback.setTextSize(38);
+    fallback.setGravity(Gravity.CENTER);
+    return fallback;
   }
 
-  private static GradientDrawable round(android.content.Context c, int fill, int stroke, int radius, int strokeDp) {
-    final GradientDrawable d = new GradientDrawable();
-    d.setColor(fill);
-    d.setCornerRadius(dp(c, radius));
-    d.setStroke(dp(c, strokeDp), stroke);
-    return d;
+  private static void startSoftPulse(View logo) {
+    final ObjectAnimator sx = ObjectAnimator.ofFloat(logo, View.SCALE_X, 0.96f, 1.04f, 0.96f);
+    final ObjectAnimator sy = ObjectAnimator.ofFloat(logo, View.SCALE_Y, 0.96f, 1.04f, 0.96f);
+    sx.setDuration(2200);
+    sy.setDuration(2200);
+    sx.setRepeatCount(ValueAnimator.INFINITE);
+    sy.setRepeatCount(ValueAnimator.INFINITE);
+    sx.setInterpolator(new AccelerateDecelerateInterpolator());
+    sy.setInterpolator(new AccelerateDecelerateInterpolator());
+
+    final AnimatorSet set = new AnimatorSet();
+    set.playTogether(sx, sy);
+    logo.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+      @Override public void onViewAttachedToWindow(View v) { set.start(); }
+      @Override public void onViewDetachedFromWindow(View v) { set.cancel(); }
+    });
   }
 
   private static int dp(android.content.Context c, int v) {
