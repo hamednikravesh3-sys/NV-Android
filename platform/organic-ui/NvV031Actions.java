@@ -660,10 +660,29 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
       egress = new RoadEstimate(ed, walkingSeconds(ed / 1.20d));
     }
 
-    double metroDistance = haversine(aStation.lat, aStation.lon, bStation.lat, bStation.lon) * 1.12d;
-    int metroSec = Math.max(8 * 60, (int)Math.round(metroDistance / 8.3d + 4 * 60d));
-    int total = access.durationSec + metroSec + egress.durationSec;
+    MetroRouteEstimate metro = null;
+    try { metro = metroNetworkEstimate(aStation, bStation); } catch (Throwable ignored) {}
 
+    double metroDistance;
+    int metroSec;
+    int metroStops;
+    int metroTransfers;
+    String metroSource;
+    if (metro != null) {
+      metroDistance = metro.distanceM;
+      metroSec = metro.seconds;
+      metroStops = metro.stops;
+      metroTransfers = metro.transfers;
+      metroSource = "شبکه خطوط OSM";
+    } else {
+      metroDistance = haversine(aStation.lat, aStation.lon, bStation.lat, bStation.lon) * 1.15d;
+      metroSec = Math.max(8 * 60, (int)Math.round(metroDistance / 8.0d + 5 * 60d));
+      metroStops = -1;
+      metroTransfers = -1;
+      metroSource = "برآورد فاصله‌ای";
+    }
+
+    int total = access.durationSec + metroSec + egress.durationSec;
     return new MixedEstimate(
         aStation, bStation,
         access.distanceM, access.durationSec,
@@ -671,7 +690,147 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         egress.distanceM, egress.durationSec,
         total,
         taxi ? "تاکسی" : "پیاده",
-        taxi ? "تاکسی" : "پیاده");
+        taxi ? "تاکسی" : "پیاده",
+        metroStops, metroTransfers, metroSource);
+  }
+
+  private static MetroRouteEstimate metroNetworkEstimate(Place from, Place to) throws Exception {
+    double direct = haversine(from.lat, from.lon, to.lat, to.lon);
+    double midLat = (from.lat + to.lat) / 2d;
+    double midLon = (from.lon + to.lon) / 2d;
+    int radius = (int)Math.max(15_000d, Math.min(55_000d, direct / 2d + 12_000d));
+
+    String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", radius, midLat, midLon);
+    String q = "[out:json][timeout:20];relation" + around
+        + "[\"type\"=\"route\"][\"route\"=\"subway\"];out body;>;out tags;";
+    HttpURLConnection conn = (HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
+    conn.setConnectTimeout(8_000);
+    conn.setReadTimeout(22_000);
+    conn.setRequestMethod("POST");
+    conn.setDoOutput(true);
+    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
+    byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
+    try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
+    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300)
+      throw new IllegalStateException("metro graph HTTP " + conn.getResponseCode());
+
+    JSONArray elements = new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
+    conn.disconnect();
+    if (elements == null) return null;
+
+    Map<Long, MetroNode> nodes = new HashMap<>();
+    List<JSONObject> relations = new ArrayList<>();
+
+    for (int i = 0; i < elements.length(); i++) {
+      JSONObject el = elements.optJSONObject(i);
+      if (el == null) continue;
+      String type = el.optString("type", "");
+      if ("node".equals(type)) {
+        long id = el.optLong("id", -1L);
+        double lat = el.optDouble("lat", Double.NaN);
+        double lon = el.optDouble("lon", Double.NaN);
+        if (id <= 0 || !Double.isFinite(lat) || !Double.isFinite(lon)) continue;
+        JSONObject tags = el.optJSONObject("tags");
+        String name = tags == null ? "" : tags.optString("name:fa", tags.optString("name", ""));
+        boolean stationLike = false;
+        if (tags != null) {
+          stationLike = "station".equals(tags.optString("railway"))
+              || "subway".equals(tags.optString("station"))
+              || "yes".equals(tags.optString("subway"))
+              || "stop_position".equals(tags.optString("public_transport"))
+              || "platform".equals(tags.optString("public_transport"));
+        }
+        nodes.put(id, new MetroNode(id, lat, lon, name, stationLike));
+      } else if ("relation".equals(type)) {
+        relations.add(el);
+      }
+    }
+
+    Map<Long, List<MetroEdge>> graph = new HashMap<>();
+    for (JSONObject rel : relations) {
+      JSONObject tags = rel.optJSONObject("tags");
+      String line = tags == null ? "" : tags.optString("ref", tags.optString("name:fa", tags.optString("name", "مترو")));
+      if (line == null || line.trim().isEmpty()) line = "مترو";
+      JSONArray members = rel.optJSONArray("members");
+      if (members == null) continue;
+
+      List<MetroNode> seq = new ArrayList<>();
+      Set<Long> seenConsecutive = new HashSet<>();
+      long previous = -1L;
+      for (int i = 0; i < members.length(); i++) {
+        JSONObject m = members.optJSONObject(i);
+        if (m == null || !"node".equals(m.optString("type"))) continue;
+        long ref = m.optLong("ref", -1L);
+        MetroNode node = nodes.get(ref);
+        if (node == null) continue;
+        String role = m.optString("role", "");
+        boolean roleStop = role.contains("stop") || role.contains("platform");
+        if (!node.stationLike && !roleStop) continue;
+        if (ref == previous) continue;
+        previous = ref;
+        if (!seq.isEmpty() && seenConsecutive.contains(ref)) continue;
+        seq.add(node);
+        seenConsecutive.add(ref);
+      }
+
+      for (int i = 1; i < seq.size(); i++) {
+        MetroNode a = seq.get(i - 1), b = seq.get(i);
+        double d = haversine(a.lat, a.lon, b.lat, b.lon);
+        if (d < 50d || d > 8_000d) continue;
+        int sec = Math.max(60, (int)Math.round(d / 9.0d + 35d));
+        graph.computeIfAbsent(a.id, k -> new ArrayList<>()).add(new MetroEdge(b.id, line, d, sec));
+        graph.computeIfAbsent(b.id, k -> new ArrayList<>()).add(new MetroEdge(a.id, line, d, sec));
+      }
+    }
+
+    if (graph.isEmpty()) return null;
+    MetroNode start = nearestMetroNode(nodes, graph, from.lat, from.lon);
+    MetroNode goal = nearestMetroNode(nodes, graph, to.lat, to.lon);
+    if (start == null || goal == null) return null;
+
+    PriorityQueue<MetroState> pq = new PriorityQueue<>(Comparator.comparingInt(x -> x.seconds));
+    Map<String, Integer> best = new HashMap<>();
+    MetroState init = new MetroState(start.id, "", 0, 0d, 0, 0);
+    pq.add(init);
+    best.put(start.id + "|", 0);
+
+    while (!pq.isEmpty()) {
+      MetroState cur = pq.poll();
+      String curKey = cur.nodeId + "|" + cur.line;
+      Integer known = best.get(curKey);
+      if (known != null && cur.seconds > known) continue;
+      if (cur.nodeId == goal.id)
+        return new MetroRouteEstimate(cur.seconds + 2 * 60, cur.distanceM, cur.stops, cur.transfers);
+
+      List<MetroEdge> edges = graph.get(cur.nodeId);
+      if (edges == null) continue;
+      for (MetroEdge edge : edges) {
+        boolean transfer = !cur.line.isEmpty() && !cur.line.equals(edge.line);
+        int nextSec = cur.seconds + edge.seconds + (transfer ? 4 * 60 : 0);
+        int nextTransfers = cur.transfers + (transfer ? 1 : 0);
+        String key = edge.to + "|" + edge.line;
+        int old = best.getOrDefault(key, Integer.MAX_VALUE);
+        if (nextSec >= old) continue;
+        best.put(key, nextSec);
+        pq.add(new MetroState(edge.to, edge.line, nextSec,
+            cur.distanceM + edge.distanceM, cur.stops + 1, nextTransfers));
+      }
+    }
+    return null;
+  }
+
+  private static MetroNode nearestMetroNode(Map<Long, MetroNode> nodes,
+                                            Map<Long, List<MetroEdge>> graph,
+                                            double lat, double lon) {
+    MetroNode best = null;
+    double bestD = Double.MAX_VALUE;
+    for (MetroNode n : nodes.values()) {
+      if (!graph.containsKey(n.id)) continue;
+      double d = haversine(lat, lon, n.lat, n.lon);
+      if (d < bestD) { bestD = d; best = n; }
+    }
+    return bestD <= 1_500d ? best : null;
   }
 
   private static int walkingSeconds(double directMeters) {
@@ -1229,11 +1388,40 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     final double accessDistanceM, metroDistanceM, egressDistanceM;
     final int accessSec, metroSec, egressSec, totalSec;
     final String accessMode, egressMode;
+    final int metroStops, metroTransfers;
+    final String metroSource;
     MixedEstimate(Place f, Place t, double ad, int as, double md, int ms, double ed, int es,
-                  int total, String am, String em) {
+                  int total, String am, String em, int stops, int transfers, String source) {
       fromStation=f; toStation=t; accessDistanceM=ad; accessSec=as;
       metroDistanceM=md; metroSec=ms; egressDistanceM=ed; egressSec=es;
       totalSec=total; accessMode=am; egressMode=em;
+      metroStops=stops; metroTransfers=transfers; metroSource=source;
     }
   }
-}
+
+  private static final class MetroNode {
+    final long id; final double lat, lon; final String name; final boolean stationLike;
+    MetroNode(long id, double lat, double lon, String name, boolean stationLike) {
+      this.id=id; this.lat=lat; this.lon=lon; this.name=name; this.stationLike=stationLike;
+    }
+  }
+  private static final class MetroEdge {
+    final long to; final String line; final double distanceM; final int seconds;
+    MetroEdge(long to, String line, double distanceM, int seconds) {
+      this.to=to; this.line=line; this.distanceM=distanceM; this.seconds=seconds;
+    }
+  }
+  private static final class MetroState {
+    final long nodeId; final String line; final int seconds; final double distanceM;
+    final int stops, transfers;
+    MetroState(long nodeId, String line, int seconds, double distanceM, int stops, int transfers) {
+      this.nodeId=nodeId; this.line=line; this.seconds=seconds; this.distanceM=distanceM;
+      this.stops=stops; this.transfers=transfers;
+    }
+  }
+  private static final class MetroRouteEstimate {
+    final int seconds; final double distanceM; final int stops, transfers;
+    MetroRouteEstimate(int seconds, double distanceM, int stops, int transfers) {
+      this.seconds=seconds; this.distanceM=distanceM; this.stops=stops; this.transfers=transfers;
+    }
+  }}
