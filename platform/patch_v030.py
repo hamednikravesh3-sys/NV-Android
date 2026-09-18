@@ -151,6 +151,7 @@ for rel in [
     'android/libs/branding/src/main/res/values/donottranslate.xml',
     'android/libs/branding/src/debug/res/values/donottranslate.xml',
     'android/libs/branding/src/beta/res/values/donottranslate.xml',
+    'android/app/src/profileable/res/values/donottranslate.xml',
 ]:
     f = root / rel
     if f.exists():
