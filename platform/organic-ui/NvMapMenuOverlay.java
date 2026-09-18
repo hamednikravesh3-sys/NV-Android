@@ -84,12 +84,9 @@ public final class NvMapMenuOverlay {
       bar.setBackground(round(Color.argb(250, 7, 33, 55), CYAN, 18));
       bar.setElevation(dp(10));
       bar.setClickable(true);
-      bar.setOnClickListener(v -> NvRuntimeController.openSearch(activity, ""));
+      bar.setOnClickListener(v -> NvV027Actions.openSmartSearch(activity));
 
-      final TextView nv = label("NV", 16, WHITE, Typeface.BOLD, Gravity.CENTER);
-      nv.setBackground(round(PANEL_2, OUTLINE, 14));
-      nv.setClickable(true);
-      nv.setOnClickListener(v -> NvRuntimeController.showCodeMenu(activity));
+      final View nv = NvAnimatedBrand.createLogo(activity, 16, () -> NvRuntimeController.showCodeMenu(activity));
       final LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(dp(50), dp(42));
       np.setMargins(0, 0, dp(8), 0);
       bar.addView(nv, np);
@@ -152,6 +149,7 @@ public final class NvMapMenuOverlay {
       final LinearLayout panel = panelBase();
       panel.addView(header("همه منوهای NV", "هر منو اکنون به یک عملیات واقعی متصل است", this::closeSheet));
       panel.addView(primary("کد NV و QR برای نقطه دلخواه", GREEN, () -> { closeSheet(); NvRuntimeController.startCodePicker(activity); }));
+      panel.addView(primary("هوشمند سفر • صفحات ۱۳ تا ۲۲", BLUE, () -> { closeSheet(); NvSmartTravelUi.openHub(activity); }));
 
       final ScrollView scroll = new ScrollView(activity);
       final LinearLayout grid = new LinearLayout(activity);
@@ -186,17 +184,17 @@ public final class NvMapMenuOverlay {
         case 1 -> { }
         case 2 -> showNearby();
         case 3 -> NvSmartActions.openNearby(activity, "اورژانس");
-        case 4 -> NvRuntimeController.openSearch(activity, "");
-        case 5, 6, 10, 13, 14, 15, 19, 20, 21 -> NvSmartActions.openPlanner(activity, id);
+        case 4 -> NvV027Actions.openPlaceDetails(activity);
+        case 5 -> NvV027Actions.openRouteMode(activity);
+        case 6 -> NvV027Actions.openRouteAlerts(activity);
         case 7 -> NvSmartActions.openNearby(activity, "داروخانه");
         case 8 -> NvSmartActions.openNearby(activity, "پارک");
-        case 9 -> NvRuntimeController.openSearch(activity, "");
-        case 11 -> showNearby();
+        case 9 -> NvV027Actions.openSmartSearch(activity);
+        case 10 -> NvV027Actions.openCompareRoutes(activity);
+        case 11 -> NvV027Actions.openRadius(activity);
         case 12 -> showSOS();
-        case 16, 17 -> NvSmartActions.openNearby(activity, "ایستگاه مترو");
-        case 18 -> NvSmartActions.openNearby(activity, "ایستگاه تاکسی");
-        case 22 -> showPreferences();
-        default -> NvSmartActions.openPlanner(activity, id);
+        case 13, 14, 15, 16, 17, 18, 19, 20, 21, 22 -> NvSmartTravelUi.open(activity, id);
+        default -> NvV027Actions.openRouteMode(activity);
       }
     }
 
