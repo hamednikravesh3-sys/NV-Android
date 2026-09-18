@@ -188,8 +188,10 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       requestOnlineEtaIfNeeded(loc, endPoint);
 
       int nv = correctedActiveEta(engine, meters);
+      boolean onlineAllowed = onlineServicesEnabled(activity);
       String source = onlineEtaFresh() ? "NV جاده‌ای" : "NV آفلاین";
-      etaChip.setText(source + "  " + formatMinutes(nv) + (meters > 0 ? "  •  " + formatDistance(meters) : "") + "  • بدون ترافیک زنده");
+      String suffix = onlineAllowed ? " • بدون ترافیک زنده" : " • حالت خصوصی";
+      etaChip.setText(source + "  " + formatMinutes(nv) + (meters > 0 ? "  •  " + formatDistance(meters) : "") + suffix);
       etaChip.setVisibility(View.VISIBLE);
 
       // Keep the native route-plan card consistent with NV's corrected ETA.
@@ -243,6 +245,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   private void requestOnlineEtaIfNeeded(Location loc, MapObject endPoint) {
+    if (!onlineServicesEnabled(activity)) return;
     if (loc == null || endPoint == null || !RoutingController.get().isVehicleRouterType()) return;
     if (loc.hasAccuracy() && loc.getAccuracy() > NvLocationPolicy.NEARBY_ACCURACY_M) return;
 
@@ -584,6 +587,13 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     s.results.removeAllViews();
     final String dest = destination;
 
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, "حالت خصوصی فعال است؛ جستجوی آنلاین مقصد غیرفعال است.", AMBER);
+      s.results.addView(button(a, "جستجو با موتور داخلی نقشه", BLUE,
+          () -> { removeScreen(a); NvRuntimeController.openSearch(a, dest); }));
+      return;
+    }
+
     new Thread(() -> {
       try {
         List<Place> list = geocodeRanked(dest, origin);
@@ -678,6 +688,15 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   private static void compareHurryOptions(MwmActivity a, Screen s, Location origin, Place dest) {
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, "حالت خصوصی فعال است؛ سریع‌ترین مسیر آنلاین مقایسه نمی‌شود.", AMBER);
+      s.results.removeAllViews();
+      s.results.addView(button(a, "شروع مسیر خودرو با موتور آفلاین", BLUE,
+          () -> routeTo(a, dest, Router.Vehicle)));
+      s.results.addView(button(a, "مسیر پیاده با موتور آفلاین", CYAN,
+          () -> routeTo(a, dest, Router.Pedestrian)));
+      return;
+    }
     setStatus(s, "در حال مقایسه همزمان گزینه‌های قابل استفاده…", CYAN);
     new Thread(() -> {
       RoadEstimate car = null;
@@ -747,6 +766,13 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   private static void buildMixedPlan(MwmActivity a, Screen s, Location origin, Place dest) {
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, "برای ساخت سفر ترکیبی، دسترسی به داده آنلاین ایستگاه‌ها لازم است.", AMBER);
+      s.results.removeAllViews();
+      s.results.addView(button(a, "مسیر پیاده آفلاین", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+      s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+      return;
+    }
     setStatus(s, "در حال ساخت سفر چندمرحله‌ای واقعی با ایستگاه‌های نزدیک…", CYAN);
     new Thread(() -> {
       MixedEstimate mixed = null;
@@ -1037,6 +1063,13 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   private static void compareModes(MwmActivity a, Screen s, Location origin, Place dest) {
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, "حالت خصوصی فعال است؛ مقایسه آنلاین مسیرها انجام نمی‌شود.", AMBER);
+      s.results.removeAllViews();
+      s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+      s.results.addView(button(a, "مسیر پیاده آفلاین", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+      return;
+    }
     setStatus(s, "در حال محاسبه مسیرهای جایگزین، زمان و هزینه…", CYAN);
     new Thread(() -> {
       List<RoadEstimate> carRoutes = new ArrayList<>();
@@ -1688,6 +1721,10 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private static String formatDistance(double m){return m<1000?Math.round(m)+" متر":String.format(Locale.US,"%.1f کیلومتر",m/1000d);}
   private static double haversine(double a,double b,double c,double d){double r=6371000,p1=Math.toRadians(a),p2=Math.toRadians(c),dp=Math.toRadians(c-a),dl=Math.toRadians(d-b),x=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)*Math.sin(dl/2);return r*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
   private static String readAll(InputStream in)throws Exception{try(BufferedReader br=new BufferedReader(new InputStreamReader(in,StandardCharsets.UTF_8))){StringBuilder b=new StringBuilder();String line;while((line=br.readLine())!=null){if(b.length()>2_000_000)throw new IllegalStateException("large response");b.append(line);}return b.toString();}}
+  private static boolean onlineServicesEnabled(Context c) {
+    return prefs(c).getBoolean("online_services", true);
+  }
+
   private static SharedPreferences prefs(Context c){return c.getSharedPreferences(PREFS,Context.MODE_PRIVATE);}
 
   private static Screen screen(MwmActivity a,String title,String subtitle){removeScreen(a);ViewGroup host=a.findViewById(android.R.id.content);FrameLayout root=new FrameLayout(a);root.setTag(SCREEN_TAG);root.setBackgroundColor(BG);root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);host.addView(root,new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));LinearLayout col=new LinearLayout(a);col.setOrientation(LinearLayout.VERTICAL);col.setPadding(dp(a,14),dp(a,36),dp(a,14),dp(a,14));LinearLayout head=new LinearLayout(a);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);TextView x=text(a,"×",30,WHITE,Typeface.NORMAL);x.setGravity(Gravity.CENTER);x.setOnClickListener(v->removeScreen(a));head.addView(x,new LinearLayout.LayoutParams(dp(a,50),dp(a,54)));LinearLayout titles=new LinearLayout(a);titles.setOrientation(LinearLayout.VERTICAL);titles.addView(text(a,title,20,WHITE,Typeface.BOLD));titles.addView(text(a,subtitle,12,MUTED,Typeface.NORMAL));head.addView(titles,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));col.addView(head);TextView status=text(a,"",14,CYAN,Typeface.NORMAL);status.setPadding(dp(a,8),dp(a,8),dp(a,8),dp(a,8));col.addView(status);LinearLayout controls=new LinearLayout(a);controls.setOrientation(LinearLayout.VERTICAL);col.addView(controls);ScrollView sv=new ScrollView(a);LinearLayout results=new LinearLayout(a);results.setOrientation(LinearLayout.VERTICAL);results.setPadding(0,dp(a,5),0,dp(a,20));sv.addView(results);col.addView(sv,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));root.addView(col,new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));return new Screen(root,status,controls,results);}
