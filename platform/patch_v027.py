@@ -14,7 +14,7 @@ dst.mkdir(parents=True, exist_ok=True)
 test_dst.mkdir(parents=True, exist_ok=True)
 src = repo_root / 'platform/organic-ui'
 for name in ['NvMapMenuOverlay.java', 'NvRuntimeController.java', 'NvCodeCodec.java', 'NvNearbyCategory.java',
-             'NvSmartActions.java', 'NvV027Actions.java']:
+             'NvSmartActions.java', 'NvV027Actions.java', 'NvAnimatedBrand.java', 'NvSmartTravelUi.java']:
     (dst / name).write_bytes((src / name).read_bytes())
 (test_dst / 'NvCodeCodecTest.java').write_bytes((src / 'NvCodeCodecTest.java').read_bytes())
 
@@ -44,10 +44,6 @@ f = dst / 'NvMapMenuOverlay.java'
 t = f.read_text(encoding='utf-8')
 t = t.replace('bar.setOnClickListener(v -> NvRuntimeController.openSearch(activity, ""));',
               'bar.setOnClickListener(v -> NvV027Actions.openSmartSearch(activity));', 1)
-t = t.replace('"هماهنگی تاکسی", "اطمینان زمان رسیدن", "مقایسه زمان و هزینه", "راهنمای پیاده", "ترجیحات سفر هوشمند"',
-              '"هماهنگی تاکسی", "اطمینان زمان رسیدن", "مقایسه زمان و مصرف", "راهنمای پیاده", "ترجیحات سفر هوشمند"')
-t = t.replace('"تعویض هوشمند ایستگاه", "حرکت زنده مترو",',
-              '"تعویض هوشمند ایستگاه", "مترو و ایستگاه‌ها",')
 pattern = re.compile(r'    private void handleMenu\(int id\) \{.*?\n    \}\n\n    private void showNearby\(\)', re.S)
 replacement = '''    private void handleMenu(int id) {
       switch (id) {
@@ -63,16 +59,7 @@ replacement = '''    private void handleMenu(int id) {
         case 10 -> NvV027Actions.openCompareRoutes(activity);
         case 11 -> NvV027Actions.openRadius(activity);
         case 12 -> showSOS();
-        case 13 -> NvV027Actions.openChat(activity);
-        case 14 -> NvV027Actions.openHurry(activity);
-        case 15 -> NvV027Actions.openMixed(activity);
-        case 16 -> NvV027Actions.openStationTransfer(activity);
-        case 17 -> NvV027Actions.openMetroStatus(activity);
-        case 18 -> NvV027Actions.openTaxi(activity);
-        case 19 -> NvV027Actions.openEta(activity);
-        case 20 -> NvV027Actions.openTimeCost(activity);
-        case 21 -> NvV027Actions.openWalk(activity);
-        case 22 -> NvV027Actions.openPreferences(activity);
+        case 13, 14, 15, 16, 17, 18, 19, 20, 21, 22 -> NvSmartTravelUi.open(activity, id);
         default -> NvV027Actions.openRouteMode(activity);
       }
     }
@@ -185,6 +172,16 @@ if splash not in t:
 t = t.replace(splash, splash + '\n' + launcher, 1)
 f.write_text(t, encoding='utf-8')
 
+# Install animated NV brand on the opening screen.
+f = root / 'android/app/src/main/java/app/organicmaps/SplashActivity.java'
+t = f.read_text(encoding='utf-8')
+anchor = '    setContentView(R.layout.activity_splash);\n'
+if anchor not in t:
+    raise SystemExit('SplashActivity anchor missing')
+if 'NvAnimatedBrand.install(this);' not in t:
+    t = t.replace(anchor, anchor + '    NvAnimatedBrand.install(this);\n', 1)
+f.write_text(t, encoding='utf-8')
+
 # Install layers on map activity.
 f = root / 'android/app/src/main/java/app/organicmaps/MwmActivity.java'
 t = f.read_text(encoding='utf-8')
@@ -246,7 +243,9 @@ app_fa.mkdir(parents=True, exist_ok=True)
 # Build-time assertions.
 assert 'NvV027Actions.openSmartSearch' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'NvV027Actions.openRouteAlerts' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
-assert 'NvV027Actions.openMixed' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert 'NvSmartTravelUi.open(activity, id)' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert (dst / 'NvAnimatedBrand.java').exists()
+assert (dst / 'NvSmartTravelUi.java').exists()
 assert 'getSearchRadius' in (dst / 'NvSmartActions.java').read_text(encoding='utf-8')
 assert 'ensureCurrentRegionMap' in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert 'ensureTehranMap' not in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
