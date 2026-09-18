@@ -32,7 +32,7 @@ f.write_text(t, encoding='utf-8')
 f = root / 'android/app/build.gradle'
 t = f.read_text(encoding='utf-8')
 old = r"~/name='app\.organicmaps(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
-new = r"~/name='ir\.nv\.navigation\.clean029(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
+new = r"~/name='ir\.nv\.navigation(\.web)?(\.debug|\.beta|\.profileable)?\.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/"
 if old not in t:
     raise SystemExit('permission whitelist anchor missing')
 t = t.replace(old, new)
@@ -155,7 +155,7 @@ for rel in [
     f = root / rel
     if f.exists():
         s = f.read_text(encoding='utf-8')
-        s = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV 0.29\2', s)
+        s = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', s)
         f.write_text(s, encoding='utf-8')
 icon = base64.b64decode((repo_root / 'platform/reference-v019-icon256.b64').read_text(encoding='utf-8').strip())
 icon_dir = root / 'android/libs/branding/src/main/res/mipmap-nodpi'
@@ -244,7 +244,7 @@ app_fa.mkdir(parents=True, exist_ok=True)
 ''', encoding='utf-8')
 
 (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text(
-    'NV v0.30 clean build uses Organic Maps/OpenStreetMap. Semantic search ranks name/type/city; railway destinations are separate from subway routing; mixed trips verify metro availability; ETA blends route time with live speed; nearby radius is configurable.\n',
+    'NV v0.30 uses Organic Maps/OpenStreetMap. Search uses confidence checks; mixed trips use real nearby station geometry; ETA prefers online road duration and avoids single-sample speed extrapolation; no live traffic or live train data is fabricated.\n',
     encoding='utf-8')
 
 # Build-time assertions.
