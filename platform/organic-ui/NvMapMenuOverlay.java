@@ -32,8 +32,8 @@ public final class NvMapMenuOverlay {
   private static final String[] TITLES = {
       "صفحه اصلی", "اطراف من", "اورژانس", "جزئیات مکان", "حالت مسیریابی", "هشدارهای مسیر",
       "داروخانه", "پارک و تفریح", "جستجوی هوشمند", "مقایسه مسیرها", "محدوده جستجو", "حالت اضطراری",
-      "چت هوشمند سفر", "حالت عجله دارم", "مسیر ترکیبی", "تعویض هوشمند ایستگاه", "حرکت زنده مترو",
-      "هماهنگی تاکسی", "اطمینان زمان رسیدن", "مقایسه زمان و هزینه", "راهنمای پیاده", "ترجیحات سفر هوشمند"
+      "چت هوشمند سفر", "حالت عجله دارم", "مسیر ترکیبی", "تعویض هوشمند ایستگاه", "مترو و ایستگاه‌ها",
+      "تاکسی و محل سوارشدن", "اطمینان زمان رسیدن", "مقایسه زمان و هزینه", "راهنمای پیاده", "ترجیحات سفر هوشمند"
   };
 
   private static final String[] ICONS = {
@@ -85,7 +85,7 @@ public final class NvMapMenuOverlay {
       bar.setBackground(round(Color.argb(250, 7, 33, 55), CYAN, 18));
       bar.setElevation(dp(10));
       bar.setClickable(true);
-      bar.setOnClickListener(v -> NvV027Actions.openSmartSearch(activity));
+      bar.setOnClickListener(v -> NvV030Actions.openSmartSearch(activity));
 
       final View nv = NvAnimatedBrand.createLogo(activity, 16, () -> NvRuntimeController.showCodeMenu(activity));
       final LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(dp(50), dp(42));
@@ -196,17 +196,17 @@ public final class NvMapMenuOverlay {
         case 1 -> { }
         case 2 -> showNearby();
         case 3 -> NvSmartActions.openNearby(activity, "اورژانس");
-        case 4 -> NvV027Actions.openPlaceDetails(activity);
-        case 5 -> NvV027Actions.openRouteMode(activity);
-        case 6 -> NvV027Actions.openRouteAlerts(activity);
+        case 4 -> NvV030Actions.openPlaceDetails(activity);
+        case 5 -> NvV030Actions.openRouteMode(activity);
+        case 6 -> NvV030Actions.openRouteAlerts(activity);
         case 7 -> NvSmartActions.openNearby(activity, "داروخانه");
         case 8 -> NvSmartActions.openNearby(activity, "پارک");
-        case 9 -> NvV027Actions.openSmartSearch(activity);
-        case 10 -> NvV027Actions.openCompareRoutes(activity);
-        case 11 -> NvV027Actions.openRadius(activity);
+        case 9 -> NvV030Actions.openSmartSearch(activity);
+        case 10 -> NvV030Actions.openCompareRoutes(activity);
+        case 11 -> NvV030Actions.openRadius(activity);
         case 12 -> showSOS();
         case 13, 14, 15, 16, 17, 18, 19, 20, 21, 22 -> NvSmartTravelUi.open(activity, id);
-        default -> NvV027Actions.openRouteMode(activity);
+        default -> NvV030Actions.openRouteMode(activity);
       }
     }
 
@@ -254,10 +254,10 @@ public final class NvMapMenuOverlay {
       sheetLayer.setVisibility(View.VISIBLE);
       final LinearLayout panel = panelBase();
       panel.addView(header("ترجیحات سفر هوشمند", "نوع مسیر را مستقیم انتخاب کنید", this::closeSheet));
-      panel.addView(primary("سریع‌ترین / عجله دارم", RED, () -> { closeSheet(); NvSmartActions.openPlanner(activity, 14); }));
-      panel.addView(primary("مسیر ترکیبی مترو + پیاده", GREEN, () -> { closeSheet(); NvSmartActions.openPlanner(activity, 15); }));
-      panel.addView(primary("مسیر پیاده", CYAN, () -> { closeSheet(); NvSmartActions.openPlanner(activity, 21); }));
-      panel.addView(primary("جستجوی مقصد", BLUE, () -> { closeSheet(); NvRuntimeController.openSearch(activity, ""); }));
+      panel.addView(primary("سریع‌ترین / عجله دارم", RED, () -> { closeSheet(); NvSmartTravelUi.open(activity, 14); }));
+      panel.addView(primary("مسیر ترکیبی مترو + پیاده", GREEN, () -> { closeSheet(); NvSmartTravelUi.open(activity, 15); }));
+      panel.addView(primary("مسیر پیاده", CYAN, () -> { closeSheet(); NvSmartTravelUi.open(activity, 21); }));
+      panel.addView(primary("جستجوی مقصد", BLUE, () -> { closeSheet(); NvV030Actions.openSmartSearch(activity); }));
       addPanel(panel, dp(390));
     }
 
