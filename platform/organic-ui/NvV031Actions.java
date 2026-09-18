@@ -1549,7 +1549,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         && (!l.hasAccuracy() || l.getAccuracy()<=120f);
   }
   private static boolean looksLikeTrip(String s){return containsAny(normalize(s),"میخوام","می خوام","می‌خوام","برم","برو","عجله","مسیر ترکیبی","پیاده","با مترو");}
-  private static String extractDestination(String raw) {
+  static String extractDestination(String raw) {
     String q = normalize(raw);
     if (q.isEmpty()) return "";
 
@@ -1588,7 +1588,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     return q;
   }
 
-  private static String normalize(String s) {
+  static String normalize(String s) {
     if (s == null) return "";
     String n = s.replace('ي','ی').replace('ى','ی').replace('ك','ک')
         .replace('ة','ه').replace('ۀ','ه').replace("\u200c"," ").replace("ـ","");
