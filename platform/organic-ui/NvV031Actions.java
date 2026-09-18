@@ -1078,7 +1078,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
                   + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
                   + " • حدود " + formatToman(cost),
               GREEN,
-              () -> routeTo(a, dest, Router.Transit)));
+              () -> startMixedSession(a, finalMixed, dest)));
           s.results.addView(text(a,
               "مترو: " + finalMixed.metroSource
                   + (finalMixed.metroStops >= 0 ? " • " + finalMixed.metroStops + " ایستگاه" : "")
