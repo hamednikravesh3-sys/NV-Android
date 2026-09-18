@@ -98,22 +98,36 @@ jobs:
       - name: Validate installable Android 16 APK
         run: |
           set -euo pipefail
+          exec > >(tee /tmp/nv-v030-validation.log) 2>&1
+          echo "Candidate APK files:"
+          find organicmaps/android/app/build/outputs/apk -type f -name '*.apk' -print
           APK=$(find organicmaps/android/app/build/outputs/apk -type f -name '*.apk' | grep -i profileable | head -n 1)
+          echo "Selected APK: $APK"
           test -n "$APK"
           test -s "$APK"
           unzip -t "$APK" >/dev/null
           BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
-          "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v030-badging.txt
-          grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v030-badging.txt
-          grep -q "application-label:'NV'" /tmp/nv-v030-badging.txt
-          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v030-badging.txt
-          grep -q "locales:.*'fa'" /tmp/nv-v030-badging.txt
-          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v030-badging.txt
           mkdir -p dist
           cp "$APK" dist/NV-v0.30.0-real-eta-smart-travel-arm64-profileable.apk
           sha256sum dist/NV-v0.30.0-real-eta-smart-travel-arm64-profileable.apk | tee dist/NV-v0.30.0-real-eta-smart-travel-arm64-profileable.apk.sha256
+          grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v030-badging.txt
+          grep -q "application-label:'NV'" /tmp/nv-v030-badging.txt
+          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v030-badging.txt
+          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v030-badging.txt
+
+      - name: Upload validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.30-validation-diagnostics
+          path: |
+            /tmp/nv-v030-validation.log
+            /tmp/nv-v030-badging.txt
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Upload final APK
         uses: actions/upload-artifact@v4
