@@ -935,12 +935,54 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   public static void openPreferences(MwmActivity a) {
-    Screen s = screen(a, "ترجیحات سفر هوشمند", "تنظیمات واقعی برای ETA، مصرف و هشدارها");
-    s.results.addView(text(a, "مصرف سوخت مبنا برای مقایسه زمان/مصرف:", 14, WHITE, Typeface.BOLD));
+    Screen s = screen(a, "ترجیحات سفر هوشمند", "تنظیمات واقعی برای زمان، هزینه، مصرف و انتخاب شیوه سفر");
+    SharedPreferences p = prefs(a);
+
+    s.results.addView(text(a, "مصرف سوخت مبنا:", 14, WHITE, Typeface.BOLD));
     int[] fuel = {6, 8, 10, 12};
-    for (int f : fuel) s.results.addView(button(a, f + " لیتر در ۱۰۰ کیلومتر", prefs(a).getInt("fuel_l100", 8) == f ? GREEN : PANEL2, () -> {
-      prefs(a).edit().putInt("fuel_l100", f).apply(); Toast.makeText(a, "مصرف مبنا ذخیره شد", Toast.LENGTH_SHORT).show(); removeScreen(a);
+    for (int f : fuel) {
+      s.results.addView(button(a, f + " لیتر در ۱۰۰ کیلومتر",
+          p.getInt("fuel_l100", 8) == f ? GREEN : PANEL2,
+          () -> { p.edit().putInt("fuel_l100", f).apply(); Toast.makeText(a, "مصرف مبنا ذخیره شد", Toast.LENGTH_SHORT).show(); }));
+    }
+
+    EditText fuelPrice = input(a, "قیمت هر لیتر سوخت (تومان)");
+    fuelPrice.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+    fuelPrice.setText(String.valueOf(p.getInt("fuel_price_toman", 3000)));
+    s.results.addView(fuelPrice, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 58)));
+
+    EditText taxiBase = input(a, "هزینه پایه تاکسی (تومان)");
+    taxiBase.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+    taxiBase.setText(String.valueOf(p.getInt("taxi_base_toman", 30000)));
+    s.results.addView(taxiBase, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 58)));
+
+    EditText taxiKm = input(a, "هزینه تقریبی تاکسی به ازای هر کیلومتر (تومان)");
+    taxiKm.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+    taxiKm.setText(String.valueOf(p.getInt("taxi_km_toman", 10000)));
+    s.results.addView(taxiKm, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 58)));
+
+    EditText metroFare = input(a, "کرایه تقریبی مترو (تومان)");
+    metroFare.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+    metroFare.setText(String.valueOf(p.getInt("metro_fare_toman", 6000)));
+    s.results.addView(metroFare, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 58)));
+
+    s.results.addView(button(a, "ذخیره هزینه‌ها", GREEN, () -> {
+      try {
+        p.edit()
+            .putInt("fuel_price_toman", Integer.parseInt(fuelPrice.getText().toString().trim()))
+            .putInt("taxi_base_toman", Integer.parseInt(taxiBase.getText().toString().trim()))
+            .putInt("taxi_km_toman", Integer.parseInt(taxiKm.getText().toString().trim()))
+            .putInt("metro_fare_toman", Integer.parseInt(metroFare.getText().toString().trim()))
+            .apply();
+        Toast.makeText(a, "تنظیمات هزینه ذخیره شد", Toast.LENGTH_SHORT).show();
+      } catch (Throwable e1) {
+        Toast.makeText(a, "مقادیر هزینه باید عدد صحیح باشند", Toast.LENGTH_LONG).show();
+      }
     }));
+
+    s.results.addView(text(a,
+        "هزینه تاکسی/مترو برآوردی و قابل تنظیم است؛ قیمت زنده بدون API رسمی سرویس‌دهنده نمایش داده نمی‌شود.",
+        11, MUTED, Typeface.NORMAL));
     s.results.addView(button(a, "تنظیم هشدارهای مسیر", BLUE, () -> openRouteAlerts(a)));
   }
 
