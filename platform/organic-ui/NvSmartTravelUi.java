@@ -222,7 +222,7 @@ public final class NvSmartTravelUi {
     TextView close = text(a, "×", 28, WHITE, Typeface.NORMAL);
     close.setGravity(Gravity.CENTER);
     close.setClickable(true);
-    close.setOnClickListener(v -> remove(a));
+    close.setOnClickListener(v -> close(a));
     header.addView(close, new LinearLayout.LayoutParams(dp(a, 48), dp(a, 48)));
     column.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 70)));
 
