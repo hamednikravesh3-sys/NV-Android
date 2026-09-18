@@ -563,6 +563,12 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         || containsAny(raw, "ترکیبی", "مترو", "حمل و نقل عمومی", "حمل‌ونقل عمومی", "اتوبوس");
     boolean railDestination = containsAny(best.title + " " + best.address,
         "راه آهن", "راه‌آهن", "ایستگاه قطار", "راه اهن");
+    boolean railIntent = railDestination || containsAny(raw,"با قطار","قطار","راه آهن","راه‌آهن","راه اهن");
+
+    if (railIntent) {
+      buildRailPlan(a, s, origin, best, railDestination);
+      return;
+    }
 
     if (mode == Mode.HURRY || containsAny(raw, "عجله", "سریع", "زود", "فوری")) {
       compareHurryOptions(a, s, origin, best);
@@ -580,6 +586,52 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     }
 
     previewVehicle(a, s, origin, best, false);
+  }
+
+  private static void buildRailPlan(MwmActivity a, Screen s, Location origin, Place dest, boolean destinationIsStation) {
+    setStatus(s, "در حال پیدا کردن ایستگاه‌های راه‌آهن واقعی…", CYAN);
+    new Thread(() -> {
+      try {
+        List<Place> origins = railwayStations(origin.getLatitude(), origin.getLongitude(), 60_000);
+        List<Place> targets = destinationIsStation
+            ? java.util.Arrays.asList(dest)
+            : railwayStations(dest.lat, dest.lon, 60_000);
+
+        Place from = origins.isEmpty() ? null : origins.get(0);
+        Place to = targets.isEmpty() ? null : targets.get(0);
+        a.runOnUiThread(() -> {
+          if(!alive(a,s))return;
+          s.results.removeAllViews();
+          if(from==null || to==null){
+            setStatus(s,"ایستگاه راه‌آهن مناسب در یکی از دو سمت پیدا نشد.",AMBER);
+            s.results.addView(button(a,"مسیر جاده‌ای تا مقصد",BLUE,()->routeTo(a,dest,Router.Vehicle)));
+            return;
+          }
+          setStatus(s,"طرح سفر ریلی آماده است؛ زمان‌بندی قطار از منبع رسمی دریافت نشده است.",GREEN);
+          s.results.addView(stepCard(a,"۱","رفتن به "+from.title,
+              formatDistance(from.distanceMeters)+" از موقعیت فعلی",GREEN));
+          s.results.addView(stepCard(a,"۲","قطار: "+from.title+" → "+to.title,
+              "ساعت حرکت، ظرفیت و تأخیر فقط با API رسمی راه‌آهن قابل نمایش است.",BLUE));
+          if(!destinationIsStation){
+            s.results.addView(stepCard(a,"۳","از "+to.title+" تا "+dest.title,
+                formatDistance(haversine(to.lat,to.lon,dest.lat,dest.lon))+" فاصله مستقیم",PURPLE));
+          }
+          s.results.addView(button(a,"مسیریابی تا ایستگاه مبدأ",GREEN,()->routeTo(a,from,Router.Vehicle)));
+          if(!destinationIsStation)
+            s.results.addView(button(a,"مسیریابی از ایستگاه مقصد تا مقصد نهایی",BLUE,
+                ()->routeBetween(a,to,dest,Router.Vehicle)));
+          s.results.addView(text(a,
+              "NV بدون دسترسی به داده رسمی راه‌آهن، زمان یا بلیت ساختگی تولید نمی‌کند.",
+              11,MUTED,Typeface.NORMAL));
+        });
+      } catch(Throwable e){
+        a.runOnUiThread(()->{
+          if(!alive(a,s))return;
+          setStatus(s,"داده ایستگاه‌های راه‌آهن در دسترس نیست.",AMBER);
+          s.results.addView(button(a,"جستجوی ایستگاه راه‌آهن",BLUE,()->openSmartSearch(a)));
+        });
+      }
+    },"nv-v031-rail").start();
   }
 
   private static void compareHurryOptions(MwmActivity a, Screen s, Location origin, Place dest) {
@@ -1414,6 +1466,34 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     return out;
   }
 
+  private static List<Place> railwayStations(double lat,double lon,int radius) throws Exception {
+    String around=String.format(Locale.US,"(around:%d,%.7f,%.7f)",radius,lat,lon);
+    String q="[out:json][timeout:14];(node"+around+"[\"railway\"=\"station\"][\"station\"!=\"subway\"];"
+        +"way"+around+"[\"railway\"=\"station\"][\"station\"!=\"subway\"];);out center tags;";
+    JSONArray els=overpassJson(q,16000).optJSONArray("elements");
+    List<Place> out=new ArrayList<>();if(els==null)return out;
+    Set<String> seen=new HashSet<>();
+    for(int i=0;i<els.length();i++){
+      JSONObject e=els.optJSONObject(i);if(e==null)continue;
+      double la=e.optDouble("lat",Double.NaN),lo=e.optDouble("lon",Double.NaN);
+      JSONObject center=e.optJSONObject("center");
+      if((!Double.isFinite(la)||!Double.isFinite(lo))&&center!=null){
+        la=center.optDouble("lat",Double.NaN);lo=center.optDouble("lon",Double.NaN);
+      }
+      if(!Double.isFinite(la)||!Double.isFinite(lo))continue;
+      JSONObject tags=e.optJSONObject("tags");
+      if(tags!=null && "subway".equals(tags.optString("station","")))continue;
+      String key=String.format(Locale.US,"%.6f,%.6f",la,lo);if(!seen.add(key))continue;
+      String name=tags==null?"":tags.optString("name:fa",tags.optString("name",""));
+      if(TextUtils.isEmpty(name))name="ایستگاه راه‌آهن";
+      double d=haversine(lat,lon,la,lo);
+      out.add(new Place(name,"ایستگاه راه‌آهن",la,lo,d,"railway","station",0));
+    }
+    out.sort(Comparator.comparingDouble(p->p.distanceMeters));
+    if(out.size()>10)return new ArrayList<>(out.subList(0,10));
+    return out;
+  }
+
   private static List<Place> subwayEntrances(Place station, MapObject target) throws Exception {
     String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", 700, station.lat, station.lon);
     String q = "[out:json][timeout:12];(node" + around + "[\"railway\"=\"subway_entrance\"];);out tags;";
@@ -1502,7 +1582,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static boolean looksLikeTrip(String s){
     String q=normalize(s);
     return containsAny(q,"میخوام","می خوام","می‌خوام","برم","برو","حرکت کن","مسیریابی","عجله",
-        "مسیر ترکیبی","پیاده","با مترو","با تاکسی","از "," به ");
+        "مسیر ترکیبی","پیاده","با مترو","با تاکسی","قطار","راه آهن","راه‌آهن","از "," به ");
   }
 
   private static String extractDestination(String raw){
