@@ -104,7 +104,9 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private long lastGpsAlertMs;
   private boolean destroyed;
   private final ArrayDeque<Float> speedSamples = new ArrayDeque<>();
+  private final ArrayDeque<Location> locationSamples = new ArrayDeque<>();
   private long lastSpeedSampleTime;
+  private long lastLocationSampleTime;
   private volatile int onlineEtaSec = -1;
   private volatile double onlineEtaDistanceM = -1d;
   private volatile long onlineEtaUpdatedAt;
@@ -117,6 +119,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private final Runnable poll = new Runnable() {
     @Override public void run() {
       if (destroyed) return;
+      recordLocationSample(locationHelper.getSavedLocation());
       updateEtaAndAlerts();
       handler.postDelayed(this, 1000L);
     }
@@ -151,7 +154,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     removeScreen(a);
     NvSmartTravelUi.close(a);
     try {
-      Location loc=MwmApplication.from(a).getLocationHelper().getSavedLocation();
+      Location loc=bestRecentLocation(a);
       if(loc!=null) Framework.nativeSetViewportCenter(loc.getLatitude(),loc.getLongitude(),16);
     } catch(Throwable ignored) {}
   }
@@ -177,7 +180,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         return;
       }
 
-      Location loc = locationHelper.getSavedLocation();
+      Location loc = bestRecentLocationInstance();
       recordSpeedSample(loc);
 
       int engine = info.totalTimeInSeconds;
@@ -215,6 +218,38 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     } catch (Throwable ignored) {
       etaChip.setVisibility(View.GONE);
     }
+  }
+
+  private synchronized void recordLocationSample(Location loc) {
+    if (loc == null || loc.getTime() <= lastLocationSampleTime) return;
+    lastLocationSampleTime = loc.getTime();
+    locationSamples.addLast(new Location(loc));
+    while (locationSamples.size() > 20) locationSamples.removeFirst();
+  }
+
+  private synchronized Location bestRecentLocationInstance() {
+    long now = System.currentTimeMillis();
+    Location best = null;
+    double bestScore = Double.POSITIVE_INFINITY;
+    for (Location l : locationSamples) {
+      long age = Math.max(0L, now - l.getTime());
+      if (age > 30_000L) continue;
+      double acc = l.hasAccuracy() ? Math.max(1d, l.getAccuracy()) : 500d;
+      double speed = l.hasSpeed() ? Math.max(0d, l.getSpeed()) : 0d;
+      double ageWeight = speed > 4d ? 5d : 2d;
+      double score = acc + (age / 1000d) * ageWeight;
+      if (score < bestScore) { bestScore = score; best = l; }
+    }
+    if (best != null) return new Location(best);
+    Location current = locationHelper.getSavedLocation();
+    return current == null ? null : new Location(current);
+  }
+
+  private static Location bestRecentLocation(MwmActivity a) {
+    NvV031Actions instance = INSTANCES.get(a);
+    if (instance != null) return instance.bestRecentLocationInstance();
+    Location current = bestRecentLocation(a);
+    return current == null ? null : new Location(current);
   }
 
   private void recordSpeedSample(Location loc) {
@@ -357,7 +392,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static void smartSearch(MwmActivity a, Screen s, String query, boolean detailMode) {
     setStatus(s, "در حال جستجو و رتبه‌بندی «" + query + "»…", CYAN);
     s.results.removeAllViews();
-    Location origin = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    Location origin = bestRecentLocation(a);
     new Thread(() -> {
       try {
         List<Place> found = geocodeRanked(query, origin);
@@ -442,7 +477,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static void performTrip(MwmActivity a, Screen s, String raw, Mode mode) {
     String destination = extractDestination(raw);
     if (destination.isEmpty()) { setStatus(s, "نام مقصد از جمله مشخص نشد.", AMBER); return; }
-    Location origin = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    Location origin = bestRecentLocation(a);
     if (!freshEnough(origin)) {
       setStatus(s, "برای شروع مسیر، GPS تازه با خطای حداکثر ۷۵ متر لازم است.", RED);
       s.results.removeAllViews();
@@ -1018,7 +1053,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
 
   public static void openStationTransfer(MwmActivity a) {
     Screen s = screen(a, "تعویض هوشمند ایستگاه", "ایستگاه، خروجی و ادامه مسیر بر اساس مقصد فعال");
-    Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    Location loc = bestRecentLocation(a);
     if (!freshEnough(loc)) { setStatus(s, "GPS تازه با دقت مناسب لازم است.", RED); return; }
 
     MapObject target = RoutingController.get().getEndPoint();
@@ -1076,7 +1111,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
 
   private static void showMetroStations(MwmActivity a, String title, String subtitle) {
     Screen s = screen(a, title, subtitle);
-    Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    Location loc = bestRecentLocation(a);
     if (!freshEnough(loc)) { setStatus(s, "GPS تازه لازم است.", RED); return; }
     setStatus(s, "در حال یافتن ایستگاه‌های مترو نزدیک…", CYAN);
     new Thread(() -> {
@@ -1102,7 +1137,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
 
   public static void openTaxi(MwmActivity a) {
     Screen s = screen(a, "تاکسی و محل سوارشدن", "نزدیک‌ترین ایستگاه‌ها و نقاط تاکسی ثبت‌شده اطراف موقعیت فعلی");
-    Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    Location loc = bestRecentLocation(a);
     if (!freshEnough(loc)) { setStatus(s, "GPS تازه با دقت مناسب لازم است.", RED); return; }
 
     setStatus(s, "در حال پیدا کردن نقاط تاکسی نزدیک…", CYAN);
@@ -1443,7 +1478,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private static void routeTo(MwmActivity a, Place p, Router router) {
-    Location loc=MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    Location loc=bestRecentLocation(a);
     if(!freshEnough(loc)){Toast.makeText(a,"GPS برای شروع مسیر کافی نیست",Toast.LENGTH_LONG).show();NvRuntimeController.showLocationStatus(a);return;}
 
     if (router == Router.Vehicle) {
