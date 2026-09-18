@@ -56,6 +56,12 @@ jobs:
           grep -q 'metroNetworkEstimate' organicmaps/android/app/src/main/java/app/organicmaps/NvV031Actions.java
           grep -q 'planningLocationOkay' organicmaps/android/app/src/main/java/app/organicmaps/NvV031Actions.java
           grep -q 'estimateMixedCostToman' organicmaps/android/app/src/main/java/app/organicmaps/NvV031Actions.java
+          grep -q 'startMixedSession' organicmaps/android/app/src/main/java/app/organicmaps/NvV031Actions.java
+          grep -q 'osrmAlternatives' organicmaps/android/app/src/main/java/app/organicmaps/NvV031Actions.java
+          grep -q 'geocodePhoton' organicmaps/android/app/src/main/java/app/organicmaps/NvV031Actions.java
+          ! grep -q 'MAX_ROUTE_ACCURACY_M = 250' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
+          ! grep -q '۲۸ دقیقه' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
+          ! grep -q '۱۰:۰۳' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
           grep -q 'goHome(activity)' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'destinationConfident' organicmaps/android/app/src/main/java/app/organicmaps/NvV031Actions.java
           grep -q 'estimateMixed' organicmaps/android/app/src/main/java/app/organicmaps/NvV031Actions.java
