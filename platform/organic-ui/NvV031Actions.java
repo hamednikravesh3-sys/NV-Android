@@ -581,7 +581,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
               "🚇 ترکیبی" + ("ترکیبی".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
               details,
               GREEN,
-              () -> routeTo(a, dest, Router.Transit)));
+              () -> buildMixedPlan(a, s, origin, dest)));
           s.results.addView(text(a, "زمان مترو تقریبی است؛ داده زنده قطار سراسری متصل نیست.", 11, MUTED, Typeface.NORMAL));
         }
 
@@ -622,8 +622,15 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
             formatMinutes(result.metroSec) + " • " + result.stationCount + " ایستگاه • " + result.transfers + " تعویض • " + result.lineSummary, BLUE));
         s.results.addView(stepCard(a, "۳", result.egressMode + " تا مقصد",
             formatMinutes(result.egressSec) + " • " + formatDistance(result.egressDistanceM), PURPLE));
-        s.results.addView(button(a, "شروع مسیر مترو/پیاده", GREEN, () -> routeTo(a, dest, Router.Transit)));
-        s.results.addView(button(a, "مقایسه با خودرو", BLUE, () -> compareHurryOptions(a, s, origin, dest)));
+        Router accessRouter = "تاکسی".equals(result.accessMode) ? Router.Vehicle : Router.Pedestrian;
+        Router egressRouter = "تاکسی".equals(result.egressMode) ? Router.Vehicle : Router.Pedestrian;
+        s.results.addView(button(a, "مرحله ۱: رفتن به " + result.fromStation.title, GREEN,
+            () -> routeTo(a, result.fromStation, accessRouter)));
+        s.results.addView(button(a, "مرحله ۲: مسیر مترو بین دو ایستگاه", BLUE,
+            () -> routeBetween(a, result.fromStation, result.toStation, Router.Transit)));
+        s.results.addView(button(a, "مرحله ۳: از " + result.toStation.title + " تا مقصد", PURPLE,
+            () -> routeBetween(a, result.toStation, dest, egressRouter)));
+        s.results.addView(button(a, "مقایسه دوباره با خودرو", PANEL2, () -> compareHurryOptions(a, s, origin, dest)));
       });
     }, "nv-v031-mixed").start();
   }
@@ -1284,6 +1291,14 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     out.sort(Comparator.comparingDouble(p -> p.distanceMeters));
     if (out.size() > 10) return new ArrayList<>(out.subList(0, 10));
     return out;
+  }
+
+  private static void routeBetween(MwmActivity a, Place from, Place to, Router router) {
+    if (from == null || to == null) return;
+    MapObject start=MapObject.createMapObject(MapObject.SEARCH,from.title,from.address,from.lat,from.lon);
+    MapObject end=MapObject.createMapObject(MapObject.SEARCH,to.title,to.address,to.lat,to.lon);
+    removeScreen(a);
+    RoutingController.get().prepare(start,end,router);
   }
 
   private static void routeTo(MwmActivity a, Place p, Router router) {
