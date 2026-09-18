@@ -306,8 +306,10 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
 
   public static void goHome(MwmActivity a) {
     removeScreen(a);
-    try { Framework.nativeStopLocationFollow(); } catch (Throwable ignored) {}
-    try { Framework.nativeSetMyPositionMode(1); } catch (Throwable ignored) {}
+    Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    if (loc != null) {
+      try { Framework.nativeSetViewportCenter(loc.getLatitude(), loc.getLongitude(), 16); } catch (Throwable ignored) {}
+    }
     Toast.makeText(a, "صفحه اصلی NV", Toast.LENGTH_SHORT).show();
   }
 
