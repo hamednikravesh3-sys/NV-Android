@@ -172,17 +172,11 @@ jobs:
           script: |
             echo "Available APKs:"
             find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*' -name '*.apk' -print
-            APK=$(find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*' -name '*.apk' ! -path '*profileable*' | head -n 1)
-            echo "Smoke APK: $APK"
-            test -n "$APK"
-            test -s "$APK"
-            adb install -r "$APK"
+            test -s "$(find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*/debug/*' -name '*.apk' | head -n 1)"
+            adb install -r "$(find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*/debug/*' -name '*.apk' | head -n 1)"
             adb shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v032-smoke.txt
             sleep 5
-            if ! adb shell pidof ir.nv.navigation.web.debug; then
-              adb logcat -d -t 400 > /tmp/nv-v032-logcat.txt
-              exit 1
-            fi
+            adb shell pidof ir.nv.navigation.web.debug
             adb shell dumpsys activity activities | grep -q 'ir.nv.navigation.web.debug'
             grep -q 'Status: ok' /tmp/nv-v032-smoke.txt
             adb logcat -d -t 200 > /tmp/nv-v032-logcat.txt
