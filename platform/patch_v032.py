@@ -116,9 +116,14 @@ f.write_text(t, encoding='utf-8')
 # Runtime GPS wording and current-region map handling.
 f = dst / 'NvRuntimeController.java'
 t = f.read_text(encoding='utf-8')
+t = t.replace('  private static final double TEHRAN_LAT = 35.6892;\n  private static final double TEHRAN_LON = 51.3890;\n', '')
+t = t.replace('private static final long FRESH_LOCATION_MS = 30_000L;',
+              'private static final long FRESH_LOCATION_MS = NvLocationPolicy.MAX_AGE_MS;')
 t = t.replace('URLEncoder.encode(query, StandardCharsets.UTF_8)', 'URLEncoder.encode(query, "UTF-8")')
 t = t.replace('text = "◎  ±" + accuracy + "م";', 'text = "◎  GPS " + accuracy + "م";')
 t = t.replace('text = "⚠  ±" + accuracy + "م";', 'text = "⚠  GPS " + accuracy + "م";')
+t = t.replace('else if (accuracy <= 10)', 'else if (accuracy <= NvLocationPolicy.GOOD_ACCURACY_M)')
+t = t.replace('else if (accuracy <= 25)', 'else if (accuracy <= NvLocationPolicy.NEARBY_ACCURACY_M)')
 t = t.replace('final String accuracy = loc.hasAccuracy() ? "±" + Math.round(loc.getAccuracy()) + " متر" : "نامشخص";',
               'final String accuracy = loc.hasAccuracy() ? "خطای GPS: " + Math.round(loc.getAccuracy()) + " متر" : "نامشخص";')
 t = t.replace('loc.hasAccuracy() && loc.getAccuracy() <= 10 ? GREEN : AMBER);',
