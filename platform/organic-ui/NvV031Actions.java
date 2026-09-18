@@ -565,12 +565,17 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static boolean destinationConfident(List<Place> list, String query) {
     if (list == null || list.isEmpty()) return false;
     Place first = list.get(0);
-    String q = normalize(query), title = normalize(first.title);
-    if (title.equals(q) || (q.length() >= 4 && title.contains(q))) return true;
     if (first.score < 70) return false;
     if (list.size() == 1) return true;
+
     Place second = list.get(1);
-    return first.score - second.score >= 24;
+    int gap = first.score - second.score;
+    String q = normalize(query), title = normalize(first.title);
+
+    // A matching name alone is not enough when several places share it.
+    if (title.equals(q)) return gap >= 12;
+    if (q.length() >= 4 && title.contains(q)) return gap >= 18;
+    return gap >= 24;
   }
 
   private static void renderDestinationChoices(MwmActivity a, Screen s, String raw, Mode mode,
