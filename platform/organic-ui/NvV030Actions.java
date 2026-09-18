@@ -613,7 +613,9 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
     if (from.isEmpty() || to.isEmpty()) return null;
 
     Place aStation = from.get(0), bStation = to.get(0);
-    boolean taxi = prefs(a).getBoolean("use_taxi", true);
+    boolean minCost = prefs(a).getBoolean("min_cost", false);
+    boolean lessWalking = prefs(a).getBoolean("less_walking", false);
+    boolean taxi = prefs(a).getBoolean("use_taxi", true) && (!minCost || lessWalking);
 
     RoadEstimate access;
     RoadEstimate egress;
