@@ -157,7 +157,7 @@ for rel in [
         s = f.read_text(encoding='utf-8')
         s = re.sub(r'(<string name="app_name"[^>]*>).*?(</string>)', r'\1NV\2', s)
         f.write_text(s, encoding='utf-8')
-icon = base64.b64decode((repo_root / 'platform/reference-v019-icon256.b64').read_text(encoding='utf-8').strip())
+icon = base64.b64decode((repo_root / 'platform/nv-logo-v030-user.b64').read_text(encoding='utf-8').strip())
 icon_dir = root / 'android/libs/branding/src/main/res/mipmap-nodpi'
 icon_dir.mkdir(parents=True, exist_ok=True)
 (icon_dir / 'nv_launcher.webp').write_bytes(icon)
