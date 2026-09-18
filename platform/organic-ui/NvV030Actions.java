@@ -165,6 +165,16 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
       etaChip.setText(source + "  " + formatMinutes(nv) + (meters > 0 ? "  •  " + formatDistance(meters) : ""));
       etaChip.setVisibility(View.VISIBLE);
 
+      // Keep the native route-plan card consistent with NV's corrected ETA.
+      // This removes the confusing situation where the top NV chip says one thing
+      // while the Organic Maps vehicle card shows a clearly unrealistic value.
+      if (RoutingController.get().isVehicleRouterType()) {
+        TextView nativeVehicleTime = activity.findViewById(R.id.time_vehicle);
+        if (nativeVehicleTime != null && meters > 0) {
+          nativeVehicleTime.setText(formatMinutes(nv) + "  •  " + formatDistance(meters));
+        }
+      }
+
       SharedPreferences p = prefs(activity);
       long now = System.currentTimeMillis();
       if (p.getBoolean("speed_alert", true) && loc != null && loc.hasSpeed() && info.speedLimitMps > 0
