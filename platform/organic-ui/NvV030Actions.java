@@ -762,8 +762,63 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
     }, "nv-v030-mixed").start();
   }
 
-  public static void openStationTransfer(MwmActivity a) { showMetroStations(a, "تعویض هوشمند ایستگاه", "ایستگاه‌های نزدیک را از نزدیک به دور نمایش می‌دهد تا ورودی مناسب مسیر را انتخاب کنید"); }
-  public static void openMetroStatus(MwmActivity a) { showMetroStations(a, "مترو و ایستگاه‌ها", "ایستگاه‌های واقعی اطراف؛ چون منبع GTFS-Realtime سراسری برای ایران متصل نیست، موقعیت زنده قطار جعل نمی‌شود"); }
+  public static void openStationTransfer(MwmActivity a) {
+    Screen s = screen(a, "تعویض هوشمند ایستگاه", "ایستگاه، خروجی و ادامه مسیر بر اساس مقصد فعال");
+    Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    if (!freshEnough(loc)) { setStatus(s, "GPS تازه با دقت مناسب لازم است.", RED); return; }
+
+    MapObject target = RoutingController.get().getEndPoint();
+    setStatus(s, "در حال بررسی نزدیک‌ترین ایستگاه و خروجی‌های ثبت‌شده…", CYAN);
+
+    new Thread(() -> {
+      try {
+        List<Place> stations = metroStations(loc.getLatitude(), loc.getLongitude(), 6_000);
+        if (stations.isEmpty()) {
+          a.runOnUiThread(() -> setStatus(s, "در شعاع ۶ کیلومتر ایستگاه مترو پیدا نشد.", AMBER));
+          return;
+        }
+
+        Place station = stations.get(0);
+        List<Place> entrances = subwayEntrances(station, target);
+        a.runOnUiThread(() -> {
+          if (!alive(a, s)) return;
+          s.results.removeAllViews();
+          setStatus(s, "ایستگاه پیشنهادی: " + station.title + " • " + formatDistance(station.distanceMeters), GREEN);
+
+          s.results.addView(optionCard(a, "🚇 " + station.title,
+              "پیاده تا ایستگاه: " + formatDistance(station.distanceMeters),
+              BLUE, () -> routeTo(a, station, Router.Pedestrian)));
+
+          if (entrances.isEmpty()) {
+            s.results.addView(text(a, "برای این ایستگاه خروجی مجزا در OpenStreetMap ثبت نشده است.", 12, MUTED, Typeface.NORMAL));
+          } else {
+            Place bestExit = entrances.get(0);
+            String reason = target != null
+                ? "نزدیک‌ترین خروجی ثبت‌شده به ادامه مسیر"
+                : "نزدیک‌ترین خروجی ثبت‌شده";
+            s.results.addView(optionCard(a, "✓ خروجی پیشنهادی: " + bestExit.title,
+                reason + " • " + formatDistance(bestExit.distanceMeters),
+                GREEN, () -> routeTo(a, bestExit, Router.Pedestrian)));
+
+            int max = Math.min(5, entrances.size());
+            for (int i = 1; i < max; i++) {
+              Place e = entrances.get(i);
+              s.results.addView(optionCard(a, "خروجی دیگر: " + e.title,
+                  formatDistance(e.distanceMeters),
+                  PANEL2, () -> routeTo(a, e, Router.Pedestrian)));
+            }
+          }
+        });
+      } catch (Throwable e) {
+        a.runOnUiThread(() -> setStatus(s, "داده خروجی‌های ایستگاه در دسترس نیست.", AMBER));
+      }
+    }, "nv-v030-station-transfer").start();
+  }
+
+  public static void openMetroStatus(MwmActivity a) {
+    showMetroStations(a, "مترو و ایستگاه‌ها",
+        "ایستگاه‌های واقعی اطراف؛ موقعیت زنده قطار فقط در صورت اتصال منبع رسمی قابل نمایش است");
+  }
 
   private static void showMetroStations(MwmActivity a, String title, String subtitle) {
     Screen s = screen(a, title, subtitle);
@@ -791,7 +846,37 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
     }, "nv-v030-metro").start();
   }
 
-  public static void openTaxi(MwmActivity a) { NvSmartActions.openNearby(a, "ایستگاه تاکسی"); }
+  public static void openTaxi(MwmActivity a) {
+    Screen s = screen(a, "تاکسی و محل سوارشدن", "نزدیک‌ترین ایستگاه‌ها و نقاط تاکسی ثبت‌شده اطراف موقعیت فعلی");
+    Location loc = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+    if (!freshEnough(loc)) { setStatus(s, "GPS تازه با دقت مناسب لازم است.", RED); return; }
+
+    setStatus(s, "در حال پیدا کردن نقاط تاکسی نزدیک…", CYAN);
+    new Thread(() -> {
+      try {
+        List<Place> places = taxiStands(loc.getLatitude(), loc.getLongitude(), 5_000);
+        a.runOnUiThread(() -> {
+          if (!alive(a, s)) return;
+          s.results.removeAllViews();
+          if (places.isEmpty()) {
+            setStatus(s, "در شعاع ۵ کیلومتر نقطه تاکسی ثبت‌شده‌ای پیدا نشد.", AMBER);
+            return;
+          }
+          setStatus(s, places.size() + " نقطه تاکسی پیدا شد", GREEN);
+          for (Place p : places) {
+            s.results.addView(optionCard(a, "🚕 " + p.title,
+                formatDistance(p.distanceMeters) + " از موقعیت فعلی",
+                GREEN, () -> routeTo(a, p, Router.Pedestrian)));
+          }
+          s.results.addView(text(a,
+              "هماهنگی زمان رسیدن خودروی اسنپ/تپسی نیازمند API رسمی سرویس‌دهنده است و بدون آن زمان ساختگی نمایش داده نمی‌شود.",
+              11, MUTED, Typeface.NORMAL));
+        });
+      } catch (Throwable e) {
+        a.runOnUiThread(() -> setStatus(s, "سرویس جستجوی نقاط تاکسی پاسخ نداد.", AMBER));
+      }
+    }, "nv-v030-taxi").start();
+  }
 
   public static void openRouteAlerts(MwmActivity a) {
     Screen s = screen(a, "هشدارهای مسیر", "این تنظیمات در زمان مسیریابی واقعاً توسط NV بررسی می‌شوند");
@@ -889,6 +974,77 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
     JSONArray els=new JSONObject(readAll(c.getInputStream())).optJSONArray("elements");c.disconnect();List<Place> out=new ArrayList<>(); if(els==null)return out;
     for(int i=0;i<els.length();i++){JSONObject e=els.optJSONObject(i);if(e==null)continue;double la=e.optDouble("lat",Double.NaN),lo=e.optDouble("lon",Double.NaN);if(!Double.isFinite(la)||!Double.isFinite(lo))continue;JSONObject tags=e.optJSONObject("tags");String name=tags==null?"":tags.optString("name:fa",tags.optString("name","ایستگاه مترو"));double d=haversine(lat,lon,la,lo);out.add(new Place(name,"ایستگاه مترو",la,lo,d,"railway","station",0));}
     out.sort(Comparator.comparingDouble(p->p.distanceMeters)); if(out.size()>12)return new ArrayList<>(out.subList(0,12));return out;
+  }
+
+  private static List<Place> subwayEntrances(Place station, MapObject target) throws Exception {
+    String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", 700, station.lat, station.lon);
+    String q = "[out:json][timeout:12];(node" + around + "[\"railway\"=\"subway_entrance\"];);out tags;";
+    HttpURLConnection conn = (HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
+    conn.setConnectTimeout(7000); conn.setReadTimeout(14000); conn.setRequestMethod("POST"); conn.setDoOutput(true);
+    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.30");
+    byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
+    try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
+    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300) throw new IllegalStateException("HTTP");
+    JSONArray els = new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
+    conn.disconnect();
+
+    List<Place> out = new ArrayList<>();
+    if (els == null) return out;
+    for (int i = 0; i < els.length(); i++) {
+      JSONObject e = els.optJSONObject(i); if (e == null) continue;
+      double la = e.optDouble("lat", Double.NaN), lo = e.optDouble("lon", Double.NaN);
+      if (!Double.isFinite(la) || !Double.isFinite(lo)) continue;
+      JSONObject tags = e.optJSONObject("tags");
+      String name = "";
+      if (tags != null) {
+        name = tags.optString("name:fa", tags.optString("name", ""));
+        if (name.isEmpty()) {
+          String ref = tags.optString("ref", "");
+          name = ref.isEmpty() ? "خروجی مترو" : "خروجی " + ref;
+        }
+      }
+      double d = target != null ? haversine(la, lo, target.getLat(), target.getLon())
+                                : haversine(station.lat, station.lon, la, lo);
+      out.add(new Place(name, "خروجی مترو", la, lo, d, "railway", "subway_entrance", 0));
+    }
+    out.sort(Comparator.comparingDouble(p -> p.distanceMeters));
+    return out;
+  }
+
+  private static List<Place> taxiStands(double lat, double lon, int radius) throws Exception {
+    String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", radius, lat, lon);
+    String q = "[out:json][timeout:12];(node" + around + "[\"amenity\"=\"taxi\"];way" + around + "[\"amenity\"=\"taxi\"];);out center tags;";
+    HttpURLConnection conn = (HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
+    conn.setConnectTimeout(7000); conn.setReadTimeout(14000); conn.setRequestMethod("POST"); conn.setDoOutput(true);
+    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.30");
+    byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
+    try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
+    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300) throw new IllegalStateException("HTTP");
+    JSONArray els = new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
+    conn.disconnect();
+
+    List<Place> out = new ArrayList<>();
+    if (els == null) return out;
+    for (int i = 0; i < els.length(); i++) {
+      JSONObject e = els.optJSONObject(i); if (e == null) continue;
+      double la = e.optDouble("lat", Double.NaN), lo = e.optDouble("lon", Double.NaN);
+      JSONObject center = e.optJSONObject("center");
+      if ((!Double.isFinite(la) || !Double.isFinite(lo)) && center != null) {
+        la = center.optDouble("lat", Double.NaN);
+        lo = center.optDouble("lon", Double.NaN);
+      }
+      if (!Double.isFinite(la) || !Double.isFinite(lo)) continue;
+      JSONObject tags = e.optJSONObject("tags");
+      String name = tags == null ? "" : tags.optString("name:fa", tags.optString("name", ""));
+      if (name.isEmpty()) name = "ایستگاه تاکسی";
+      double d = haversine(lat, lon, la, lo);
+      out.add(new Place(name, "ایستگاه تاکسی", la, lo, d, "amenity", "taxi", 0));
+    }
+    out.sort(Comparator.comparingDouble(p -> p.distanceMeters));
+    if (out.size() > 10) return new ArrayList<>(out.subList(0, 10));
+    return out;
   }
 
   private static void routeTo(MwmActivity a, Place p, Router router) {
