@@ -50,7 +50,7 @@ t = t.replace('bar.setOnClickListener(v -> NvRuntimeController.openSearch(activi
 pattern = re.compile(r'    private void handleMenu\(int id\) \{.*?\n    \}\n\n    private void showNearby\(\)', re.S)
 replacement = '''    private void handleMenu(int id) {
       switch (id) {
-        case 1 -> { }
+        case 1 -> NvV031Actions.returnHome(activity)
         case 2 -> showNearby();
         case 3 -> NvSmartActions.openNearby(activity, "اورژانس");
         case 4 -> NvV031Actions.openPlaceDetails(activity);
