@@ -124,7 +124,7 @@ public final class NvSmartTravelUi {
     s.body.addView(mapWindow(a, "ایستگاه‌های مترو روی نقشه • نزدیک‌ترین‌ها"));
     s.body.addView(infoBanner(a, "🚇", "وضعیت کلی مترو", "فقط اطلاعات معتبر و موجود نمایش داده می‌شود؛ داده ساختگی نمایش داده نمی‌شود.", GREEN));
     s.body.addView(metric(a, "ایستگاه نزدیک", "بررسی از موقعیت فعلی", BLUE));
-    s.body.addView(metric(a, "وضعیت سرویس", "فعال / نامشخص", GREEN));
+    s.body.addView(metric(a, "وضعیت سرویس", "فقط داده معتبر نمایش داده می‌شود", GREEN));
     s.body.addView(primary(a, "مشاهده مترو و ایستگاه‌ها", BLUE, () -> go(a, () -> NvV031Actions.openMetroStatus(a))));
   }
 
@@ -143,11 +143,11 @@ public final class NvSmartTravelUi {
     TextView eta = text(a, "ETA\nپس از محاسبه مسیر", 25, WHITE, Typeface.BOLD);
     eta.setGravity(Gravity.CENTER);
     hero.addView(eta, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 110)));
-    TextView confidence = text(a, "٪ اطمینان پس از محاسبه مسیر واقعی", 13, CYAN, Typeface.BOLD);
+    TextView confidence = text(a, "کیفیت برآورد پس از محاسبه مسیر واقعی", 13, CYAN, Typeface.BOLD);
     confidence.setGravity(Gravity.CENTER);
     hero.addView(confidence);
     s.body.addView(hero);
-    s.body.addView(metric(a, "ترافیک یا تأخیر", "بر اساس داده در دسترس", RED));
+    s.body.addView(metric(a, "ترافیک زنده", "در صورت اتصال منبع معتبر", RED));
     s.body.addView(metric(a, "وضعیت مسیر", "بسته / عملیات / هشدار", AMBER));
     s.body.addView(metric(a, "سرعت واقعی دستگاه", "در محاسبه ETA استفاده می‌شود", GREEN));
     s.body.addView(primary(a, "محاسبه ETA واقعی", BLUE, () -> go(a, () -> NvV031Actions.openEta(a))));
@@ -182,7 +182,7 @@ public final class NvSmartTravelUi {
     s.body.addView(infoBanner(a, "i", "تنظیمات واقعی",
         "مترو، تاکسی، هزینه و میزان پیاده‌روی مستقیماً در برنامه‌ریز NV استفاده می‌شوند. محدودیت بزرگراه و ایمنی به قابلیت موتور پایه نیز وابسته‌اند.",
         CYAN));
-    s.body.addView(primary(a, "تنظیم مصرف سوخت و هشدارها", BLUE, () -> go(a, () -> NvV031Actions.openPreferences(a))));
+    s.body.addView(primary(a, "تنظیم هزینه، مصرف سوخت و هشدارها", BLUE, () -> go(a, () -> NvV031Actions.openPreferences(a))));
   }
 
   private static Screen screen(MwmActivity a, String title, String subtitle, boolean revealMap) {
