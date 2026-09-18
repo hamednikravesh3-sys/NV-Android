@@ -267,24 +267,30 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private int correctedActiveEta(int engineSec, double remainingMeters) {
-    int base = engineSec;
+    int base = Math.max(60, engineSec);
 
     if (onlineEtaFresh() && onlineEtaSec > 0) {
-      double ratio = engineSec / (double) onlineEtaSec;
-      if (ratio > 1.45d || ratio < 0.70d)
-        base = onlineEtaSec;
+      int onlineRemaining = onlineEtaSec;
+      if (remainingMeters > 0d && onlineEtaDistanceM > 500d) {
+        double progressRatio = remainingMeters / onlineEtaDistanceM;
+        progressRatio = Math.max(0.04d, Math.min(1.12d, progressRatio));
+        onlineRemaining = Math.max(60, (int)Math.round(onlineEtaSec * progressRatio));
+      }
+
+      double ratio = engineSec / (double) onlineRemaining;
+      if (ratio > 1.55d || ratio < 0.64d)
+        base = onlineRemaining;
       else
-        base = (int)Math.round(onlineEtaSec * 0.72d + engineSec * 0.28d);
+        base = (int)Math.round(onlineRemaining * 0.68d + engineSec * 0.32d);
     }
 
-    // Instantaneous speed is too noisy for long routes. Only use a rolling median
-    // during the final urban portion of a trip, and keep its influence deliberately small.
-    if (remainingMeters > 0d && remainingMeters <= 15_000d) {
+    // GPS speed affects only the final urban portion, using a rolling median rather than one sample.
+    if (remainingMeters > 0d && remainingMeters <= 12_000d) {
       double median = medianSpeedMps();
       if (median >= 2.5d) {
         double speedEta = remainingMeters / median;
-        speedEta = Math.max(base * 0.78d, Math.min(base * 1.25d, speedEta));
-        base = (int)Math.round(base * 0.85d + speedEta * 0.15d);
+        speedEta = Math.max(base * 0.82d, Math.min(base * 1.20d, speedEta));
+        base = (int)Math.round(base * 0.88d + speedEta * 0.12d);
       }
     }
 
