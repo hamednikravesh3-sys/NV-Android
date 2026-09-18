@@ -585,13 +585,19 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
 
         if (finalMixed != null) {
           String details = formatMinutes(finalMixed.totalSec) + " • "
-              + finalMixed.fromStation.title + " → " + finalMixed.toStation.title;
+              + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
+              + " • حدود " + formatToman(estimateMixedCostToman(a, finalMixed));
           s.results.addView(optionCard(a,
               "🚇 ترکیبی" + ("ترکیبی".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
               details,
               GREEN,
               () -> routeTo(a, dest, Router.Transit)));
-          s.results.addView(text(a, "زمان مترو تقریبی است؛ داده زنده قطار سراسری متصل نیست.", 11, MUTED, Typeface.NORMAL));
+          s.results.addView(text(a,
+              "مترو: " + finalMixed.metroSource
+                  + (finalMixed.metroStops >= 0 ? " • " + finalMixed.metroStops + " ایستگاه" : "")
+                  + (finalMixed.metroTransfers >= 0 ? " • " + finalMixed.metroTransfers + " تعویض خط" : "")
+                  + " • داده زنده قطار متصل نیست.",
+              11, MUTED, Typeface.NORMAL));
         }
 
         if (walkSec < Integer.MAX_VALUE) {
@@ -628,9 +634,15 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
         s.results.addView(stepCard(a, "۱", result.accessMode + " تا " + result.fromStation.title,
             formatMinutes(result.accessSec) + " • " + formatDistance(result.accessDistanceM), GREEN));
         s.results.addView(stepCard(a, "۲", "مترو: " + result.fromStation.title + " → " + result.toStation.title,
-            "حدود " + formatMinutes(result.metroSec) + " • بدون داده زنده قطار", BLUE));
+            formatMinutes(result.metroSec)
+                + " • " + result.metroSource
+                + (result.metroStops >= 0 ? " • " + result.metroStops + " ایستگاه" : "")
+                + (result.metroTransfers >= 0 ? " • " + result.metroTransfers + " تعویض" : "")
+                + " • بدون داده زنده قطار", BLUE));
         s.results.addView(stepCard(a, "۳", result.egressMode + " تا مقصد",
             formatMinutes(result.egressSec) + " • " + formatDistance(result.egressDistanceM), PURPLE));
+        s.results.addView(text(a, "هزینه تقریبی کل: " + formatToman(estimateMixedCostToman(a, result)),
+            13, CYAN, Typeface.BOLD));
         s.results.addView(button(a, "شروع مسیر مترو/پیاده", GREEN, () -> routeTo(a, dest, Router.Transit)));
         s.results.addView(button(a, "مقایسه با خودرو", BLUE, () -> compareHurryOptions(a, s, origin, dest)));
       });
