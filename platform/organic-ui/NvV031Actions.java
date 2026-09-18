@@ -304,6 +304,13 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     return r == 0 ? h + " ساعت" : h + "س " + r + "د";
   }
 
+  public static void goHome(MwmActivity a) {
+    removeScreen(a);
+    try { Framework.nativeStopLocationFollow(); } catch (Throwable ignored) {}
+    try { Framework.nativeSetMyPositionMode(1); } catch (Throwable ignored) {}
+    Toast.makeText(a, "صفحه اصلی NV", Toast.LENGTH_SHORT).show();
+  }
+
   public static int getSearchRadius(MwmActivity a, int fallback) {
     return prefs(a).getInt("radius_m", fallback);
   }
