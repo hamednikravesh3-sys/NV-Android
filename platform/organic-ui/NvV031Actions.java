@@ -1396,86 +1396,115 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     return out;
   }
 
+  private static JSONArray overpassElements(String query) throws Exception {
+    String[] endpoints = {
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter"
+    };
+    Exception last = null;
+    for (String endpoint : endpoints) {
+      HttpURLConnection conn = null;
+      try {
+        conn = (HttpURLConnection)new URL(endpoint).openConnection();
+        conn.setConnectTimeout(7000);
+        conn.setReadTimeout(18000);
+        conn.setRequestMethod("POST");
+        conn.setDoOutput(true);
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        conn.setRequestProperty("User-Agent", "NV-Android/0.31");
+        byte[] body=("data="+URLEncoder.encode(query,"UTF-8")).getBytes(StandardCharsets.UTF_8);
+        try(java.io.OutputStream os=conn.getOutputStream()){os.write(body);}
+        int code=conn.getResponseCode();
+        if(code<200||code>=300) throw new IllegalStateException("Overpass HTTP "+code);
+        JSONObject root=new JSONObject(readAll(conn.getInputStream()));
+        JSONArray els=root.optJSONArray("elements");
+        return els==null?new JSONArray():els;
+      } catch (Exception e) {
+        last=e;
+      } finally {
+        if(conn!=null) conn.disconnect();
+      }
+    }
+    if(last!=null) throw last;
+    return new JSONArray();
+  }
+
   private static boolean hasMetroNear(double lat,double lon,int radius) throws Exception { return !metroStations(lat,lon,radius).isEmpty(); }
 
   private static List<Place> metroStations(double lat,double lon,int radius) throws Exception {
     String around=String.format(Locale.US,"(around:%d,%.7f,%.7f)",radius,lat,lon);
-    String q="[out:json][timeout:12];(node"+around+"[\"railway\"=\"station\"][\"station\"=\"subway\"];node"+around+"[\"railway\"=\"station\"][\"subway\"=\"yes\"];);out tags;";
-    HttpURLConnection c=(HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();c.setConnectTimeout(7000);c.setReadTimeout(14000);c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/x-www-form-urlencoded; charset=UTF-8");c.setRequestProperty("User-Agent","NV-Android/0.31");
-    byte[] body=("data="+URLEncoder.encode(q,"UTF-8")).getBytes(StandardCharsets.UTF_8);try(java.io.OutputStream os=c.getOutputStream()){os.write(body);} if(c.getResponseCode()<200||c.getResponseCode()>=300)throw new IllegalStateException("HTTP");
-    JSONArray els=new JSONObject(readAll(c.getInputStream())).optJSONArray("elements");c.disconnect();List<Place> out=new ArrayList<>(); if(els==null)return out;
-    for(int i=0;i<els.length();i++){JSONObject e=els.optJSONObject(i);if(e==null)continue;double la=e.optDouble("lat",Double.NaN),lo=e.optDouble("lon",Double.NaN);if(!Double.isFinite(la)||!Double.isFinite(lo))continue;JSONObject tags=e.optJSONObject("tags");String name=tags==null?"":tags.optString("name:fa",tags.optString("name","ایستگاه مترو"));double d=haversine(lat,lon,la,lo);out.add(new Place(name,"ایستگاه مترو",la,lo,d,"railway","station",0));}
-    out.sort(Comparator.comparingDouble(p->p.distanceMeters)); if(out.size()>12)return new ArrayList<>(out.subList(0,12));return out;
-  }
-
-  private static List<Place> subwayEntrances(Place station, MapObject target) throws Exception {
-    String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", 700, station.lat, station.lon);
-    String q = "[out:json][timeout:12];(node" + around + "[\"railway\"=\"subway_entrance\"];);out tags;";
-    HttpURLConnection conn = (HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
-    conn.setConnectTimeout(7000); conn.setReadTimeout(14000); conn.setRequestMethod("POST"); conn.setDoOutput(true);
-    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
-    byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
-    try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
-    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300) throw new IllegalStateException("HTTP");
-    JSONArray els = new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
-    conn.disconnect();
-
-    List<Place> out = new ArrayList<>();
-    if (els == null) return out;
-    for (int i = 0; i < els.length(); i++) {
-      JSONObject e = els.optJSONObject(i); if (e == null) continue;
-      double la = e.optDouble("lat", Double.NaN), lo = e.optDouble("lon", Double.NaN);
-      if (!Double.isFinite(la) || !Double.isFinite(lo)) continue;
-      JSONObject tags = e.optJSONObject("tags");
-      String name = "";
-      if (tags != null) {
-        name = tags.optString("name:fa", tags.optString("name", ""));
-        if (name.isEmpty()) {
-          String ref = tags.optString("ref", "");
-          name = ref.isEmpty() ? "خروجی مترو" : "خروجی " + ref;
-        }
-      }
-      double d = target != null ? haversine(la, lo, target.getLat(), target.getLon())
-                                : haversine(station.lat, station.lon, la, lo);
-      out.add(new Place(name, "خروجی مترو", la, lo, d, "railway", "subway_entrance", 0));
+    String q="[out:json][timeout:12];("
+        +"node"+around+"[\"railway\"=\"station\"][\"station\"=\"subway\"];"
+        +"node"+around+"[\"railway\"=\"station\"][\"subway\"=\"yes\"];"
+        +"node"+around+"[\"public_transport\"=\"station\"][\"subway\"=\"yes\"];"
+        +");out tags;";
+    JSONArray els=overpassElements(q);
+    List<Place> out=new ArrayList<>();
+    for(int i=0;i<els.length();i++){
+      JSONObject obj=els.optJSONObject(i);if(obj==null)continue;
+      double la=obj.optDouble("lat",Double.NaN),lo=obj.optDouble("lon",Double.NaN);
+      if(!Double.isFinite(la)||!Double.isFinite(lo))continue;
+      JSONObject tags=obj.optJSONObject("tags");
+      String name=tags==null?"":tags.optString("name:fa",tags.optString("name","ایستگاه مترو"));
+      if(name.isEmpty()) name="ایستگاه مترو";
+      double d=haversine(lat,lon,la,lo);
+      out.add(new Place(name,"ایستگاه مترو",la,lo,d,"railway","station",0));
     }
-    out.sort(Comparator.comparingDouble(p -> p.distanceMeters));
+    out.sort(Comparator.comparingDouble(p->p.distanceMeters));
+    if(out.size()>12)return new ArrayList<>(out.subList(0,12));
     return out;
   }
 
-  private static List<Place> taxiStands(double lat, double lon, int radius) throws Exception {
-    String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", radius, lat, lon);
-    String q = "[out:json][timeout:12];(node" + around + "[\"amenity\"=\"taxi\"];way" + around + "[\"amenity\"=\"taxi\"];);out center tags;";
-    HttpURLConnection conn = (HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
-    conn.setConnectTimeout(7000); conn.setReadTimeout(14000); conn.setRequestMethod("POST"); conn.setDoOutput(true);
-    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
-    byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
-    try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
-    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300) throw new IllegalStateException("HTTP");
-    JSONArray els = new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
-    conn.disconnect();
-
-    List<Place> out = new ArrayList<>();
-    if (els == null) return out;
-    for (int i = 0; i < els.length(); i++) {
-      JSONObject e = els.optJSONObject(i); if (e == null) continue;
-      double la = e.optDouble("lat", Double.NaN), lo = e.optDouble("lon", Double.NaN);
-      JSONObject center = e.optJSONObject("center");
-      if ((!Double.isFinite(la) || !Double.isFinite(lo)) && center != null) {
-        la = center.optDouble("lat", Double.NaN);
-        lo = center.optDouble("lon", Double.NaN);
+  private static List<Place> subwayEntrances(Place station, MapObject target) throws Exception {
+    String around=String.format(Locale.US,"(around:%d,%.7f,%.7f)",700,station.lat,station.lon);
+    String q="[out:json][timeout:12];(node"+around+"[\"railway\"=\"subway_entrance\"];);out tags;";
+    JSONArray els=overpassElements(q);
+    List<Place> out=new ArrayList<>();
+    for(int i=0;i<els.length();i++){
+      JSONObject obj=els.optJSONObject(i);if(obj==null)continue;
+      double la=obj.optDouble("lat",Double.NaN),lo=obj.optDouble("lon",Double.NaN);
+      if(!Double.isFinite(la)||!Double.isFinite(lo))continue;
+      JSONObject tags=obj.optJSONObject("tags");
+      String name="";
+      if(tags!=null){
+        name=tags.optString("name:fa",tags.optString("name",""));
+        if(name.isEmpty()){
+          String ref=tags.optString("ref","");
+          name=ref.isEmpty()?"خروجی مترو":"خروجی "+ref;
+        }
       }
-      if (!Double.isFinite(la) || !Double.isFinite(lo)) continue;
-      JSONObject tags = e.optJSONObject("tags");
-      String name = tags == null ? "" : tags.optString("name:fa", tags.optString("name", ""));
-      if (name.isEmpty()) name = "ایستگاه تاکسی";
-      double d = haversine(lat, lon, la, lo);
-      out.add(new Place(name, "ایستگاه تاکسی", la, lo, d, "amenity", "taxi", 0));
+      double d=target!=null?haversine(la,lo,target.getLat(),target.getLon())
+          :haversine(station.lat,station.lon,la,lo);
+      out.add(new Place(name,"خروجی مترو",la,lo,d,"railway","subway_entrance",0));
     }
-    out.sort(Comparator.comparingDouble(p -> p.distanceMeters));
-    if (out.size() > 10) return new ArrayList<>(out.subList(0, 10));
+    out.sort(Comparator.comparingDouble(p->p.distanceMeters));
+    return out;
+  }
+
+  private static List<Place> taxiStands(double lat,double lon,int radius) throws Exception {
+    String around=String.format(Locale.US,"(around:%d,%.7f,%.7f)",radius,lat,lon);
+    String q="[out:json][timeout:12];("
+        +"node"+around+"[\"amenity\"=\"taxi\"];"
+        +"way"+around+"[\"amenity\"=\"taxi\"];"
+        +");out center tags;";
+    JSONArray els=overpassElements(q);
+    List<Place> out=new ArrayList<>();
+    for(int i=0;i<els.length();i++){
+      JSONObject obj=els.optJSONObject(i);if(obj==null)continue;
+      double la=obj.optDouble("lat",Double.NaN),lo=obj.optDouble("lon",Double.NaN);
+      JSONObject center=obj.optJSONObject("center");
+      if((!Double.isFinite(la)||!Double.isFinite(lo))&&center!=null){
+        la=center.optDouble("lat",Double.NaN);lo=center.optDouble("lon",Double.NaN);
+      }
+      if(!Double.isFinite(la)||!Double.isFinite(lo))continue;
+      JSONObject tags=obj.optJSONObject("tags");
+      String name=tags==null?"":tags.optString("name:fa",tags.optString("name",""));
+      if(name.isEmpty())name="ایستگاه تاکسی";
+      double d=haversine(lat,lon,la,lo);
+      out.add(new Place(name,"ایستگاه تاکسی",la,lo,d,"amenity","taxi",0));
+    }
+    out.sort(Comparator.comparingDouble(p->p.distanceMeters));
+    if(out.size()>10)return new ArrayList<>(out.subList(0,10));
     return out;
   }
 
