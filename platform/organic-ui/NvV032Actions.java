@@ -1324,16 +1324,37 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   public static void openPreferences(MwmActivity a) {
-    Screen s = screen(a, "ترجیحات سفر هوشمند", "تنظیمات واقعی برای زمان، هزینه، مصرف و انتخاب شیوه سفر");
+    Screen s = screen(a, "تنظیمات سفر", "رفتار مسیریابی، حریم خصوصی، هزینه و مصرف را اینجا تنظیم کنید");
     SharedPreferences p = prefs(a);
 
-    s.results.addView(text(a, "مصرف سوخت مبنا:", 14, WHITE, Typeface.BOLD));
+    s.results.addView(sectionText(a, "حریم خصوصی و اینترنت"));
+    s.results.addView(togglePreference(a, p, "online_services", true,
+        "خدمات هوشمند آنلاین",
+        "در صورت خاموش بودن، مقصد/مختصات برای OSRM، Nominatim، Photon و Overpass ارسال نمی‌شود."));
+    s.results.addView(text(a,
+        p.getBoolean("online_services", true)
+            ? "حالت آنلاین: ETA جاده‌ای، جستجوی هوشمند و داده ایستگاه‌ها فعال است."
+            : "حالت خصوصی: فقط قابلیت‌های محلی/آفلاین نقشه استفاده می‌شوند.",
+        11, p.getBoolean("online_services", true) ? CYAN : GREEN, Typeface.NORMAL));
+
+    s.results.addView(sectionText(a, "شیوه سفر"));
+    s.results.addView(togglePreference(a, p, "use_metro", true, "استفاده از مترو", "در سفر ترکیبی مترو بررسی شود."));
+    s.results.addView(togglePreference(a, p, "use_taxi", true, "استفاده از تاکسی", "برای دسترسی به ایستگاه یا مقصد امکان تاکسی در نظر گرفته شود."));
+    s.results.addView(togglePreference(a, p, "min_cost", false, "اولویت هزینه کمتر", "در سفر ترکیبی، تا حد امکان گزینه ارزان‌تر ترجیح داده شود."));
+    s.results.addView(togglePreference(a, p, "less_walking", false, "پیاده‌روی کمتر", "در صورت امکان تاکسی برای بخش‌های دسترسی ترجیح داده شود."));
+    s.results.addView(togglePreference(a, p, "avoid_highways", false, "اجتناب از بزرگراه", "در مسیریابی خودرو از بزرگراه‌ها اجتناب شود."));
+    s.results.addView(togglePreference(a, p, "safer_route", true, "اجتناب از جاده خاکی/نامناسب", "گزینه قابل پشتیبانی موتور نقشه برای جاده‌های خاکی فعال می‌شود."));
+
+    s.results.addView(sectionText(a, "مصرف و هزینه تقریبی"));
     int[] fuel = {6, 8, 10, 12};
+    LinearLayout fuelRow = new LinearLayout(a);
+    fuelRow.setOrientation(LinearLayout.HORIZONTAL);
+    fuelRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
     for (int f : fuel) {
-      s.results.addView(button(a, f + " لیتر در ۱۰۰ کیلومتر",
-          p.getInt("fuel_l100", 8) == f ? GREEN : PANEL2,
-          () -> { p.edit().putInt("fuel_l100", f).apply(); Toast.makeText(a, "مصرف مبنا ذخیره شد", Toast.LENGTH_SHORT).show(); }));
+      fuelRow.addView(smallButton(a, f + "L/100", p.getInt("fuel_l100", 8) == f ? GREEN : PANEL2,
+          () -> { p.edit().putInt("fuel_l100", f).apply(); openPreferences(a); }), weight(a));
     }
+    s.results.addView(fuelRow, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 48)));
 
     EditText fuelPrice = input(a, "قیمت هر لیتر سوخت (تومان)");
     fuelPrice.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
@@ -1370,9 +1391,40 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     }));
 
     s.results.addView(text(a,
-        "هزینه تاکسی/مترو برآوردی و قابل تنظیم است؛ قیمت زنده بدون API رسمی سرویس‌دهنده نمایش داده نمی‌شود.",
+        "هزینه تاکسی و مترو برآوردی است و فقط بر اساس مقادیر شما محاسبه می‌شود؛ قیمت لحظه‌ای جعل نمی‌شود.",
         11, MUTED, Typeface.NORMAL));
-    s.results.addView(button(a, "تنظیم هشدارهای مسیر", BLUE, () -> openRouteAlerts(a)));
+
+    s.results.addView(sectionText(a, "هشدارها"));
+    s.results.addView(button(a, "تنظیم هشدار سرعت و GPS", BLUE, () -> openRouteAlerts(a)));
+  }
+
+  private static TextView sectionText(MwmActivity a, String title) {
+    TextView v = text(a, title, 15, CYAN, Typeface.BOLD);
+    v.setPadding(dp(a, 4), dp(a, 12), dp(a, 4), dp(a, 4));
+    return v;
+  }
+
+  private static View togglePreference(MwmActivity a, SharedPreferences p, String key, boolean def,
+                                       String title, String subtitle) {
+    boolean value = p.getBoolean(key, def);
+    LinearLayout card = new LinearLayout(a);
+    card.setOrientation(LinearLayout.VERTICAL);
+    card.setPadding(dp(a, 12), dp(a, 9), dp(a, 12), dp(a, 9));
+    card.setBackground(round(a, PANEL, value ? GREEN : OUTLINE, 14));
+    TextView name = text(a, (value ? "●  " : "○  ") + title, 14, WHITE, Typeface.BOLD);
+    TextView desc = text(a, subtitle, 11, MUTED, Typeface.NORMAL);
+    card.addView(name);
+    card.addView(desc);
+    card.setClickable(true);
+    card.setOnClickListener(v -> {
+      p.edit().putBoolean(key, !value).apply();
+      openPreferences(a);
+    });
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(0, dp(a, 4), 0, dp(a, 4));
+    card.setLayoutParams(lp);
+    return card;
   }
 
   private static List<Place> geocodeRanked(String query, Location origin) throws Exception {
