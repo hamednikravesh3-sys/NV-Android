@@ -248,13 +248,13 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static Location bestRecentLocation(MwmActivity a) {
     NvV031Actions instance = INSTANCES.get(a);
     if (instance != null) return instance.bestRecentLocationInstance();
-    Location current = bestRecentLocation(a);
+    Location current = MwmApplication.from(a).getLocationHelper().getSavedLocation();
     return current == null ? null : new Location(current);
   }
 
   private void recordSpeedSample(Location loc) {
     if (loc == null || !loc.hasSpeed() || loc.getSpeed() < 0f) return;
-    if (loc.hasAccuracy() && loc.getAccuracy() > 60f) return;
+    if (loc.hasAccuracy() && loc.getAccuracy() > 75f) return;
     long t = loc.getTime();
     if (t <= lastSpeedSampleTime) return;
     lastSpeedSampleTime = t;
