@@ -398,35 +398,33 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
     if (destination.isEmpty()) { setStatus(s, "نام مقصد از جمله مشخص نشد.", AMBER); return; }
     Location origin = MwmApplication.from(a).getLocationHelper().getSavedLocation();
     if (!freshEnough(origin)) {
-      setStatus(s, "موقعیت فعلی برای شروع مسیر کافی نیست؛ ابتدا GPS را تازه کنید.", RED);
+      setStatus(s, "برای شروع مسیر، GPS تازه با خطای کمتر از ۶۰ متر لازم است.", RED);
       s.results.removeAllViews();
       s.results.addView(button(a, "بررسی GPS", GREEN, () -> NvRuntimeController.showLocationStatus(a)));
       return;
     }
+
     setStatus(s, "در حال تشخیص مقصد «" + destination + "»…", CYAN);
     s.results.removeAllViews();
     final String dest = destination;
+
     new Thread(() -> {
       try {
         List<Place> list = geocodeRanked(dest, origin);
         if (list.isEmpty()) throw new IllegalStateException("no destination");
+
+        if (!destinationConfident(list, dest)) {
+          a.runOnUiThread(() -> {
+            if (!alive(a, s)) return;
+            renderDestinationChoices(a, s, raw, mode, origin, list);
+          });
+          return;
+        }
+
         Place best = list.get(0);
         a.runOnUiThread(() -> {
           if (!alive(a, s)) return;
-          if (mode == Mode.WALK || containsAny(raw, "پیاده", "قدم")) {
-            setStatus(s, "مقصد: " + best.title + " • مسیر پیاده", GREEN);
-            routeTo(a, best, Router.Pedestrian); return;
-          }
-          boolean explicitMixed = mode == Mode.MIXED || containsAny(raw, "ترکیبی", "مترو", "حمل و نقل عمومی", "حمل‌ونقل عمومی", "اتوبوس");
-          // Railway stations are destinations, not a request for subway routing.
-          boolean railDestination = containsAny(dest, "راه آهن", "راه‌آهن", "ایستگاه قطار", "راه اهن");
-          if (explicitMixed && !railDestination) {
-            verifyMixedThenRoute(a, s, origin, best); return;
-          }
-          if (mode == Mode.COMPARE) {
-            compareModes(a, s, origin, best); return;
-          }
-          previewVehicle(a, s, origin, best, mode == Mode.HURRY || containsAny(raw, "عجله", "سریع", "زود", "فوری"));
+          dispatchResolvedTrip(a, s, raw, mode, origin, best);
         });
       } catch (Throwable e) {
         a.runOnUiThread(() -> {
@@ -436,6 +434,242 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
         });
       }
     }, "nv-v030-trip").start();
+  }
+
+  private static boolean destinationConfident(List<Place> list, String query) {
+    if (list == null || list.isEmpty()) return false;
+    Place first = list.get(0);
+    String q = normalize(query), title = normalize(first.title);
+    if (title.equals(q) || (q.length() >= 4 && title.contains(q))) return true;
+    if (first.score < 70) return false;
+    if (list.size() == 1) return true;
+    Place second = list.get(1);
+    return first.score - second.score >= 24;
+  }
+
+  private static void renderDestinationChoices(MwmActivity a, Screen s, String raw, Mode mode,
+                                               Location origin, List<Place> list) {
+    s.results.removeAllViews();
+    setStatus(s, "چند مقصد مشابه پیدا شد؛ برای جلوگیری از مسیر اشتباه، مقصد را انتخاب کنید.", AMBER);
+    int count = Math.min(5, list.size());
+    for (int i = 0; i < count; i++) {
+      Place p = list.get(i);
+      String dist = p.distanceMeters >= 0 ? " • " + formatDistance(p.distanceMeters) : "";
+      LinearLayout card = new LinearLayout(a);
+      card.setOrientation(LinearLayout.VERTICAL);
+      card.setPadding(dp(a, 12), dp(a, 9), dp(a, 12), dp(a, 9));
+      card.setBackground(round(a, PANEL, OUTLINE, 14));
+      card.addView(text(a, (i + 1) + ". " + p.title + dist, 15, WHITE, Typeface.BOLD));
+      card.addView(text(a, p.address, 11, MUTED, Typeface.NORMAL));
+      card.addView(button(a, "انتخاب این مقصد", BLUE, () -> dispatchResolvedTrip(a, s, raw, mode, origin, p)));
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+      lp.setMargins(0, dp(a, 5), 0, dp(a, 5));
+      s.results.addView(card, lp);
+    }
+  }
+
+  private static void dispatchResolvedTrip(MwmActivity a, Screen s, String raw, Mode mode,
+                                           Location origin, Place best) {
+    s.results.removeAllViews();
+
+    if (mode == Mode.WALK || containsAny(raw, "پیاده", "قدم")) {
+      setStatus(s, "مقصد: " + best.title + " • مسیر پیاده", GREEN);
+      routeTo(a, best, Router.Pedestrian);
+      return;
+    }
+
+    boolean explicitMixed = mode == Mode.MIXED
+        || containsAny(raw, "ترکیبی", "مترو", "حمل و نقل عمومی", "حمل‌ونقل عمومی", "اتوبوس");
+    boolean railDestination = containsAny(best.title + " " + best.address,
+        "راه آهن", "راه‌آهن", "ایستگاه قطار", "راه اهن");
+
+    if (mode == Mode.HURRY || containsAny(raw, "عجله", "سریع", "زود", "فوری")) {
+      compareHurryOptions(a, s, origin, best);
+      return;
+    }
+
+    if (explicitMixed && !railDestination) {
+      buildMixedPlan(a, s, origin, best);
+      return;
+    }
+
+    if (mode == Mode.COMPARE) {
+      compareModes(a, s, origin, best);
+      return;
+    }
+
+    previewVehicle(a, s, origin, best, false);
+  }
+
+  private static void compareHurryOptions(MwmActivity a, Screen s, Location origin, Place dest) {
+    setStatus(s, "در حال مقایسه همزمان گزینه‌های قابل استفاده…", CYAN);
+    new Thread(() -> {
+      RoadEstimate car = null;
+      MixedEstimate mixed = null;
+      try { car = osrm(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon); } catch (Throwable ignored) {}
+      if (prefs(a).getBoolean("use_metro", true)) {
+        try { mixed = estimateMixed(a, origin, dest); } catch (Throwable ignored) {}
+      }
+
+      double direct = haversine(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon);
+      int walkSec = direct <= 8_000d ? walkingSeconds(direct) : Integer.MAX_VALUE;
+      RoadEstimate finalCar = car;
+      MixedEstimate finalMixed = mixed;
+
+      a.runOnUiThread(() -> {
+        if (!alive(a, s)) return;
+        s.results.removeAllViews();
+
+        int best = Integer.MAX_VALUE;
+        String bestName = "";
+        if (finalCar != null && finalCar.durationSec < best) { best = finalCar.durationSec; bestName = "خودرو"; }
+        if (finalMixed != null && finalMixed.totalSec < best) { best = finalMixed.totalSec; bestName = "ترکیبی"; }
+        if (walkSec < best) { best = walkSec; bestName = "پیاده"; }
+
+        if (best == Integer.MAX_VALUE) {
+          setStatus(s, "هیچ برآورد قابل اعتمادی آماده نشد؛ مسیر آفلاین نقشه را امتحان کنید.", AMBER);
+          s.results.addView(button(a, "مسیر خودرو با موتور آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+          return;
+        }
+
+        setStatus(s, "سریع‌ترین برآورد فعلی: " + bestName + " • " + formatMinutes(best), GREEN);
+
+        if (finalCar != null) {
+          s.results.addView(optionCard(a,
+              "🚗 خودرو" + ("خودرو".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
+              formatMinutes(finalCar.durationSec) + " • " + formatDistance(finalCar.distanceM),
+              BLUE,
+              () -> routeTo(a, dest, Router.Vehicle)));
+        }
+
+        if (finalMixed != null) {
+          String details = formatMinutes(finalMixed.totalSec) + " • "
+              + finalMixed.fromStation.title + " → " + finalMixed.toStation.title;
+          s.results.addView(optionCard(a,
+              "🚇 ترکیبی" + ("ترکیبی".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
+              details,
+              GREEN,
+              () -> routeTo(a, dest, Router.Transit)));
+          s.results.addView(text(a, "زمان مترو تقریبی است؛ داده زنده قطار سراسری متصل نیست.", 11, MUTED, Typeface.NORMAL));
+        }
+
+        if (walkSec < Integer.MAX_VALUE) {
+          s.results.addView(optionCard(a,
+              "🚶 پیاده" + ("پیاده".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
+              "حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20d),
+              CYAN,
+              () -> routeTo(a, dest, Router.Pedestrian)));
+        }
+      });
+    }, "nv-v030-hurry").start();
+  }
+
+  private static void buildMixedPlan(MwmActivity a, Screen s, Location origin, Place dest) {
+    setStatus(s, "در حال ساخت سفر چندمرحله‌ای واقعی با ایستگاه‌های نزدیک…", CYAN);
+    new Thread(() -> {
+      MixedEstimate mixed = null;
+      try { mixed = estimateMixed(a, origin, dest); } catch (Throwable ignored) {}
+      MixedEstimate result = mixed;
+
+      a.runOnUiThread(() -> {
+        if (!alive(a, s)) return;
+        s.results.removeAllViews();
+
+        if (result == null) {
+          setStatus(s, "مترو مناسب نزدیک مبدأ یا مقصد پیدا نشد؛ گزینه‌های عملی جایگزین نمایش داده شدند.", AMBER);
+          s.results.addView(button(a, "سریع‌ترین مسیر خودرو", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+          s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+          return;
+        }
+
+        setStatus(s, "برآورد سفر ترکیبی برای «" + dest.title + "» آماده است", GREEN);
+        s.results.addView(text(a, "کل برآورد: " + formatMinutes(result.totalSec), 18, WHITE, Typeface.BOLD));
+        s.results.addView(stepCard(a, "۱", result.accessMode + " تا " + result.fromStation.title,
+            formatMinutes(result.accessSec) + " • " + formatDistance(result.accessDistanceM), GREEN));
+        s.results.addView(stepCard(a, "۲", "مترو: " + result.fromStation.title + " → " + result.toStation.title,
+            "حدود " + formatMinutes(result.metroSec) + " • بدون داده زنده قطار", BLUE));
+        s.results.addView(stepCard(a, "۳", result.egressMode + " تا مقصد",
+            formatMinutes(result.egressSec) + " • " + formatDistance(result.egressDistanceM), PURPLE));
+        s.results.addView(button(a, "شروع مسیر مترو/پیاده", GREEN, () -> routeTo(a, dest, Router.Transit)));
+        s.results.addView(button(a, "مقایسه با خودرو", BLUE, () -> compareHurryOptions(a, s, origin, dest)));
+      });
+    }, "nv-v030-mixed").start();
+  }
+
+  private static MixedEstimate estimateMixed(MwmActivity a, Location origin, Place dest) throws Exception {
+    if (!prefs(a).getBoolean("use_metro", true)) return null;
+    List<Place> from = metroStations(origin.getLatitude(), origin.getLongitude(), 5_000);
+    List<Place> to = metroStations(dest.lat, dest.lon, 5_000);
+    if (from.isEmpty() || to.isEmpty()) return null;
+
+    Place aStation = from.get(0), bStation = to.get(0);
+    boolean taxi = prefs(a).getBoolean("use_taxi", true);
+
+    RoadEstimate access;
+    RoadEstimate egress;
+    if (taxi) {
+      access = osrm(origin.getLatitude(), origin.getLongitude(), aStation.lat, aStation.lon);
+      egress = osrm(bStation.lat, bStation.lon, dest.lat, dest.lon);
+    } else {
+      double ad = haversine(origin.getLatitude(), origin.getLongitude(), aStation.lat, aStation.lon) * 1.20d;
+      double ed = haversine(bStation.lat, bStation.lon, dest.lat, dest.lon) * 1.20d;
+      access = new RoadEstimate(ad, walkingSeconds(ad / 1.20d));
+      egress = new RoadEstimate(ed, walkingSeconds(ed / 1.20d));
+    }
+
+    double metroDistance = haversine(aStation.lat, aStation.lon, bStation.lat, bStation.lon) * 1.12d;
+    int metroSec = Math.max(8 * 60, (int)Math.round(metroDistance / 8.3d + 4 * 60d));
+    int total = access.durationSec + metroSec + egress.durationSec;
+
+    return new MixedEstimate(
+        aStation, bStation,
+        access.distanceM, access.durationSec,
+        metroDistance, metroSec,
+        egress.distanceM, egress.durationSec,
+        total,
+        taxi ? "تاکسی" : "پیاده",
+        taxi ? "تاکسی" : "پیاده");
+  }
+
+  private static int walkingSeconds(double directMeters) {
+    double networkMeters = directMeters * 1.20d;
+    return Math.max(60, (int)Math.round(networkMeters / 1.35d));
+  }
+
+  private static View optionCard(MwmActivity a, String title, String subtitle, int color, Runnable action) {
+    LinearLayout card = new LinearLayout(a);
+    card.setOrientation(LinearLayout.VERTICAL);
+    card.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
+    card.setBackground(round(a, PANEL, color, 14));
+    card.addView(text(a, title, 15, WHITE, Typeface.BOLD));
+    card.addView(text(a, subtitle, 12, MUTED, Typeface.NORMAL));
+    card.addView(button(a, "انتخاب", color, action));
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(0, dp(a, 5), 0, dp(a, 5));
+    card.setLayoutParams(lp);
+    return card;
+  }
+
+  private static View stepCard(MwmActivity a, String n, String title, String subtitle, int color) {
+    LinearLayout row = new LinearLayout(a);
+    row.setOrientation(LinearLayout.HORIZONTAL);
+    row.setGravity(Gravity.CENTER_VERTICAL);
+    row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    row.setPadding(dp(a, 10), dp(a, 9), dp(a, 10), dp(a, 9));
+    row.setBackground(round(a, PANEL, color, 14));
+    TextView num = text(a, n, 14, WHITE, Typeface.BOLD);
+    num.setGravity(Gravity.CENTER);
+    num.setBackground(round(a, color, color, 20));
+    row.addView(num, new LinearLayout.LayoutParams(dp(a, 38), dp(a, 38)));
+    LinearLayout tx = new LinearLayout(a);
+    tx.setOrientation(LinearLayout.VERTICAL);
+    tx.addView(text(a, title, 14, WHITE, Typeface.BOLD));
+    tx.addView(text(a, subtitle, 11, MUTED, Typeface.NORMAL));
+    row.addView(tx, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(0, dp(a, 4), 0, dp(a, 4));
+    row.setLayoutParams(lp);
+    return row;
   }
 
   private static void previewVehicle(MwmActivity a, Screen s, Location origin, Place dest, boolean hurry) {
@@ -680,4 +914,16 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
   private static final class Screen { final FrameLayout root;final TextView status;final LinearLayout controls,results;Screen(FrameLayout r,TextView s,LinearLayout c,LinearLayout o){root=r;status=s;controls=c;results=o;} }
   private static final class Place { final String title,address;final double lat,lon,distanceMeters;final String category,type;int score;Place(String t,String a,double la,double lo,double d,String c,String ty,int sc){title=t;address=a;lat=la;lon=lo;distanceMeters=d;category=c;type=ty;score=sc;} }
   private static final class RoadEstimate { final double distanceM;final int durationSec;RoadEstimate(double d,int t){distanceM=d;durationSec=t;} }
+  private static final class MixedEstimate {
+    final Place fromStation, toStation;
+    final double accessDistanceM, metroDistanceM, egressDistanceM;
+    final int accessSec, metroSec, egressSec, totalSec;
+    final String accessMode, egressMode;
+    MixedEstimate(Place f, Place t, double ad, int as, double md, int ms, double ed, int es,
+                  int total, String am, String em) {
+      fromStation=f; toStation=t; accessDistanceM=ad; accessSec=as;
+      metroDistanceM=md; metroSec=ms; egressDistanceM=ed; egressSec=es;
+      totalSec=total; accessMode=am; egressMode=em;
+    }
+  }
 }
