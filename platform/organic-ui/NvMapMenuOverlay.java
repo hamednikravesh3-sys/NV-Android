@@ -72,6 +72,7 @@ public final class NvMapMenuOverlay {
       host.addView(overlay, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
       addSearchBar();
       addQuickBar();
+      addSmartTravelPill();
       addSheetLayer();
       try { MapLanguageCode.setMapLanguageCode("fa"); } catch (Throwable ignored) {}
     }
@@ -117,6 +118,17 @@ public final class NvMapMenuOverlay {
       final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP);
       lp.setMargins(dp(14), dp(100), dp(14), 0);
       overlay.addView(row, lp);
+    }
+
+    private void addSmartTravelPill() {
+      final TextView smart = label("✦  هوشمند سفر", 13, WHITE, Typeface.BOLD, Gravity.CENTER);
+      smart.setBackground(round(Color.argb(248, 9, 52, 88), BLUE, 16));
+      smart.setElevation(dp(12));
+      smart.setClickable(true);
+      smart.setOnClickListener(v -> NvSmartTravelUi.openHub(activity));
+      final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(154), dp(42), Gravity.TOP | Gravity.RIGHT);
+      lp.setMargins(0, dp(154), dp(14), 0);
+      overlay.addView(smart, lp);
     }
 
     private TextView quickButton(String icon, String title, int accent, Runnable action) {
