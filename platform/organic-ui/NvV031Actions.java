@@ -142,6 +142,15 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     INSTANCES.put(a, new NvV031Actions(a));
   }
 
+  public static void returnHome(MwmActivity a) {
+    removeScreen(a);
+    NvSmartTravelUi.close(a);
+    try {
+      Location loc=MwmApplication.from(a).getLocationHelper().getSavedLocation();
+      if(loc!=null) Framework.nativeSetViewportCenter(loc.getLatitude(),loc.getLongitude(),16);
+    } catch(Throwable ignored) {}
+  }
+
   @Override public void onDestroy(LifecycleOwner owner) {
     destroyed = true;
     handler.removeCallbacksAndMessages(null);
