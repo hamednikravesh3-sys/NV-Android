@@ -1,5 +1,6 @@
 package app.organicmaps;
 
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -438,11 +439,14 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     String destination = extractDestination(raw);
     if (destination.isEmpty()) { setStatus(s, "نام مقصد از جمله مشخص نشد.", AMBER); return; }
     Location origin = MwmApplication.from(a).getLocationHelper().getSavedLocation();
-    if (!freshEnough(origin)) {
-      setStatus(s, "برای شروع مسیر، GPS تازه با خطای کمتر از ۶۰ متر لازم است.", RED);
+    if (!planningLocationOkay(origin)) {
+      setStatus(s, "برای محاسبه مسیر، موقعیت تازه با خطای حداکثر ۱۲۰ متر لازم است.", RED);
       s.results.removeAllViews();
-      s.results.addView(button(a, "بررسی GPS", GREEN, () -> NvRuntimeController.showLocationStatus(a)));
+      s.results.addView(button(a, "دریافت GPS بهتر", GREEN, () -> NvRuntimeController.showLocationStatus(a)));
       return;
+    }
+    if (!freshEnough(origin)) {
+      setStatus(s, "هشدار: دقت GPS فعلی " + Math.round(origin.getAccuracy()) + " متر است؛ محاسبه ممکن است از خیابان مجاور شروع شود.", AMBER);
     }
 
     setStatus(s, "در حال تشخیص مقصد «" + destination + "»…", CYAN);
@@ -1350,15 +1354,32 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
 
   private static void routeTo(MwmActivity a, Place p, Router router) {
     Location loc=MwmApplication.from(a).getLocationHelper().getSavedLocation();
-    if(!freshEnough(loc)){Toast.makeText(a,"GPS برای شروع مسیر کافی نیست",Toast.LENGTH_LONG).show();NvRuntimeController.showLocationStatus(a);return;}
+    if(!planningLocationOkay(loc)){
+      Toast.makeText(a,"GPS برای شروع مسیر کافی نیست",Toast.LENGTH_LONG).show();
+      NvRuntimeController.showLocationStatus(a);
+      return;
+    }
 
+    if (!freshEnough(loc)) {
+      final Location weak = loc;
+      new AlertDialog.Builder(a)
+          .setTitle("دقت GPS پایین است")
+          .setMessage("خطای موقعیت فعلی حدود " + Math.round(weak.getAccuracy())
+              + " متر است. می‌توانید منتظر GPS بهتر بمانید یا با هشدار ادامه دهید.")
+          .setNegativeButton("دریافت GPS بهتر", (d,w) -> NvRuntimeController.showLocationStatus(a))
+          .setPositiveButton("ادامه با هشدار", (d,w) -> startRoute(a, p, router, weak))
+          .show();
+      return;
+    }
+    startRoute(a, p, router, loc);
+  }
+
+  private static void startRoute(MwmActivity a, Place p, Router router, Location loc) {
     if (router == Router.Vehicle) {
       boolean avoidHighways = prefs(a).getBoolean("avoid_highways", false);
       boolean safer = prefs(a).getBoolean("safer_route", true);
       if (avoidHighways) RoutingOptions.addOption(RoadType.Motorway);
       else RoutingOptions.removeOption(RoadType.Motorway);
-      // Organic Maps has no generic "safe route" score. The concrete supported
-      // safety-related option we can apply is avoiding dirty/unpaved roads.
       if (safer) RoutingOptions.addOption(RoadType.Dirty);
       else RoutingOptions.removeOption(RoadType.Dirty);
     }
@@ -1369,7 +1390,14 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     RoutingController.get().prepare(start,end,router);
   }
 
-  private static boolean freshEnough(Location l){return l!=null&&System.currentTimeMillis()-l.getTime()<=FRESH_ROUTE_MS&&(!l.hasAccuracy()||l.getAccuracy()<=MAX_ROUTE_ACCURACY);}
+  private static boolean freshEnough(Location l){
+    return l!=null && System.currentTimeMillis()-l.getTime()<=FRESH_ROUTE_MS
+        && (!l.hasAccuracy() || l.getAccuracy()<=MAX_ROUTE_ACCURACY);
+  }
+  private static boolean planningLocationOkay(Location l){
+    return l!=null && System.currentTimeMillis()-l.getTime()<=FRESH_ROUTE_MS
+        && (!l.hasAccuracy() || l.getAccuracy()<=120f);
+  }
   private static boolean looksLikeTrip(String s){return containsAny(normalize(s),"میخوام","می خوام","می‌خوام","برم","برو","عجله","مسیر ترکیبی","پیاده","با مترو");}
   private static String extractDestination(String raw) {
     String q = normalize(raw);
