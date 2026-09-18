@@ -162,24 +162,60 @@ jobs:
           ./gradlew --no-daemon -Px86_64 :app:assembleWebDebug
 
       - name: Android 16 install and launch smoke test
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 36
-          arch: x86_64
-          target: default
-          profile: pixel_6
-          disable-animations: true
-          script: |
-            echo "Available APKs:"
-            find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*' -name '*.apk' -print
-            test -s "$(find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*/debug/*' -name '*.apk' | head -n 1)"
-            adb install -r "$(find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*/debug/*' -name '*.apk' | head -n 1)"
-            adb shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v032-smoke.txt
-            sleep 5
-            adb shell pidof ir.nv.navigation.web.debug
-            adb shell dumpsys activity activities | grep -q 'ir.nv.navigation.web.debug'
-            grep -q 'Status: ok' /tmp/nv-v032-smoke.txt
-            adb logcat -d -t 200 > /tmp/nv-v032-logcat.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$GITHUB_WORKSPACE/organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-32-web-debug.apk"
+          test -s "$APK"
+
+          yes | sdkmanager "system-images;android-36;default;x86_64" >/tmp/nv-v032-sdkmanager.txt 2>&1 || true
+          echo "no" | avdmanager create avd -f -n nv_api36 -k "system-images;android-36;default;x86_64" -d pixel_6 >/tmp/nv-v032-avd-create.txt 2>&1
+
+          "$ANDROID_SDK_ROOT/emulator/emulator" -avd nv_api36 -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -accel off > /tmp/nv-v032-emulator.txt 2>&1 &
+          EMU_PID=$!
+          cleanup() {
+            adb emu kill >/dev/null 2>&1 || true
+            kill "$EMU_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          adb start-server
+          ready=0
+          for i in $(seq 1 150); do
+            state=$(adb get-state 2>/dev/null || true)
+            boot=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+            if [ "$state" = "device" ] && [ "$boot" = "1" ]; then
+              ready=1
+              break
+            fi
+            sleep 4
+          done
+          if [ "$ready" != "1" ]; then
+            adb devices -l > /tmp/nv-v032-adb-devices.txt || true
+            adb logcat -d -t 300 > /tmp/nv-v032-logcat.txt || true
+            exit 1
+          fi
+
+          sleep 8
+          adb shell pm list packages >/tmp/nv-v032-packages-before.txt
+          adb install -r -t "$APK" | tee /tmp/nv-v032-install.txt
+          adb shell pm list packages | grep -q '^package:ir.nv.navigation.web.debug$'
+
+          adb logcat -c || true
+          adb shell am force-stop ir.nv.navigation.web.debug || true
+          adb shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v032-smoke.txt
+          sleep 8
+
+          grep -q 'Status: ok' /tmp/nv-v032-smoke.txt
+          adb shell pidof ir.nv.navigation.web.debug | tee /tmp/nv-v032-pid.txt
+          test -s /tmp/nv-v032-pid.txt
+          adb shell dumpsys activity activities | grep -q 'ir.nv.navigation.web.debug'
+          adb logcat -d -t 500 > /tmp/nv-v032-logcat.txt || true
+
+          if grep -E 'FATAL EXCEPTION|Process: ir\.nv\.navigation\.web\.debug.*has died|AndroidRuntime:.*ir\.nv\.navigation\.web\.debug' /tmp/nv-v032-logcat.txt; then
+            echo "NV process crash detected"
+            exit 1
+          fi
 
       - name: Upload smoke diagnostics
         if: always()
@@ -189,6 +225,12 @@ jobs:
           path: |
             /tmp/nv-v032-smoke.txt
             /tmp/nv-v032-logcat.txt
+            /tmp/nv-v032-install.txt
+            /tmp/nv-v032-pid.txt
+            /tmp/nv-v032-emulator.txt
+            /tmp/nv-v032-adb-devices.txt
+            /tmp/nv-v032-sdkmanager.txt
+            /tmp/nv-v032-avd-create.txt
           if-no-files-found: ignore
           retention-days: 3
 
