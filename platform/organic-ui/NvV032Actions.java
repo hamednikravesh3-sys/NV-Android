@@ -358,6 +358,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       mixedTripChip.setVisibility(View.GONE);
       return;
     }
+
     Location loc = locationHelper.getSavedLocation();
     if (loc == null) {
       mixedTripChip.setText("NV سفر ترکیبی • GPS لازم است");
@@ -366,40 +367,37 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     }
 
     int stage = p.getInt("mixed_stage", 1);
-    double fromLat = Double.longBitsToDouble(p.getLong("mixed_from_lat", Double.doubleToLongBits(Double.NaN)));
-    double fromLon = Double.longBitsToDouble(p.getLong("mixed_from_lon", Double.doubleToLongBits(Double.NaN)));
-    double toLat = Double.longBitsToDouble(p.getLong("mixed_to_lat", Double.doubleToLongBits(Double.NaN)));
-    double toLon = Double.longBitsToDouble(p.getLong("mixed_to_lon", Double.doubleToLongBits(Double.NaN)));
-    double destLat = Double.longBitsToDouble(p.getLong("mixed_dest_lat", Double.doubleToLongBits(Double.NaN)));
-    double destLon = Double.longBitsToDouble(p.getLong("mixed_dest_lon", Double.doubleToLongBits(Double.NaN)));
-
-    if (!Double.isFinite(fromLat) || !Double.isFinite(toLat) || !Double.isFinite(destLat)) {
+    Place from = placeFromSession(p, "mixed_from", "ایستگاه مترو");
+    Place to = placeFromSession(p, "mixed_to", "ایستگاه مقصد");
+    Place dest = placeFromSession(p, "mixed_dest", "مقصد");
+    if (!Double.isFinite(from.lat) || !Double.isFinite(to.lat) || !Double.isFinite(dest.lat)) {
       clearMixedSession();
       return;
     }
 
-    double dFrom = haversine(loc.getLatitude(), loc.getLongitude(), fromLat, fromLon);
-    double dTo = haversine(loc.getLatitude(), loc.getLongitude(), toLat, toLon);
-    double dDest = haversine(loc.getLatitude(), loc.getLongitude(), destLat, destLon);
+    double dFrom = haversine(loc.getLatitude(), loc.getLongitude(), from.lat, from.lon);
+    double dTo = haversine(loc.getLatitude(), loc.getLongitude(), to.lat, to.lon);
+    double dDest = haversine(loc.getLatitude(), loc.getLongitude(), dest.lat, dest.lon);
 
-    if (stage == 1 && dFrom <= 450d) {
-      stage = 2;
-      p.edit().putInt("mixed_stage", 2).apply();
-    }
-    if (stage == 2 && dTo <= 600d) {
-      stage = 3;
-      p.edit().putInt("mixed_stage", 3).apply();
-    }
-    if (stage == 3 && dDest <= 220d) {
+    if (stage == 3 && dDest <= 150d) {
       clearMixedSession();
-      Toast.makeText(activity, "NV: سفر ترکیبی به مقصد رسید", Toast.LENGTH_LONG).show();
+      Toast.makeText(activity, "NV: به مقصد سفر ترکیبی رسیدید", Toast.LENGTH_LONG).show();
       return;
     }
 
     String label;
-    if (stage == 1) label = "مرحله ۱ • تا " + p.getString("mixed_from_name", "ایستگاه مترو");
-    else if (stage == 2) label = "مرحله ۲ • مترو تا " + p.getString("mixed_to_name", "ایستگاه مقصد");
-    else label = "مرحله ۳ • ادامه تا مقصد";
+    if (stage == 1) {
+      label = dFrom <= 300d
+          ? "به " + from.title + " رسیدید • برای مترو بزنید"
+          : "مرحله ۱ • تا " + from.title + " • " + formatDistance(dFrom);
+    } else if (stage == 2) {
+      label = dTo <= 400d
+          ? "به " + to.title + " رسیدید • برای ادامه بزنید"
+          : "مرحله ۲ • مترو تا " + to.title;
+    } else {
+      label = "مرحله ۳ • تا مقصد • " + formatDistance(dDest);
+    }
+
     mixedTripChip.setText("NV سفر ترکیبی • " + label);
     mixedTripChip.setVisibility(View.VISIBLE);
   }
@@ -407,16 +405,36 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private void continueMixedSession() {
     SharedPreferences p = prefs(activity);
     if (!p.getBoolean("mixed_active", false)) return;
+    Location loc = locationHelper.getSavedLocation();
+    if (loc == null) {
+      Toast.makeText(activity, "GPS برای ادامه سفر لازم است", Toast.LENGTH_LONG).show();
+      return;
+    }
+
     int stage = p.getInt("mixed_stage", 1);
+    Place from = placeFromSession(p, "mixed_from", "ایستگاه مترو");
+    Place to = placeFromSession(p, "mixed_to", "ایستگاه مقصد");
+    Place dest = placeFromSession(p, "mixed_dest", "مقصد");
+
     if (stage == 1) {
-      Place from = placeFromSession(p, "mixed_from", "ایستگاه مترو");
-      String mode = p.getString("mixed_access_mode", "پیاده");
-      routeTo(activity, from, "تاکسی".equals(mode) ? Router.Vehicle : Router.Pedestrian);
+      double d = haversine(loc.getLatitude(), loc.getLongitude(), from.lat, from.lon);
+      if (d <= 300d) {
+        p.edit().putInt("mixed_stage", 2).apply();
+        routeTo(activity, to, Router.Transit);
+      } else {
+        String mode = p.getString("mixed_access_mode", "پیاده");
+        routeTo(activity, from, "تاکسی".equals(mode) ? Router.Vehicle : Router.Pedestrian);
+      }
     } else if (stage == 2) {
-      Place to = placeFromSession(p, "mixed_to", "ایستگاه مقصد");
-      routeTo(activity, to, Router.Transit);
+      double d = haversine(loc.getLatitude(), loc.getLongitude(), to.lat, to.lon);
+      if (d <= 400d) {
+        p.edit().putInt("mixed_stage", 3).apply();
+        String mode = p.getString("mixed_egress_mode", "پیاده");
+        routeTo(activity, dest, "تاکسی".equals(mode) ? Router.Vehicle : Router.Pedestrian);
+      } else {
+        routeTo(activity, to, Router.Transit);
+      }
     } else {
-      Place dest = placeFromSession(p, "mixed_dest", "مقصد");
       String mode = p.getString("mixed_egress_mode", "پیاده");
       routeTo(activity, dest, "تاکسی".equals(mode) ? Router.Vehicle : Router.Pedestrian);
     }
