@@ -60,10 +60,10 @@ public final class NvSmartActions {
   private static final int RED = Color.rgb(255, 70, 89);
   private static final String TAG = "nv-smart-actions";
 
-  private static final long MAX_NEARBY_FIX_AGE_MS = 60_000L;
-  private static final long MAX_ROUTE_FIX_AGE_MS = 75_000L;
-  private static final float MAX_NEARBY_ACCURACY_M = 100f;
-  private static final float MAX_ROUTE_ACCURACY_M = 100f;
+  private static final long MAX_NEARBY_FIX_AGE_MS = NvLocationPolicy.MAX_AGE_MS;
+  private static final long MAX_ROUTE_FIX_AGE_MS = NvLocationPolicy.MAX_AGE_MS;
+  private static final float MAX_NEARBY_ACCURACY_M = NvLocationPolicy.NEARBY_ACCURACY_M;
+  private static final float MAX_ROUTE_ACCURACY_M = NvLocationPolicy.WARN_ACCURACY_M;
   private static final String[] OVERPASS_ENDPOINTS = {
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
@@ -73,6 +73,12 @@ public final class NvSmartActions {
   private NvSmartActions() {}
 
   public static void openNearby(MwmActivity activity, String rawCategory) {
+    final NvNearbyCategory category = NvNearbyCategory.from(rawCategory);
+    if (!onlineServicesEnabled(activity)) {
+      Toast.makeText(activity, "حالت خصوصی فعال است؛ جستجوی آنلاین اطراف غیرفعال است.", Toast.LENGTH_LONG).show();
+      NvRuntimeController.openSearch(activity, category.fallbackQuery);
+      return;
+    }
     final LocationHelper helper = MwmApplication.from(activity).getLocationHelper();
     final Location loc = helper.getSavedLocation();
     if (!isFresh(loc, MAX_NEARBY_FIX_AGE_MS)) {
@@ -85,7 +91,6 @@ public final class NvSmartActions {
       return;
     }
 
-    final NvNearbyCategory category = NvNearbyCategory.from(rawCategory);
     final Screen ui = createScreen(activity, category.title,
         "فقط نتایج واقعی داخل شعاع همین موقعیت، مرتب‌شده از نزدیک به دور");
     final int accuracy = Math.max(1, Math.round(loc.getAccuracy()));
@@ -108,7 +113,7 @@ public final class NvSmartActions {
               () -> { removeScreen(activity); NvRuntimeController.openSearch(activity, category.fallbackQuery); }));
         });
       }
-    }, "nv-nearby-v031").start();
+    }, "nv-nearby-v032").start();
   }
 
   public static void openPlanner(MwmActivity activity, int menuId) {
@@ -217,7 +222,7 @@ public final class NvSmartActions {
           }));
         });
       }
-    }, "nv-trip-geocode-v031").start();
+    }, "nv-trip-geocode-v032").start();
   }
 
   private static void renderNearby(MwmActivity activity, Screen ui, NvNearbyCategory category,
@@ -295,7 +300,7 @@ public final class NvSmartActions {
     conn.setDoOutput(true);
     conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
     conn.setRequestProperty("Accept", "application/json");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.32");
     final byte[] payload = ("data=" + URLEncoder.encode(query, "UTF-8")).getBytes(StandardCharsets.UTF_8);
     try (OutputStream out = conn.getOutputStream()) { out.write(payload); }
     final int code = conn.getResponseCode();
@@ -398,7 +403,7 @@ public final class NvSmartActions {
     conn.setReadTimeout(12000);
     conn.setRequestMethod("GET");
     conn.setRequestProperty("Accept", "application/json");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.32");
     final int code = conn.getResponseCode();
     if (code < 200 || code >= 300) {
       conn.disconnect();
@@ -524,6 +529,11 @@ public final class NvSmartActions {
       MwmApplication.from(activity).getLocationHelper().restartWithNewMode();
     } catch (Throwable ignored) {}
     NvRuntimeController.showLocationStatus(activity);
+  }
+
+  private static boolean onlineServicesEnabled(Context c) {
+    return c.getSharedPreferences("nv_v032", Context.MODE_PRIVATE)
+        .getBoolean("online_services", true);
   }
 
   private static boolean isFresh(Location loc, long maxAgeMs) {
