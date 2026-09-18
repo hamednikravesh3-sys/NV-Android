@@ -1,0 +1,112 @@
+name: Build NV v0.30 Real ETA Smart Travel APK
+
+on:
+  push:
+    branches:
+      - nv-v030-real-eta-smart-travel
+  workflow_dispatch:
+
+jobs:
+  build-v030:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout NV repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build ccache
+
+      - name: Clone stable Organic Maps core
+        run: |
+          git clone --depth 1 --branch 2026.08.27-18-android --filter=blob:limit=128k https://github.com/organicmaps/organicmaps.git organicmaps
+          cd organicmaps
+          git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
+
+      - name: Integrate NV v0.30 real ETA smart travel layer
+        run: |
+          set -euo pipefail
+          python3 platform/patch_v030.py organicmaps
+          python3 platform/patch_v027_resources.py organicmaps
+          grep -q "appId = 'ir.nv.navigation'" organicmaps/android/build.gradle
+          grep -q "versionCode = 30" organicmaps/android/build.gradle
+          grep -q "versionName = '0.30.0'" organicmaps/android/build.gradle
+          grep -q 'NvV030Actions.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
+          grep -q 'NvV030Actions.openSmartSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NvV030Actions.openRouteAlerts' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NvSmartTravelUi.open(activity, id)' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'addSmartTravelPill' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NvAnimatedBrand.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/SplashActivity.java
+          test -s organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
+          test -s organicmaps/android/app/src/main/java/app/organicmaps/NvAnimatedBrand.java
+          grep -q 'NV v0.30' organicmaps/android/app/src/main/java/app/organicmaps/NvV030Actions.java
+          grep -q 'correctedActiveEta' organicmaps/android/app/src/main/java/app/organicmaps/NvV030Actions.java
+          grep -q 'destinationConfident' organicmaps/android/app/src/main/java/app/organicmaps/NvV030Actions.java
+          grep -q 'estimateMixed' organicmaps/android/app/src/main/java/app/organicmaps/NvV030Actions.java
+          grep -q 'nv_splash_logo' organicmaps/android/app/src/main/java/app/organicmaps/NvAnimatedBrand.java
+          grep -q 'getSearchRadius' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
+          grep -q 'ensureCurrentRegionMap' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          ! grep -q 'ensureTehranMap' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          grep -q 'scorePlace' organicmaps/android/app/src/main/java/app/organicmaps/NvV030Actions.java
+          grep -q 'router.project-osrm.org' organicmaps/android/app/src/main/java/app/organicmaps/NvV030Actions.java
+          grep -q 'hasMetroNear' organicmaps/android/app/src/main/java/app/organicmaps/NvV030Actions.java
+          test -s organicmaps/android/libs/branding/src/main/res/mipmap-nodpi/nv_launcher.webp
+
+      - name: Configure Android SDK
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > organicmaps/android/local.properties
+          java -version
+          cmake --version
+          ninja --version
+
+      - name: Configure ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: nv-v030-real-eta-arm64
+          max-size: 2G
+
+      - name: Build and test
+        working-directory: organicmaps/android
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          ./gradlew --no-daemon -Parm64 :app:testWebDebugUnitTest :sdk:testDebug :app:assembleWebProfileable
+
+      - name: Validate installable Android 16 APK
+        run: |
+          set -euo pipefail
+          APK=$(find organicmaps/android/app/build/outputs/apk -type f -name '*.apk' | grep -i profileable | head -n 1)
+          test -n "$APK"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
+          "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v030-badging.txt
+          grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v030-badging.txt
+          grep -q "application-label:'NV'" /tmp/nv-v030-badging.txt
+          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v030-badging.txt
+          grep -q "locales:.*'fa'" /tmp/nv-v030-badging.txt
+          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v030-badging.txt
+          mkdir -p dist
+          cp "$APK" dist/NV-v0.30.0-real-eta-smart-travel-arm64-profileable.apk
+          sha256sum dist/NV-v0.30.0-real-eta-smart-travel-arm64-profileable.apk | tee dist/NV-v0.30.0-real-eta-smart-travel-arm64-profileable.apk.sha256
+
+      - name: Upload final APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.30.0-real-eta-smart-travel-arm64-profileable
+          path: |
+            dist/NV-v0.30.0-real-eta-smart-travel-arm64-profileable.apk
+            dist/NV-v0.30.0-real-eta-smart-travel-arm64-profileable.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
