@@ -166,7 +166,9 @@ jobs:
         run: |
           set -euo pipefail
           APK="$GITHUB_WORKSPACE/organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-32-web-debug.apk"
+          ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
           test -s "$APK"
+          test -x "$ADB"
 
           SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)
           AVDMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name avdmanager | sort | tail -n 1)
@@ -182,16 +184,16 @@ jobs:
           "$ANDROID_SDK_ROOT/emulator/emulator" -avd nv_api36 -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -accel off > /tmp/nv-v032-emulator.txt 2>&1 &
           EMU_PID=$!
           cleanup() {
-            adb emu kill >/dev/null 2>&1 || true
+            "$ADB" emu kill >/dev/null 2>&1 || true
             kill "$EMU_PID" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 
-          adb start-server
+          "$ADB" start-server
           ready=0
           for i in $(seq 1 150); do
-            state=$(adb get-state 2>/dev/null || true)
-            boot=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+            state=$("$ADB" get-state 2>/dev/null || true)
+            boot=$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
             if [ "$state" = "device" ] && [ "$boot" = "1" ]; then
               ready=1
               break
@@ -199,26 +201,26 @@ jobs:
             sleep 4
           done
           if [ "$ready" != "1" ]; then
-            adb devices -l > /tmp/nv-v032-adb-devices.txt || true
-            adb logcat -d -t 300 > /tmp/nv-v032-logcat.txt || true
+            "$ADB" devices -l > /tmp/nv-v032-adb-devices.txt || true
+            "$ADB" logcat -d -t 300 > /tmp/nv-v032-logcat.txt || true
             exit 1
           fi
 
           sleep 8
-          adb shell pm list packages >/tmp/nv-v032-packages-before.txt
-          adb install -r -t "$APK" | tee /tmp/nv-v032-install.txt
-          adb shell pm list packages | grep -q '^package:ir.nv.navigation.web.debug$'
+          "$ADB" shell pm list packages >/tmp/nv-v032-packages-before.txt
+          "$ADB" install -r -t "$APK" | tee /tmp/nv-v032-install.txt
+          "$ADB" shell pm list packages | grep -q '^package:ir.nv.navigation.web.debug$'
 
-          adb logcat -c || true
-          adb shell am force-stop ir.nv.navigation.web.debug || true
-          adb shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v032-smoke.txt
+          "$ADB" logcat -c || true
+          "$ADB" shell am force-stop ir.nv.navigation.web.debug || true
+          "$ADB" shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v032-smoke.txt
           sleep 8
 
           grep -q 'Status: ok' /tmp/nv-v032-smoke.txt
-          adb shell pidof ir.nv.navigation.web.debug | tee /tmp/nv-v032-pid.txt
+          "$ADB" shell pidof ir.nv.navigation.web.debug | tee /tmp/nv-v032-pid.txt
           test -s /tmp/nv-v032-pid.txt
-          adb shell dumpsys activity activities | grep -q 'ir.nv.navigation.web.debug'
-          adb logcat -d -t 500 > /tmp/nv-v032-logcat.txt || true
+          "$ADB" shell dumpsys activity activities | grep -q 'ir.nv.navigation.web.debug'
+          "$ADB" logcat -d -t 500 > /tmp/nv-v032-logcat.txt || true
 
           if grep -E 'FATAL EXCEPTION|Process: ir\.nv\.navigation\.web\.debug.*has died|AndroidRuntime:.*ir\.nv\.navigation\.web\.debug' /tmp/nv-v032-logcat.txt; then
             echo "NV process crash detected"
