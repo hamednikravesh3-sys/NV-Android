@@ -40,8 +40,8 @@ public final class NvSmartTravelUi {
   private NvSmartTravelUi() {}
 
   public static void openHub(MwmActivity a) {
-    Screen s = screen(a, "هوشمند سفر", "بخش‌های ۱۳ تا ۲۲ • طراحی جدید NV", false);
-    s.body.addView(infoBanner(a, "✦", "هر کارت عملکرد مستقل دارد", "برای بازکردن صفحه اختصاصی همان قابلیت روی کارت بزنید.", CYAN));
+    Screen s = screen(a, "هوشمند سفر", "بخش‌های ۱۳ تا ۲۲ • هر کارت یک موتور مستقل", false);
+    s.body.addView(infoBanner(a, "✦", "هر کارت مستقیماً صفحه عملیاتی همان قابلیت را باز می‌کند", "هیچ صفحه نمایشی واسط بین کارت و موتور اصلی وجود ندارد.", CYAN));
 
     final LinearLayout grid = new LinearLayout(a);
     grid.setOrientation(LinearLayout.VERTICAL);
@@ -62,16 +62,16 @@ public final class NvSmartTravelUi {
 
   public static void open(MwmActivity a, int id) {
     switch (id) {
-      case 13 -> chat(a);
-      case 14 -> hurry(a);
-      case 15 -> mixed(a);
-      case 16 -> stationTransfer(a);
-      case 17 -> metro(a);
-      case 18 -> taxi(a);
-      case 19 -> eta(a);
-      case 20 -> compare(a);
-      case 21 -> walk(a);
-      case 22 -> preferences(a);
+      case 13 -> NvV031Actions.openChat(a);
+      case 14 -> NvV031Actions.openHurry(a);
+      case 15 -> NvV031Actions.openMixed(a);
+      case 16 -> NvV031Actions.openStationTransfer(a);
+      case 17 -> NvV031Actions.openMetroStatus(a);
+      case 18 -> NvV031Actions.openTaxi(a);
+      case 19 -> NvV031Actions.openEta(a);
+      case 20 -> NvV031Actions.openTimeCost(a);
+      case 21 -> NvV031Actions.openWalk(a);
+      case 22 -> NvV031Actions.openPreferences(a);
       default -> openHub(a);
     }
   }
@@ -84,7 +84,7 @@ public final class NvSmartTravelUi {
     s.body.addView(infoBanner(a, "NV", "بدون عدد ساختگی",
         "زمان، فاصله و نوع سفر فقط بعد از انتخاب مقصد و محاسبه واقعی نمایش داده می‌شود.", GREEN));
     s.body.addView(referenceMapCard(a, "موقعیت فعلی  •  مترو  •  تاکسی  •  مقصد", BLUE));
-    s.body.addView(primary(a, "شروع چت و انتخاب مقصد", BLUE, () -> go(a, () -> NvV030Actions.openChat(a))));
+    s.body.addView(primary(a, "شروع چت و انتخاب مقصد", BLUE, () -> go(a, () -> NvV031Actions.openChat(a))));
   }
 
   private static void hurry(MwmActivity a) {
@@ -94,7 +94,7 @@ public final class NvSmartTravelUi {
     s.body.addView(option(a, "🚗  مستقیم", "مسیر خودرو • کمترین زمان قابل محاسبه", BLUE));
     s.body.addView(option(a, "🚇  مترو + تاکسی", "در صورت وجود ایستگاه قابل استفاده", GREEN));
     s.body.addView(option(a, "🚶  پیاده + مترو", "برای سفرهای شهری مناسب", PURPLE));
-    s.body.addView(primary(a, "محاسبه سریع‌ترین مسیر", BLUE, () -> go(a, () -> NvV030Actions.openHurry(a))));
+    s.body.addView(primary(a, "محاسبه سریع‌ترین مسیر", BLUE, () -> go(a, () -> NvV031Actions.openHurry(a))));
   }
 
   private static void mixed(MwmActivity a) {
@@ -106,7 +106,7 @@ public final class NvSmartTravelUi {
     s.body.addView(step(a, "۲", "🚇", "مترو", "بررسی ایستگاه مناسب مبدأ و مقصد", BLUE));
     s.body.addView(step(a, "۳", "🚶", "پیاده‌روی / تعویض خط", "هدایت مرحله‌به‌مرحله", PURPLE));
     s.body.addView(step(a, "۴", "🚕", "تاکسی تا مقصد", "در صورت نیاز", GREEN));
-    s.body.addView(primary(a, "محاسبه و شروع سفر", BLUE, () -> go(a, () -> NvV030Actions.openMixed(a))));
+    s.body.addView(primary(a, "محاسبه و شروع سفر", BLUE, () -> go(a, () -> NvV031Actions.openMixed(a))));
   }
 
   private static void stationTransfer(MwmActivity a) {
@@ -116,7 +116,7 @@ public final class NvSmartTravelUi {
     s.body.addView(step(a, "۱", "🚇", "در ایستگاه مناسب پیاده شوید", "بر اساس مقصد نهایی", BLUE));
     s.body.addView(step(a, "۲", "↗", "خروجی پیشنهادی را انتخاب کنید", "خروجی نزدیک به ادامه مسیر", CYAN));
     s.body.addView(step(a, "۳", "🚶", "ادامه مسیر", "پیاده یا تاکسی", GREEN));
-    s.body.addView(primary(a, "پیدا کردن ایستگاه و خروجی", BLUE, () -> go(a, () -> NvV030Actions.openStationTransfer(a))));
+    s.body.addView(primary(a, "پیدا کردن ایستگاه و خروجی", BLUE, () -> go(a, () -> NvV031Actions.openStationTransfer(a))));
   }
 
   private static void metro(MwmActivity a) {
@@ -125,7 +125,7 @@ public final class NvSmartTravelUi {
     s.body.addView(infoBanner(a, "🚇", "وضعیت کلی مترو", "فقط اطلاعات معتبر و موجود نمایش داده می‌شود؛ داده ساختگی نمایش داده نمی‌شود.", GREEN));
     s.body.addView(metric(a, "ایستگاه نزدیک", "بررسی از موقعیت فعلی", BLUE));
     s.body.addView(metric(a, "وضعیت سرویس", "فعال / نامشخص", GREEN));
-    s.body.addView(primary(a, "مشاهده مترو و ایستگاه‌ها", BLUE, () -> go(a, () -> NvV030Actions.openMetroStatus(a))));
+    s.body.addView(primary(a, "مشاهده مترو و ایستگاه‌ها", BLUE, () -> go(a, () -> NvV031Actions.openMetroStatus(a))));
   }
 
   private static void taxi(MwmActivity a) {
@@ -134,7 +134,7 @@ public final class NvSmartTravelUi {
     s.body.addView(infoBanner(a, "🚕", "محل سوار شدن", "نقطه مناسب بعد از محاسبه مسیر و خروجی تعیین می‌شود.", AMBER));
     s.body.addView(metric(a, "زمان خروج", "پس از محاسبه مسیر", BLUE));
     s.body.addView(metric(a, "فاصله تا سوار شدن", "از موقعیت فعلی", GREEN));
-    s.body.addView(primary(a, "پیدا کردن تاکسی و ادامه مسیر", BLUE, () -> go(a, () -> NvV030Actions.openTaxi(a))));
+    s.body.addView(primary(a, "پیدا کردن تاکسی و ادامه مسیر", BLUE, () -> go(a, () -> NvV031Actions.openTaxi(a))));
   }
 
   private static void eta(MwmActivity a) {
@@ -150,7 +150,7 @@ public final class NvSmartTravelUi {
     s.body.addView(metric(a, "ترافیک یا تأخیر", "بر اساس داده در دسترس", RED));
     s.body.addView(metric(a, "وضعیت مسیر", "بسته / عملیات / هشدار", AMBER));
     s.body.addView(metric(a, "سرعت واقعی دستگاه", "در محاسبه ETA استفاده می‌شود", GREEN));
-    s.body.addView(primary(a, "محاسبه ETA واقعی", BLUE, () -> go(a, () -> NvV030Actions.openEta(a))));
+    s.body.addView(primary(a, "محاسبه ETA واقعی", BLUE, () -> go(a, () -> NvV031Actions.openEta(a))));
   }
 
   private static void compare(MwmActivity a) {
@@ -159,7 +159,7 @@ public final class NvSmartTravelUi {
     s.body.addView(option(a, "🚕🚇🚶  متعادل", "ترکیب تاکسی، مترو و پیاده", GREEN));
     s.body.addView(option(a, "⛽  اقتصادی", "مصرف تقریبی سوخت بر اساس تنظیمات", AMBER));
     s.body.addView(infoBanner(a, "⇄", "مقایسه واقعی", "بعد از انتخاب مقصد، زمان و فاصله گزینه‌ها محاسبه می‌شود.", CYAN));
-    s.body.addView(primary(a, "محاسبه و مقایسه", BLUE, () -> go(a, () -> NvV030Actions.openTimeCost(a))));
+    s.body.addView(primary(a, "محاسبه و مقایسه", BLUE, () -> go(a, () -> NvV031Actions.openTimeCost(a))));
   }
 
   private static void walk(MwmActivity a) {
@@ -167,7 +167,7 @@ public final class NvSmartTravelUi {
     s.body.addView(mapWindow(a, "راهنمای پیچ بعدی پس از شروع مسیر واقعی نمایش داده می‌شود"));
     s.body.addView(metric(a, "فاصله باقی‌مانده", "از موتور مسیر پیاده", BLUE));
     s.body.addView(metric(a, "زمان باقی‌مانده", "برآورد پویا", GREEN));
-    s.body.addView(primary(a, "شروع راهنمای پیاده", BLUE, () -> go(a, () -> NvV030Actions.openWalk(a))));
+    s.body.addView(primary(a, "شروع راهنمای پیاده", BLUE, () -> go(a, () -> NvV031Actions.openWalk(a))));
   }
 
   private static void preferences(MwmActivity a) {
@@ -182,7 +182,7 @@ public final class NvSmartTravelUi {
     s.body.addView(infoBanner(a, "i", "تنظیمات واقعی",
         "مترو، تاکسی، هزینه و میزان پیاده‌روی مستقیماً در برنامه‌ریز NV استفاده می‌شوند. محدودیت بزرگراه و ایمنی به قابلیت موتور پایه نیز وابسته‌اند.",
         CYAN));
-    s.body.addView(primary(a, "تنظیم مصرف سوخت و هشدارها", BLUE, () -> go(a, () -> NvV030Actions.openPreferences(a))));
+    s.body.addView(primary(a, "تنظیم مصرف سوخت و هشدارها", BLUE, () -> go(a, () -> NvV031Actions.openPreferences(a))));
   }
 
   private static Screen screen(MwmActivity a, String title, String subtitle, boolean revealMap) {
