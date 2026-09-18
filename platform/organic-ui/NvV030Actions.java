@@ -73,6 +73,7 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
   private static final int MUTED = Color.rgb(205, 220, 231);
   private static final int CYAN = Color.rgb(40, 206, 255);
   private static final int BLUE = Color.rgb(45, 139, 255);
+  private static final int PURPLE = Color.rgb(153, 102, 255);
   private static final int GREEN = Color.rgb(42, 214, 113);
   private static final int AMBER = Color.rgb(255, 188, 54);
   private static final int RED = Color.rgb(255, 70, 89);
