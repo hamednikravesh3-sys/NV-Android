@@ -1,5 +1,9 @@
 name: Build NV v0.30 Real ETA Smart Travel APK
 
+concurrency:
+  group: nv-v030-real-eta-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
