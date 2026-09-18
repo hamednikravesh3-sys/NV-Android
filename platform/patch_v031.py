@@ -123,7 +123,7 @@ t = t.replace('final String accuracy = loc.hasAccuracy() ? "±" + Math.round(loc
               'final String accuracy = loc.hasAccuracy() ? "خطای GPS: " + Math.round(loc.getAccuracy()) + " متر" : "نامشخص";')
 t = t.replace('loc.hasAccuracy() && loc.getAccuracy() <= 10 ? GREEN : AMBER);',
               'loc.hasAccuracy() && loc.getAccuracy() <= 30 ? GREEN : (loc.hasAccuracy() && loc.getAccuracy() <= 100 ? AMBER : RED));')
-t = t.replace('loc.getAccuracy() > 50f', 'loc.getAccuracy() > 250f')
+t = t.replace('loc.getAccuracy() > 50f', 'loc.getAccuracy() > 100f')
 t = t.replace('mainHandler.postDelayed(this::ensureTehranMap, 1600L);', 'mainHandler.postDelayed(this::ensureCurrentRegionMap, 1800L);')
 method_re = re.compile(r'  private void ensureTehranMap\(\)\n  \{.*?\n  \}\n\n  private void refreshLocationChip', re.S)
 method_new = '''  private void ensureCurrentRegionMap()
