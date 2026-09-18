@@ -86,7 +86,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   private static final String SCREEN_TAG = "nv-v031-screen";
   private static final String ETA_TAG = "nv-v031-eta-chip";
   private static final String PREFS = "nv_v031";
-  private static final long FRESH_ROUTE_MS = 120_000L;
+  private static final long FRESH_ROUTE_MS = 60_000L;
   private static final float MAX_ROUTE_ACCURACY = 75f;
   private static final String[] OVERPASS_ENDPOINTS = {
       "https://overpass-api.de/api/interpreter",
