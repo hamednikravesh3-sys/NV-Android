@@ -13,70 +13,59 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
- * NV Smart Travel visual shell based on the user's 13-22 reference panels.
- * The shell is intentionally visual; each action delegates to the existing functional NV v0.27 engines.
+ * Native NV Smart Travel UI for menu items 13-22.
+ * The layout follows the supplied dark-neon reference: top title, real map visible through the
+ * center on map-centric screens, rounded cards, large blue primary actions and RTL Persian text.
  */
 public final class NvSmartTravelUi {
-  private static final String TAG = "nv-smart-travel-ui";
-  private static final int BG = Color.rgb(3, 18, 31);
-  private static final int PANEL = Color.rgb(5, 34, 57);
+  private static final String TAG = "nv-smart-travel-ui-v029";
+  private static final int BG = Color.rgb(2, 17, 30);
+  private static final int PANEL = Color.rgb(5, 32, 55);
   private static final int PANEL2 = Color.rgb(7, 48, 79);
-  private static final int CYAN = Color.rgb(33, 202, 255);
-  private static final int BLUE = Color.rgb(25, 115, 255);
-  private static final int GREEN = Color.rgb(29, 208, 112);
-  private static final int AMBER = Color.rgb(255, 185, 44);
-  private static final int PURPLE = Color.rgb(142, 74, 255);
-  private static final int RED = Color.rgb(255, 75, 88);
+  private static final int CYAN = Color.rgb(35, 205, 255);
+  private static final int BLUE = Color.rgb(25, 116, 255);
+  private static final int GREEN = Color.rgb(26, 207, 109);
+  private static final int AMBER = Color.rgb(255, 183, 42);
+  private static final int PURPLE = Color.rgb(139, 78, 255);
+  private static final int RED = Color.rgb(255, 76, 90);
   private static final int WHITE = Color.WHITE;
-  private static final int MUTED = Color.rgb(195, 219, 235);
-  private static final int OUTLINE = Color.rgb(26, 145, 214);
+  private static final int MUTED = Color.rgb(197, 219, 233);
+  private static final int OUTLINE = Color.rgb(30, 151, 219);
 
   private static final String[] TITLES = {
       "چت هوشمند سفر", "حالت عجله دارم", "مسیر ترکیبی", "تعویض هوشمند ایستگاه", "حرکت زنده مترو",
       "هماهنگی تاکسی", "اطمینان زمان رسیدن", "مقایسه زمان و هزینه", "راهنمای پیاده", "ترجیحات سفر هوشمند"
   };
 
-  private static final String[] SUBS = {
-      "گفت‌وگوی طبیعی برای انتخاب مسیر",
-      "انتخاب سریع‌ترین مسیر با درنظرگرفتن ترافیک",
-      "ترکیب مترو، تاکسی و پیاده‌روی",
-      "پیشنهاد بهترین خروجی و ادامه مسیر",
-      "زمان‌بندی زنده و وضعیت خطوط",
-      "هماهنگی زمان خروج با رسیدن تاکسی",
-      "تحلیل تأخیر و اطمینان ETA",
-      "انتخاب گزینه بر اساس زمان و هزینه",
-      "مسیر پیاده با راهنمای تصویری",
-      "شخصی‌سازی تجربه مسیریابی"
-  };
-
   private NvSmartTravelUi() {}
 
   public static void openHub(MwmActivity a) {
-    final Screen s = screen(a, "هوشمند سفر", "طراحی بخش ۱۳ تا ۲۲ مطابق مرجع ارسالی");
+    Screen s = screen(a, "هوشمند سفر", "بخش‌های ۱۳ تا ۲۲ • طراحی جدید NV", false);
+    s.body.addView(infoBanner(a, "✦", "هر کارت عملکرد مستقل دارد", "برای بازکردن صفحه اختصاصی همان قابلیت روی کارت بزنید.", CYAN));
+
     final LinearLayout grid = new LinearLayout(a);
     grid.setOrientation(LinearLayout.VERTICAL);
     for (int i = 0; i < 10; i += 2) {
-      final LinearLayout row = new LinearLayout(a);
+      LinearLayout row = new LinearLayout(a);
       row.setOrientation(LinearLayout.HORIZONTAL);
       row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-      final int idA = 13 + i;
-      row.addView(featureCard(a, idA, iconFor(idA), TITLES[i], SUBS[i]), weight(a));
-      if (i + 1 < 10) {
-        final int idB = 14 + i;
-        row.addView(featureCard(a, idB, iconFor(idB), TITLES[i + 1], SUBS[i + 1]), weight(a));
-      }
-      grid.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 118)));
+
+      int leftId = 13 + i;
+      int rightId = 14 + i;
+      row.addView(featureCard(a, leftId, icon(leftId), TITLES[i]), weight(a));
+      if (i + 1 < 10)
+        row.addView(featureCard(a, rightId, icon(rightId), TITLES[i + 1]), weight(a));
+      grid.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 112)));
     }
     s.body.addView(grid);
   }
 
   public static void open(MwmActivity a, int id) {
-    if (id < 13 || id > 22) { openHub(a); return; }
     switch (id) {
       case 13 -> chat(a);
       case 14 -> hurry(a);
       case 15 -> mixed(a);
-      case 16 -> transfer(a);
+      case 16 -> stationTransfer(a);
       case 17 -> metro(a);
       case 18 -> taxi(a);
       case 19 -> eta(a);
@@ -88,358 +77,376 @@ public final class NvSmartTravelUi {
   }
 
   private static void chat(MwmActivity a) {
-    Screen s = screen(a, "چت هوشمند سفر ✦", SUBS[0]);
+    Screen s = screen(a, "چت هوشمند سفر ✦", "گفت‌وگوی طبیعی برای انتخاب مسیر", false);
     s.body.addView(chatBubble(a, "من عجله دارم!", true));
-    s.body.addView(chatBubble(a, "مقصد را بنویسید؛ NV موقعیت فعلی، زمان، نوع سفر و گزینه‌های ممکن را بررسی می‌کند.", false));
-    s.body.addView(sectionTitle(a, "سریع‌ترین مسیر پیشنهادی", GREEN));
-    s.body.addView(routeStrip(a, "🚶", "🚇", "🚕", "۲۸ دقیقه"));
-    s.body.addView(mapCard(a, "موقعیت فعلی  •  مترو  •  مقصد", BLUE));
-    s.body.addView(primary(a, "شروع گفت‌وگوی هوشمند", BLUE, () -> NvV027Actions.openChat(a)));
+    s.body.addView(chatBubble(a, "مقصد را بگویید؛ NV نوع سفر، مسیرهای قابل استفاده و زمان تقریبی را بررسی می‌کند.", false));
+    s.body.addView(section(a, "سریع‌ترین مسیر پیشنهادی", GREEN));
+    s.body.addView(routeStrip(a));
+    s.body.addView(referenceMapCard(a, "موقعیت فعلی  •  مترو  •  تاکسی  •  مقصد", BLUE));
+    s.body.addView(primary(a, "شروع چت و انتخاب مقصد", BLUE, () -> go(a, () -> NvV027Actions.openChat(a))));
   }
 
   private static void hurry(MwmActivity a) {
-    Screen s = screen(a, "حالت عجله دارم", SUBS[1]);
-    s.body.addView(locationPair(a, "موقعیت فعلی من", "مقصد را از گفتگو یا جستجو انتخاب کنید"));
-    s.body.addView(mapCard(a, "سریع‌ترین مسیر  •  ETA زنده", BLUE));
-    s.body.addView(optionRow(a, "🚗  مستقیم", "زمان و فاصله جاده‌ای", "انتخاب این مسیر", BLUE));
-    s.body.addView(optionRow(a, "🚇  مترو + تاکسی", "در صورت دسترسی واقعی مترو", "بررسی", PANEL2));
-    s.body.addView(optionRow(a, "🚶  پیاده + مترو", "ترکیب چندمرحله‌ای", "بررسی", PANEL2));
-    s.body.addView(primary(a, "محاسبه سریع‌ترین مسیر", BLUE, () -> NvV027Actions.openHurry(a)));
+    Screen s = screen(a, "حالت عجله دارم", "انتخاب سریع‌ترین گزینه عملی", true);
+    s.body.addView(locationCard(a, "●  موقعیت فعلی من", "●  مقصد"));
+    s.body.addView(mapWindow(a, "سریع‌ترین مسیر روی نقشه • ETA زنده"));
+    s.body.addView(option(a, "🚗  مستقیم", "مسیر خودرو • کمترین زمان قابل محاسبه", BLUE));
+    s.body.addView(option(a, "🚇  مترو + تاکسی", "در صورت وجود ایستگاه قابل استفاده", GREEN));
+    s.body.addView(option(a, "🚶  پیاده + مترو", "برای سفرهای شهری مناسب", PURPLE));
+    s.body.addView(primary(a, "محاسبه سریع‌ترین مسیر", BLUE, () -> go(a, () -> NvV027Actions.openHurry(a))));
   }
 
   private static void mixed(MwmActivity a) {
-    Screen s = screen(a, "مسیر ترکیبی", SUBS[2]);
-    s.body.addView(locationPair(a, "مبدأ: موقعیت فعلی", "مقصد: انتخاب مقصد"));
-    s.body.addView(chipRow(a, new String[]{"۴۲ دقیقه", "۱۴ km", "تغییر مسیر"}));
-    s.body.addView(step(a, "۱", "🚕", "تاکسی تا ایستگاه مترو", "زمان و فاصله بر اساس موقعیت واقعی", GREEN));
-    s.body.addView(step(a, "۲", "🚇", "مترو", "فقط پس از بررسی وجود ایستگاه نزدیک", BLUE));
-    s.body.addView(step(a, "۳", "🚶", "پیاده‌روی و تعویض خط", "هدایت مرحله‌ای", PURPLE));
+    Screen s = screen(a, "مسیر ترکیبی", "ترکیب مترو، تاکسی و پیاده‌روی", true);
+    s.body.addView(locationCard(a, "●  مبدأ: موقعیت فعلی", "●  مقصد: انتخاب مقصد"));
+    s.body.addView(chips(a, new String[]{"ETA", "فاصله", "تعویض مسیر"}));
+    s.body.addView(mapWindow(a, "نمایش سفر چندمرحله‌ای روی نقشه"));
+    s.body.addView(step(a, "۱", "🚕", "تاکسی تا ایستگاه", "فاصله و زمان پس از انتخاب مقصد", GREEN));
+    s.body.addView(step(a, "۲", "🚇", "مترو", "بررسی ایستگاه مناسب مبدأ و مقصد", BLUE));
+    s.body.addView(step(a, "۳", "🚶", "پیاده‌روی / تعویض خط", "هدایت مرحله‌به‌مرحله", PURPLE));
     s.body.addView(step(a, "۴", "🚕", "تاکسی تا مقصد", "در صورت نیاز", GREEN));
-    s.body.addView(primary(a, "شروع سفر", BLUE, () -> NvV027Actions.openMixed(a)));
+    s.body.addView(primary(a, "محاسبه و شروع سفر", BLUE, () -> go(a, () -> NvV027Actions.openMixed(a))));
   }
 
-  private static void transfer(MwmActivity a) {
-    Screen s = screen(a, "تعویض هوشمند ایستگاه", SUBS[3]);
-    s.body.addView(mapCard(a, "ایستگاه فعلی  ●━━━━●  خروجی پیشنهادی", BLUE));
-    s.body.addView(successCard(a, "خروجی پیشنهادی NV", "کمترین پیاده‌روی • دسترسی بهتر • مسیر ساده‌تر"));
-    s.body.addView(step(a, "۱", "🚇", "در ایستگاه پیاده شوید", "خروجی مناسب روی نقشه مشخص می‌شود", BLUE));
-    s.body.addView(step(a, "۲", "↗", "از خروجی پیشنهادی خارج شوید", "با توجه به ادامه مسیر", CYAN));
-    s.body.addView(step(a, "۳", "🚶", "ادامه مسیر تا مقصد", "راهنمای قدم‌به‌قدم", GREEN));
-    s.body.addView(primary(a, "بررسی ایستگاه و خروجی‌ها", BLUE, () -> NvV027Actions.openStationTransfer(a)));
+  private static void stationTransfer(MwmActivity a) {
+    Screen s = screen(a, "تعویض هوشمند ایستگاه", "پیشنهاد بهترین خروجی و ادامه مسیر", true);
+    s.body.addView(mapWindow(a, "ایستگاه فعلی  ●━━━━●  خروجی پیشنهادی"));
+    s.body.addView(infoBanner(a, "✓", "بهترین خروجی NV", "کمترین پیاده‌روی • دسترسی ساده‌تر • ادامه مسیر سریع‌تر", GREEN));
+    s.body.addView(step(a, "۱", "🚇", "در ایستگاه مناسب پیاده شوید", "بر اساس مقصد نهایی", BLUE));
+    s.body.addView(step(a, "۲", "↗", "خروجی پیشنهادی را انتخاب کنید", "خروجی نزدیک به ادامه مسیر", CYAN));
+    s.body.addView(step(a, "۳", "🚶", "ادامه مسیر", "پیاده یا تاکسی", GREEN));
+    s.body.addView(primary(a, "پیدا کردن ایستگاه و خروجی", BLUE, () -> go(a, () -> NvV027Actions.openStationTransfer(a))));
   }
 
   private static void metro(MwmActivity a) {
-    Screen s = screen(a, "حرکت زنده مترو", SUBS[4]);
-    s.body.addView(mapCard(a, "خطوط مترو  ●  ●  ●  وضعیت سرویس", PURPLE));
-    s.body.addView(successCard(a, "وضعیت کلی مترو", "اطلاعات فقط در صورت وجود داده معتبر نمایش داده می‌شود"));
-    s.body.addView(metric(a, "قطار بعدی", "بررسی بر اساس داده موجود", BLUE));
-    s.body.addView(metric(a, "وضعیت خط", "فعال / نامشخص", GREEN));
-    s.body.addView(primary(a, "مشاهده ایستگاه‌های مترو", BLUE, () -> NvV027Actions.openMetroStatus(a)));
+    Screen s = screen(a, "حرکت زنده مترو", "وضعیت ایستگاه‌ها و خطوط", true);
+    s.body.addView(mapWindow(a, "خطوط مترو روی نقشه • ایستگاه‌های نزدیک"));
+    s.body.addView(infoBanner(a, "🚇", "وضعیت کلی مترو", "فقط اطلاعات معتبر و موجود نمایش داده می‌شود؛ داده ساختگی نمایش داده نمی‌شود.", GREEN));
+    s.body.addView(metric(a, "ایستگاه نزدیک", "بررسی از موقعیت فعلی", BLUE));
+    s.body.addView(metric(a, "وضعیت سرویس", "فعال / نامشخص", GREEN));
+    s.body.addView(primary(a, "مشاهده مترو و ایستگاه‌ها", BLUE, () -> go(a, () -> NvV027Actions.openMetroStatus(a))));
   }
 
   private static void taxi(MwmActivity a) {
-    Screen s = screen(a, "هماهنگی تاکسی", SUBS[5]);
-    s.body.addView(mapCard(a, "ایستگاه / خروجی  ───  محل سوار شدن تاکسی", AMBER));
-    s.body.addView(metric(a, "زمان هماهنگ‌شده", "پس از محاسبه مسیر", BLUE));
-    s.body.addView(metric(a, "فاصله تا محل سوار شدن", "بر اساس موقعیت فعلی", GREEN));
-    s.body.addView(primary(a, "هماهنگی و پیدا کردن تاکسی", BLUE, () -> NvV027Actions.openTaxi(a)));
+    Screen s = screen(a, "هماهنگی تاکسی", "هماهنگی زمان خروج با رسیدن تاکسی", true);
+    s.body.addView(mapWindow(a, "خروجی ایستگاه  ───  محل سوار شدن تاکسی"));
+    s.body.addView(infoBanner(a, "🚕", "محل سوار شدن", "نقطه مناسب بعد از محاسبه مسیر و خروجی تعیین می‌شود.", AMBER));
+    s.body.addView(metric(a, "زمان خروج", "پس از محاسبه سفر", BLUE));
+    s.body.addView(metric(a, "فاصله تا سوار شدن", "از موقعیت فعلی", GREEN));
+    s.body.addView(primary(a, "پیدا کردن تاکسی و ادامه مسیر", BLUE, () -> go(a, () -> NvV027Actions.openTaxi(a))));
   }
 
   private static void eta(MwmActivity a) {
-    Screen s = screen(a, "اطمینان زمان رسیدن", SUBS[6]);
-    final LinearLayout hero = card(a, BLUE);
-    final TextView big = text(a, "ETA\n۱۰:۰۳", 30, WHITE, Typeface.BOLD);
-    big.setGravity(Gravity.CENTER);
-    big.setPadding(dp(a, 10), dp(a, 14), dp(a, 10), dp(a, 14));
-    hero.addView(big);
-    hero.addView(text(a, "اطمینان پویا بر اساس موتور مسیر، فاصله و سرعت واقعی دستگاه", 13, MUTED, Typeface.NORMAL));
+    Screen s = screen(a, "اطمینان زمان رسیدن", "تحلیل ETA و عوامل تغییر زمان", false);
+    LinearLayout hero = panel(a, BLUE);
+    TextView eta = text(a, "ETA\n۱۰:۰۳", 31, WHITE, Typeface.BOLD);
+    eta.setGravity(Gravity.CENTER);
+    hero.addView(eta, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 110)));
+    TextView confidence = text(a, "٪ اطمینان پس از محاسبه مسیر واقعی", 13, CYAN, Typeface.BOLD);
+    confidence.setGravity(Gravity.CENTER);
+    hero.addView(confidence);
     s.body.addView(hero);
-    s.body.addView(metric(a, "ریسک ترافیک یا تأخیر", "در صورت وجود داده معتبر", RED));
-    s.body.addView(metric(a, "عملیات عمرانی در مسیر", "در صورت وجود هشدار نقشه", AMBER));
-    s.body.addView(metric(a, "احتمال بارش", "وابسته به منبع داده", CYAN));
-    s.body.addView(primary(a, "محاسبه ETA واقعی", BLUE, () -> NvV027Actions.openEta(a)));
+    s.body.addView(metric(a, "ترافیک یا تأخیر", "بر اساس داده در دسترس", RED));
+    s.body.addView(metric(a, "وضعیت مسیر", "بسته / عملیات / هشدار", AMBER));
+    s.body.addView(metric(a, "سرعت واقعی دستگاه", "در محاسبه ETA استفاده می‌شود", GREEN));
+    s.body.addView(primary(a, "محاسبه ETA واقعی", BLUE, () -> go(a, () -> NvV027Actions.openEta(a))));
   }
 
   private static void compare(MwmActivity a) {
-    Screen s = screen(a, "مقایسه زمان و هزینه", SUBS[7]);
-    s.body.addView(optionRow(a, "🚗  سریع‌ترین", "خودرو • زمان و فاصله", "بررسی", BLUE));
-    s.body.addView(optionRow(a, "🚶🚇🚕  متعادل", "پیاده + حمل‌ونقل عمومی + تاکسی", "بررسی", GREEN));
-    s.body.addView(optionRow(a, "🚗  اقتصادی", "مصرف تقریبی سوخت بر اساس تنظیمات", "بررسی", AMBER));
-    s.body.addView(primary(a, "مشاهده مقایسه واقعی", BLUE, () -> NvV027Actions.openTimeCost(a)));
+    Screen s = screen(a, "مقایسه زمان و هزینه", "انتخاب بهترین گزینه بر اساس نیاز", false);
+    s.body.addView(option(a, "🚗  سریع‌ترین", "خودرو • زمان و فاصله", BLUE));
+    s.body.addView(option(a, "🚕🚇🚶  متعادل", "ترکیب تاکسی، مترو و پیاده", GREEN));
+    s.body.addView(option(a, "⛽  اقتصادی", "مصرف تقریبی سوخت بر اساس تنظیمات", AMBER));
+    s.body.addView(infoBanner(a, "⇄", "مقایسه واقعی", "بعد از انتخاب مقصد، زمان و فاصله گزینه‌ها محاسبه می‌شود.", CYAN));
+    s.body.addView(primary(a, "محاسبه و مقایسه", BLUE, () -> go(a, () -> NvV027Actions.openTimeCost(a))));
   }
 
   private static void walk(MwmActivity a) {
-    Screen s = screen(a, "راهنمای پیاده", SUBS[8]);
-    s.body.addView(mapCard(a, "↱  ۱۵۰ متر  •  سپس به سمت راست بپیچید", CYAN));
-    s.body.addView(metric(a, "فاصله باقی‌مانده", "از موتور مسیریابی پیاده", BLUE));
-    s.body.addView(metric(a, "زمان باقی‌مانده", "برآورد مسیر پیاده", GREEN));
-    s.body.addView(primary(a, "شروع راهنمای پیاده", BLUE, () -> NvV027Actions.openWalk(a)));
+    Screen s = screen(a, "راهنمای پیاده", "مسیر پیاده با راهنمای مرحله‌ای", true);
+    s.body.addView(mapWindow(a, "↱  ۱۵۰ متر • سپس به سمت راست بپیچید"));
+    s.body.addView(metric(a, "فاصله باقی‌مانده", "از موتور مسیر پیاده", BLUE));
+    s.body.addView(metric(a, "زمان باقی‌مانده", "برآورد پویا", GREEN));
+    s.body.addView(primary(a, "شروع راهنمای پیاده", BLUE, () -> go(a, () -> NvV027Actions.openWalk(a))));
   }
 
   private static void preferences(MwmActivity a) {
-    Screen s = screen(a, "ترجیحات سفر هوشمند", SUBS[9]);
-    s.body.addView(toggleLike(a, "استفاده از مترو (اولویت بالا)", true, "🚇"));
-    s.body.addView(toggleLike(a, "استفاده از تاکسی", true, "🚕"));
-    s.body.addView(toggleLike(a, "به حداقل رساندن هزینه", false, "♙"));
-    s.body.addView(toggleLike(a, "سریع‌ترین مسیر را پیشنهاد بده", true, "⚡"));
-    s.body.addView(toggleLike(a, "اجتناب از بزرگراه‌ها", false, "⊘"));
-    s.body.addView(toggleLike(a, "مسیرهای پیاده‌روی کمتر", false, "🚶"));
-    s.body.addView(toggleLike(a, "ترجیح مسیرهای امن‌تر", true, "🛡"));
-    s.body.addView(primary(a, "ذخیره و تنظیم ترجیحات واقعی", BLUE, () -> NvV027Actions.openPreferences(a)));
+    Screen s = screen(a, "ترجیحات سفر هوشمند", "شخصی‌سازی تجربه مسیریابی", false);
+    s.body.addView(toggleRow(a, "استفاده از مترو (اولویت بالا)", true, "🚇"));
+    s.body.addView(toggleRow(a, "استفاده از تاکسی", true, "🚕"));
+    s.body.addView(toggleRow(a, "به حداقل رساندن هزینه", false, "₮"));
+    s.body.addView(toggleRow(a, "سریع‌ترین مسیر را پیشنهاد بده", true, "⚡"));
+    s.body.addView(toggleRow(a, "اجتناب از بزرگراه‌ها", false, "⊘"));
+    s.body.addView(toggleRow(a, "مسیرهای پیاده‌روی کمتر", false, "🚶"));
+    s.body.addView(toggleRow(a, "ترجیح مسیرهای امن‌تر", true, "🛡"));
+    s.body.addView(primary(a, "تنظیم و ذخیره ترجیحات", BLUE, () -> go(a, () -> NvV027Actions.openPreferences(a))));
   }
 
-  private static View featureCard(MwmActivity a, int id, String icon, String title, String sub) {
-    final LinearLayout c = card(a, id == 14 ? RED : (id == 15 ? GREEN : BLUE));
-    final TextView ic = text(a, icon, 23, id == 14 ? RED : CYAN, Typeface.BOLD);
-    ic.setGravity(Gravity.CENTER);
-    c.addView(ic, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 34)));
-    final TextView t = text(a, title, 14, WHITE, Typeface.BOLD);
-    t.setGravity(Gravity.CENTER);
+  private static Screen screen(MwmActivity a, String title, String subtitle, boolean revealMap) {
+    remove(a);
+    ViewGroup host = a.findViewById(android.R.id.content);
+    FrameLayout root = new FrameLayout(a);
+    root.setTag(TAG);
+    root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    root.setBackgroundColor(revealMap ? Color.argb(105, 0, 8, 16) : BG);
+    root.setElevation(dp(a, 60));
+    host.addView(root, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+    LinearLayout column = new LinearLayout(a);
+    column.setOrientation(LinearLayout.VERTICAL);
+    column.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    column.setPadding(dp(a, 12), dp(a, 26), dp(a, 12), dp(a, 10));
+
+    LinearLayout header = new LinearLayout(a);
+    header.setOrientation(LinearLayout.HORIZONTAL);
+    header.setGravity(Gravity.CENTER_VERTICAL);
+    header.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    header.setPadding(dp(a, 4), dp(a, 3), dp(a, 4), dp(a, 3));
+    header.setBackground(round(a, Color.argb(235, 4, 28, 48), OUTLINE, 18, 1));
+
+    View nv = NvAnimatedBrand.createLogo(a, 13, () -> NvRuntimeController.showCodeMenu(a));
+    header.addView(nv, new LinearLayout.LayoutParams(dp(a, 52), dp(a, 42)));
+
+    LinearLayout tb = new LinearLayout(a);
+    tb.setOrientation(LinearLayout.VERTICAL);
+    TextView tt = text(a, title, 19, WHITE, Typeface.BOLD);
+    TextView ss = text(a, subtitle, 11, MUTED, Typeface.NORMAL);
+    ss.setMaxLines(2);
+    tb.addView(tt);
+    tb.addView(ss);
+    header.addView(tb, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+    TextView close = text(a, "×", 28, WHITE, Typeface.NORMAL);
+    close.setGravity(Gravity.CENTER);
+    close.setClickable(true);
+    close.setOnClickListener(v -> remove(a));
+    header.addView(close, new LinearLayout.LayoutParams(dp(a, 48), dp(a, 48)));
+    column.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 70)));
+
+    ScrollView sv = new ScrollView(a);
+    sv.setFillViewport(true);
+    sv.setBackgroundColor(Color.TRANSPARENT);
+    LinearLayout body = new LinearLayout(a);
+    body.setOrientation(LinearLayout.VERTICAL);
+    body.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    body.setPadding(0, dp(a, 5), 0, dp(a, 20));
+    sv.addView(body);
+    column.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+    root.addView(column, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    return new Screen(root, body);
+  }
+
+  private static void go(MwmActivity a, Runnable r) {
+    remove(a);
+    r.run();
+  }
+
+  private static void remove(MwmActivity a) {
+    ViewGroup host = a.findViewById(android.R.id.content);
+    if (host == null) return;
+    View v = host.findViewWithTag(TAG);
+    if (v != null) host.removeView(v);
+  }
+
+  private static View featureCard(MwmActivity a, int id, String icon, String title) {
+    int accent = id == 14 ? RED : (id == 15 ? GREEN : (id == 17 ? PURPLE : BLUE));
+    LinearLayout c = panel(a, accent);
+    c.setGravity(Gravity.CENTER);
+    TextView ic = text(a, icon, 24, accent, Typeface.BOLD); ic.setGravity(Gravity.CENTER);
+    TextView t = text(a, id + ". " + title, 13, WHITE, Typeface.BOLD); t.setGravity(Gravity.CENTER);
+    TextView sub = text(a, shortSub(id), 9, MUTED, Typeface.NORMAL); sub.setGravity(Gravity.CENTER); sub.setMaxLines(2);
+    c.addView(ic);
     c.addView(t);
-    final TextView st = text(a, sub, 10, MUTED, Typeface.NORMAL);
-    st.setGravity(Gravity.CENTER);
-    st.setMaxLines(2);
-    c.addView(st);
+    c.addView(sub);
     c.setClickable(true);
     c.setOnClickListener(v -> open(a, id));
     return c;
   }
 
-  private static Screen screen(MwmActivity a, String title, String subtitle) {
-    remove(a);
-    final ViewGroup host = a.findViewById(android.R.id.content);
-    final FrameLayout root = new FrameLayout(a);
-    root.setTag(TAG);
-    root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    root.setBackgroundColor(BG);
-    root.setClickable(true);
-    root.setElevation(dp(a, 40));
-    host.addView(root, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-    final LinearLayout column = new LinearLayout(a);
-    column.setOrientation(LinearLayout.VERTICAL);
-    column.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    column.setPadding(dp(a, 12), dp(a, 28), dp(a, 12), dp(a, 12));
-
-    final LinearLayout header = new LinearLayout(a);
-    header.setOrientation(LinearLayout.HORIZONTAL);
-    header.setGravity(Gravity.CENTER_VERTICAL);
-    header.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    final TextView close = text(a, "‹", 34, WHITE, Typeface.NORMAL);
-    close.setGravity(Gravity.CENTER);
-    close.setClickable(true);
-    close.setOnClickListener(v -> remove(a));
-    header.addView(close, new LinearLayout.LayoutParams(dp(a, 46), dp(a, 52)));
-
-    final LinearLayout titleBox = new LinearLayout(a);
-    titleBox.setOrientation(LinearLayout.VERTICAL);
-    final TextView t = text(a, title, 19, WHITE, Typeface.BOLD);
-    final TextView st = text(a, subtitle, 11, MUTED, Typeface.NORMAL);
-    st.setMaxLines(2);
-    titleBox.addView(t);
-    titleBox.addView(st);
-    header.addView(titleBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-    final View nv = NvAnimatedBrand.createLogo(a, 13, () -> NvRuntimeController.showCodeMenu(a));
-    header.addView(nv, new LinearLayout.LayoutParams(dp(a, 48), dp(a, 40)));
-    column.addView(header, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 64)));
-
-    final ScrollView scroll = new ScrollView(a);
-    scroll.setFillViewport(true);
-    final LinearLayout body = new LinearLayout(a);
-    body.setOrientation(LinearLayout.VERTICAL);
-    body.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    body.setPadding(dp(a, 2), dp(a, 4), dp(a, 2), dp(a, 18));
-    scroll.addView(body);
-    column.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-    root.addView(column, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    return new Screen(root, body);
-  }
-
-  private static void remove(MwmActivity a) {
-    final ViewGroup host = a.findViewById(android.R.id.content);
-    if (host == null) return;
-    final View v = host.findViewWithTag(TAG);
-    if (v != null) host.removeView(v);
-  }
-
-  private static View chatBubble(MwmActivity a, String msg, boolean mine) {
-    final TextView v = text(a, msg, 14, WHITE, mine ? Typeface.BOLD : Typeface.NORMAL);
-    v.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
-    v.setBackground(round(a, mine ? BLUE : PANEL2, mine ? CYAN : OUTLINE, 18, 1));
-    final LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(dp(a, mine ? 235 : 300), ViewGroup.LayoutParams.WRAP_CONTENT);
-    p.gravity = mine ? Gravity.RIGHT : Gravity.LEFT;
-    p.setMargins(dp(a, 6), dp(a, 5), dp(a, 6), dp(a, 5));
-    v.setLayoutParams(p);
-    return v;
-  }
-
-  private static View locationPair(MwmActivity a, String from, String to) {
-    LinearLayout c = card(a, BLUE);
-    c.addView(metric(a, "●  " + from, "موقعیت فعلی", CYAN));
-    c.addView(metric(a, "●  " + to, "مقصد", RED));
-    return c;
-  }
-
-  private static View mapCard(MwmActivity a, String label, int accent) {
-    final FrameLayout map = new FrameLayout(a);
-    map.setBackground(round(a, Color.rgb(7, 39, 60), accent, 18, 2));
-    final TextView grid = text(a, "╲  ╱   ╲══╱   ╲  ╱\n  ●━━━━━━◉━━━━━━●\n╱   ╲   ╱  ╲   ╱", 17, Color.argb(180, 65, 175, 220), Typeface.BOLD);
-    grid.setGravity(Gravity.CENTER);
-    map.addView(grid, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-    final TextView cap = text(a, label, 13, WHITE, Typeface.BOLD);
+  private static View mapWindow(MwmActivity a, String caption) {
+    FrameLayout w = new FrameLayout(a);
+    w.setBackground(round(a, Color.argb(28, 5, 40, 65), CYAN, 20, 2));
+    w.setClickable(false);
+    TextView badge = text(a, "نقشه زنده NV", 11, CYAN, Typeface.BOLD);
+    badge.setGravity(Gravity.CENTER);
+    badge.setBackground(round(a, Color.argb(225, 5, 30, 50), CYAN, 12, 1));
+    FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(dp(a, 110), dp(a, 34), Gravity.TOP | Gravity.RIGHT);
+    bp.setMargins(0, dp(a, 10), dp(a, 10), 0);
+    w.addView(badge, bp);
+    TextView cap = text(a, caption, 13, WHITE, Typeface.BOLD);
     cap.setGravity(Gravity.CENTER);
-    cap.setBackground(round(a, Color.argb(210, 4, 24, 40), accent, 12, 1));
+    cap.setBackground(round(a, Color.argb(225, 3, 24, 42), OUTLINE, 14, 1));
+    FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 48), Gravity.BOTTOM);
+    cp.setMargins(dp(a, 10), 0, dp(a, 10), dp(a, 10));
+    w.addView(cap, cp);
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 245));
+    lp.setMargins(dp(a, 2), dp(a, 7), dp(a, 2), dp(a, 7));
+    w.setLayoutParams(lp);
+    return w;
+  }
+
+  private static View referenceMapCard(MwmActivity a, String caption, int accent) {
+    FrameLayout w = new FrameLayout(a);
+    w.setBackground(round(a, Color.rgb(6, 42, 66), accent, 18, 2));
+    TextView route = text(a, "●━━━━━●━━━━━●\n  🚶      🚇      🚕", 19, CYAN, Typeface.BOLD);
+    route.setGravity(Gravity.CENTER);
+    w.addView(route, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    TextView cap = text(a, caption, 12, WHITE, Typeface.BOLD);
+    cap.setGravity(Gravity.CENTER);
+    cap.setBackground(round(a, Color.argb(220, 4, 26, 44), accent, 12, 1));
     FrameLayout.LayoutParams cp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 44), Gravity.BOTTOM);
     cp.setMargins(dp(a, 8), 0, dp(a, 8), dp(a, 8));
-    map.addView(cap, cp);
-    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 176));
-    p.setMargins(dp(a, 3), dp(a, 7), dp(a, 3), dp(a, 7));
-    map.setLayoutParams(p);
-    return map;
+    w.addView(cap, cp);
+    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 170));
+    p.setMargins(dp(a, 3), dp(a, 6), dp(a, 3), dp(a, 6));
+    w.setLayoutParams(p);
+    return w;
   }
 
-  private static View routeStrip(MwmActivity a, String a1, String a2, String a3, String total) {
-    final LinearLayout c = card(a, GREEN);
-    c.setOrientation(LinearLayout.HORIZONTAL);
-    c.setGravity(Gravity.CENTER);
-    c.addView(node(a, a1, "۷ دقیقه", AMBER), weight(a));
-    c.addView(node(a, a2, "۱۴ دقیقه", BLUE), weight(a));
-    c.addView(node(a, a3, "۷ دقیقه", GREEN), weight(a));
-    c.addView(node(a, total, "کل سفر", CYAN), weight(a));
+  private static View locationCard(MwmActivity a, String from, String to) {
+    LinearLayout c = panel(a, BLUE);
+    c.addView(metric(a, from, "مبدأ", CYAN));
+    c.addView(metric(a, to, "مقصد", RED));
     return c;
+  }
+
+  private static View routeStrip(MwmActivity a) {
+    LinearLayout row = panel(a, GREEN);
+    row.setOrientation(LinearLayout.HORIZONTAL);
+    row.addView(node(a, "🚶", "۷ دقیقه", AMBER), weight(a));
+    row.addView(node(a, "🚇", "۱۴ دقیقه", BLUE), weight(a));
+    row.addView(node(a, "🚕", "۷ دقیقه", GREEN), weight(a));
+    row.addView(node(a, "۲۸", "دقیقه", CYAN), weight(a));
+    return row;
   }
 
   private static View node(MwmActivity a, String icon, String sub, int color) {
-    LinearLayout box = new LinearLayout(a);
-    box.setOrientation(LinearLayout.VERTICAL);
-    box.setGravity(Gravity.CENTER);
-    TextView t = text(a, icon, 18, color, Typeface.BOLD); t.setGravity(Gravity.CENTER); box.addView(t);
-    TextView s = text(a, sub, 10, MUTED, Typeface.NORMAL); s.setGravity(Gravity.CENTER); box.addView(s);
-    return box;
+    LinearLayout b = new LinearLayout(a);
+    b.setOrientation(LinearLayout.VERTICAL); b.setGravity(Gravity.CENTER);
+    TextView i = text(a, icon, 18, color, Typeface.BOLD); i.setGravity(Gravity.CENTER); b.addView(i);
+    TextView s = text(a, sub, 10, MUTED, Typeface.NORMAL); s.setGravity(Gravity.CENTER); b.addView(s);
+    return b;
   }
 
-  private static View optionRow(MwmActivity a, String title, String sub, String action, int accent) {
-    final LinearLayout c = card(a, accent);
-    final LinearLayout texts = new LinearLayout(a);
-    texts.setOrientation(LinearLayout.VERTICAL);
-    texts.addView(text(a, title, 15, WHITE, Typeface.BOLD));
-    texts.addView(text(a, sub, 11, MUTED, Typeface.NORMAL));
-    c.addView(texts);
-    final TextView aText = text(a, action, 11, accent == PANEL2 ? CYAN : accent, Typeface.BOLD);
-    aText.setPadding(0, dp(a, 5), 0, 0);
-    c.addView(aText);
+  private static View step(MwmActivity a, String n, String icon, String title, String sub, int accent) {
+    LinearLayout r = new LinearLayout(a);
+    r.setOrientation(LinearLayout.HORIZONTAL); r.setGravity(Gravity.CENTER_VERTICAL); r.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    r.setPadding(dp(a, 10), dp(a, 8), dp(a, 10), dp(a, 8)); r.setBackground(round(a, PANEL2, OUTLINE, 16, 1));
+    TextView num = text(a, n, 13, WHITE, Typeface.BOLD); num.setGravity(Gravity.CENTER); num.setBackground(round(a, accent, accent, 18, 1));
+    r.addView(num, new LinearLayout.LayoutParams(dp(a, 34), dp(a, 34)));
+    TextView ic = text(a, icon, 19, accent, Typeface.BOLD); ic.setGravity(Gravity.CENTER); r.addView(ic, new LinearLayout.LayoutParams(dp(a, 48), dp(a, 42)));
+    LinearLayout tx = new LinearLayout(a); tx.setOrientation(LinearLayout.VERTICAL); tx.addView(text(a, title, 13, WHITE, Typeface.BOLD)); tx.addView(text(a, sub, 10, MUTED, Typeface.NORMAL));
+    r.addView(tx, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(dp(a, 2), dp(a, 4), dp(a, 2), dp(a, 4)); r.setLayoutParams(lp);
+    return r;
+  }
+
+  private static View option(MwmActivity a, String title, String sub, int accent) {
+    LinearLayout c = panel(a, accent);
+    c.addView(text(a, title, 15, WHITE, Typeface.BOLD));
+    c.addView(text(a, sub, 11, MUTED, Typeface.NORMAL));
     return c;
   }
 
-  private static View step(MwmActivity a, String n, String icon, String title, String sub, int color) {
-    final LinearLayout row = new LinearLayout(a);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.setGravity(Gravity.CENTER_VERTICAL);
-    row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    row.setPadding(dp(a, 10), dp(a, 8), dp(a, 10), dp(a, 8));
-    row.setBackground(round(a, PANEL2, OUTLINE, 16, 1));
-    final TextView num = text(a, n, 13, WHITE, Typeface.BOLD); num.setGravity(Gravity.CENTER); num.setBackground(round(a, color, color, 20, 1));
-    row.addView(num, new LinearLayout.LayoutParams(dp(a, 34), dp(a, 34)));
-    final TextView ic = text(a, icon, 20, color, Typeface.BOLD); ic.setGravity(Gravity.CENTER); row.addView(ic, new LinearLayout.LayoutParams(dp(a, 48), dp(a, 42)));
-    final LinearLayout tx = new LinearLayout(a); tx.setOrientation(LinearLayout.VERTICAL); tx.addView(text(a, title, 14, WHITE, Typeface.BOLD)); tx.addView(text(a, sub, 10, MUTED, Typeface.NORMAL));
-    row.addView(tx, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    p.setMargins(dp(a, 3), dp(a, 4), dp(a, 3), dp(a, 4)); row.setLayoutParams(p);
-    return row;
-  }
-
-  private static View chipRow(MwmActivity a, String[] labels) {
-    LinearLayout row = new LinearLayout(a); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER); row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    for (String s : labels) { TextView t = text(a, s, 11, WHITE, Typeface.BOLD); t.setGravity(Gravity.CENTER); t.setBackground(round(a, PANEL2, OUTLINE, 14, 1)); row.addView(t, weight(a)); }
-    row.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 44))); return row;
-  }
-
-  private static View successCard(MwmActivity a, String title, String sub) {
-    final LinearLayout c = card(a, GREEN);
-    c.addView(text(a, "✓  " + title, 17, WHITE, Typeface.BOLD));
-    c.addView(text(a, sub, 11, Color.rgb(201, 243, 217), Typeface.NORMAL));
+  private static View infoBanner(MwmActivity a, String icon, String title, String sub, int accent) {
+    LinearLayout c = panel(a, accent);
+    LinearLayout top = new LinearLayout(a); top.setOrientation(LinearLayout.HORIZONTAL); top.setGravity(Gravity.CENTER_VERTICAL); top.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    TextView ic = text(a, icon, 19, accent, Typeface.BOLD); ic.setGravity(Gravity.CENTER); top.addView(ic, new LinearLayout.LayoutParams(dp(a, 42), dp(a, 38)));
+    TextView t = text(a, title, 15, WHITE, Typeface.BOLD); top.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    c.addView(top); c.addView(text(a, sub, 11, MUTED, Typeface.NORMAL));
     return c;
   }
 
-  private static View metric(MwmActivity a, String title, String value, int color) {
-    final LinearLayout row = new LinearLayout(a);
-    row.setOrientation(LinearLayout.HORIZONTAL);
-    row.setGravity(Gravity.CENTER_VERTICAL);
-    row.setPadding(dp(a, 10), dp(a, 8), dp(a, 10), dp(a, 8));
-    final TextView v = text(a, value, 12, color, Typeface.BOLD); v.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
-    row.addView(v, new LinearLayout.LayoutParams(dp(a, 135), ViewGroup.LayoutParams.WRAP_CONTENT));
-    final TextView t = text(a, title, 13, WHITE, Typeface.BOLD);
-    row.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+  private static View metric(MwmActivity a, String title, String value, int accent) {
+    LinearLayout r = new LinearLayout(a);
+    r.setOrientation(LinearLayout.HORIZONTAL); r.setGravity(Gravity.CENTER_VERTICAL); r.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    r.setPadding(dp(a, 10), dp(a, 8), dp(a, 10), dp(a, 8)); r.setBackground(round(a, PANEL, OUTLINE, 14, 1));
+    TextView t = text(a, title, 13, WHITE, Typeface.BOLD); r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    TextView v = text(a, value, 11, accent, Typeface.BOLD); v.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL); r.addView(v, new LinearLayout.LayoutParams(dp(a, 150), ViewGroup.LayoutParams.WRAP_CONTENT));
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT); lp.setMargins(0, dp(a, 3), 0, dp(a, 3)); r.setLayoutParams(lp);
+    return r;
+  }
+
+  private static View chips(MwmActivity a, String[] labels) {
+    LinearLayout row = new LinearLayout(a); row.setOrientation(LinearLayout.HORIZONTAL); row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    for (String label : labels) {
+      TextView t = text(a, label, 11, WHITE, Typeface.BOLD); t.setGravity(Gravity.CENTER); t.setBackground(round(a, PANEL2, OUTLINE, 14, 1)); row.addView(t, weight(a));
+    }
+    row.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 42)));
     return row;
   }
 
-  private static View sectionTitle(MwmActivity a, String title, int color) {
-    TextView t = text(a, title, 15, color, Typeface.BOLD); t.setPadding(dp(a, 4), dp(a, 9), dp(a, 4), dp(a, 4)); return t;
+  private static View chatBubble(MwmActivity a, String msg, boolean mine) {
+    TextView b = text(a, msg, 13, WHITE, mine ? Typeface.BOLD : Typeface.NORMAL);
+    b.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
+    b.setBackground(round(a, mine ? BLUE : PANEL2, mine ? CYAN : OUTLINE, 17, 1));
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(a, mine ? 220 : 310), ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.gravity = mine ? Gravity.RIGHT : Gravity.LEFT; lp.setMargins(dp(a, 5), dp(a, 5), dp(a, 5), dp(a, 5)); b.setLayoutParams(lp);
+    return b;
   }
 
-  private static View toggleLike(MwmActivity a, String title, boolean on, String icon) {
-    final LinearLayout row = new LinearLayout(a);
-    row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL); row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    row.setPadding(dp(a, 10), dp(a, 7), dp(a, 10), dp(a, 7)); row.setBackground(round(a, PANEL, OUTLINE, 14, 1));
-    TextView i = text(a, icon, 18, on ? CYAN : MUTED, Typeface.BOLD); i.setGravity(Gravity.CENTER); row.addView(i, new LinearLayout.LayoutParams(dp(a, 40), dp(a, 38)));
-    TextView t = text(a, title, 13, WHITE, Typeface.BOLD); row.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-    TextView sw = text(a, on ? "●━━" : "━━●", 15, on ? BLUE : Color.GRAY, Typeface.BOLD); sw.setGravity(Gravity.CENTER); row.addView(sw, new LinearLayout.LayoutParams(dp(a, 62), dp(a, 36)));
-    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 52)); p.setMargins(0, dp(a, 3), 0, dp(a, 3)); row.setLayoutParams(p); return row;
+  private static View section(MwmActivity a, String title, int accent) {
+    TextView t = text(a, title, 14, accent, Typeface.BOLD); t.setPadding(dp(a, 3), dp(a, 8), dp(a, 3), dp(a, 3)); return t;
   }
 
-  private static LinearLayout card(MwmActivity a, int accent) {
-    final LinearLayout c = new LinearLayout(a);
-    c.setOrientation(LinearLayout.VERTICAL);
-    c.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+  private static View toggleRow(MwmActivity a, String title, boolean on, String icon) {
+    LinearLayout r = new LinearLayout(a); r.setOrientation(LinearLayout.HORIZONTAL); r.setGravity(Gravity.CENTER_VERTICAL); r.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    r.setPadding(dp(a, 10), dp(a, 6), dp(a, 10), dp(a, 6)); r.setBackground(round(a, PANEL, OUTLINE, 14, 1));
+    TextView i = text(a, icon, 18, on ? CYAN : MUTED, Typeface.BOLD); i.setGravity(Gravity.CENTER); r.addView(i, new LinearLayout.LayoutParams(dp(a, 42), dp(a, 38)));
+    TextView t = text(a, title, 13, WHITE, Typeface.BOLD); r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    TextView sw = text(a, on ? "●━━" : "━━●", 15, on ? BLUE : Color.GRAY, Typeface.BOLD); sw.setGravity(Gravity.CENTER); r.addView(sw, new LinearLayout.LayoutParams(dp(a, 62), dp(a, 36)));
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 52)); lp.setMargins(0, dp(a, 3), 0, dp(a, 3)); r.setLayoutParams(lp);
+    return r;
+  }
+
+  private static LinearLayout panel(MwmActivity a, int accent) {
+    LinearLayout c = new LinearLayout(a);
+    c.setOrientation(LinearLayout.VERTICAL); c.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
     c.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
-    c.setBackground(round(a, PANEL, accent, 18, 1));
+    c.setBackground(round(a, Color.argb(245, 5, 32, 55), accent, 18, 1));
     c.setElevation(dp(a, 4));
-    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    p.setMargins(dp(a, 3), dp(a, 5), dp(a, 3), dp(a, 5));
-    c.setLayoutParams(p);
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(dp(a, 3), dp(a, 5), dp(a, 3), dp(a, 5)); c.setLayoutParams(lp);
     return c;
   }
 
-  private static TextView primary(MwmActivity a, String title, int color, Runnable action) {
-    final TextView b = text(a, title, 15, WHITE, Typeface.BOLD);
-    b.setGravity(Gravity.CENTER);
-    b.setBackground(round(a, color, CYAN, 16, 1));
-    b.setClickable(true);
-    b.setOnClickListener(v -> action.run());
-    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 54));
-    p.setMargins(dp(a, 3), dp(a, 10), dp(a, 3), dp(a, 5));
-    b.setLayoutParams(p);
+  private static TextView primary(MwmActivity a, String title, int color, Runnable r) {
+    TextView b = text(a, title, 15, WHITE, Typeface.BOLD); b.setGravity(Gravity.CENTER);
+    b.setBackground(round(a, color, CYAN, 17, 1)); b.setClickable(true); b.setOnClickListener(v -> r.run());
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 56)); lp.setMargins(dp(a, 3), dp(a, 10), dp(a, 3), dp(a, 5)); b.setLayoutParams(lp);
     return b;
   }
 
   private static TextView text(Context c, String s, int sp, int color, int style) {
-    final TextView v = new TextView(c);
-    v.setText(s);
-    v.setTextSize(sp);
-    v.setTextColor(color);
-    v.setTypeface(Typeface.DEFAULT, style);
-    v.setGravity(Gravity.RIGHT);
-    v.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    v.setTextDirection(View.TEXT_DIRECTION_RTL);
-    return v;
+    TextView v = new TextView(c); v.setText(s); v.setTextSize(sp); v.setTextColor(color); v.setTypeface(Typeface.DEFAULT, style);
+    v.setGravity(Gravity.RIGHT); v.setLayoutDirection(View.LAYOUT_DIRECTION_RTL); v.setTextDirection(View.TEXT_DIRECTION_RTL); return v;
   }
 
   private static GradientDrawable round(Context c, int fill, int stroke, int radius, int strokeDp) {
-    final GradientDrawable d = new GradientDrawable();
-    d.setColor(fill);
-    d.setCornerRadius(dp(c, radius));
-    d.setStroke(dp(c, strokeDp), stroke);
-    return d;
+    GradientDrawable d = new GradientDrawable(); d.setColor(fill); d.setCornerRadius(dp(c, radius)); d.setStroke(dp(c, strokeDp), stroke); return d;
   }
 
   private static LinearLayout.LayoutParams weight(Context c) {
-    final LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
-    p.setMargins(dp(c, 3), dp(c, 3), dp(c, 3), dp(c, 3));
-    return p;
+    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f); p.setMargins(dp(c, 3), dp(c, 3), dp(c, 3), dp(c, 3)); return p;
   }
 
-  private static String iconFor(int id) {
+  private static String shortSub(int id) {
+    switch (id) {
+      case 13: return "گفت‌وگوی هوشمند";
+      case 14: return "سریع‌ترین گزینه";
+      case 15: return "مترو + تاکسی + پیاده";
+      case 16: return "خروجی و ایستگاه";
+      case 17: return "خطوط و ایستگاه‌ها";
+      case 18: return "خروج و تاکسی";
+      case 19: return "ETA و اطمینان";
+      case 20: return "زمان، هزینه و مصرف";
+      case 21: return "هدایت پیاده";
+      case 22: return "تنظیم تجربه سفر";
+      default: return "";
+    }
+  }
+
+  private static String icon(int id) {
     switch (id) {
       case 13: return "✦";
       case 14: return "⚡";
@@ -460,8 +467,7 @@ public final class NvSmartTravelUi {
   }
 
   private static final class Screen {
-    final FrameLayout root;
-    final LinearLayout body;
+    final FrameLayout root; final LinearLayout body;
     Screen(FrameLayout root, LinearLayout body) { this.root = root; this.body = body; }
   }
 }
