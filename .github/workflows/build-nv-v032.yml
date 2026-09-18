@@ -2,13 +2,13 @@ name: Build NV v0.32 User Friendly APK
 # v0.32 user-friendly CI
 
 concurrency:
-  group: nv-v032-real-eta-${{ github.ref }}
+  group: nv-v032-user-friendly-${{ github.ref }}
   cancel-in-progress: true
 
 on:
   push:
     branches:
-      - nv-v032-production-hardening
+      - nv-v032-user-friendly
   workflow_dispatch:
 
 jobs:
@@ -97,7 +97,7 @@ jobs:
       - name: Configure ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: nv-v032-real-eta-arm64
+          key: nv-v032-user-friendly-arm64
           max-size: 2G
 
       - name: Build and test
@@ -134,8 +134,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v032-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.32.0-production-hardening-arm64-profileable.apk
-          sha256sum dist/NV-v0.32.0-production-hardening-arm64-profileable.apk | tee dist/NV-v0.32.0-production-hardening-arm64-profileable.apk.sha256
+          cp "$APK" dist/NV-v0.32.0-user-friendly-arm64-profileable.apk
+          sha256sum dist/NV-v0.32.0-user-friendly-arm64-profileable.apk | tee dist/NV-v0.32.0-user-friendly-arm64-profileable.apk.sha256
           grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v032-badging.txt
           grep -q "application-label:'NV'" /tmp/nv-v032-badging.txt
           grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v032-badging.txt
@@ -178,9 +178,9 @@ jobs:
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.32.0-production-hardening-arm64-profileable
+          name: NV-v0.32.0-user-friendly-arm64-profileable
           path: |
-            dist/NV-v0.32.0-production-hardening-arm64-profileable.apk
-            dist/NV-v0.32.0-production-hardening-arm64-profileable.apk.sha256
+            dist/NV-v0.32.0-user-friendly-arm64-profileable.apk
+            dist/NV-v0.32.0-user-friendly-arm64-profileable.apk.sha256
           if-no-files-found: error
           retention-days: 14
