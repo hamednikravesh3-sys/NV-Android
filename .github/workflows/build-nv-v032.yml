@@ -170,9 +170,12 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            APK=$(find organicmaps/android/app/build/outputs/apk -type f -name '*.apk' | grep -E '/web/debug/|web.*debug' | head -n 1)
+            echo "Available APKs:"
+            find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*' -name '*.apk' -print
+            APK=$(find "$GITHUB_WORKSPACE" -type f -path '*/app/build/outputs/apk/*' -name '*.apk' ! -path '*profileable*' | head -n 1)
             echo "Smoke APK: $APK"
             test -n "$APK"
+            test -s "$APK"
             adb install -r "$APK"
             adb shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v032-smoke.txt
             sleep 5
