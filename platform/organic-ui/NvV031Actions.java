@@ -742,32 +742,87 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private static void compareModes(MwmActivity a, Screen s, Location origin, Place dest) {
-    setStatus(s, "در حال مقایسه گزینه‌ها…", CYAN);
+    setStatus(s, "در حال محاسبه زمان، فاصله و هزینه گزینه‌ها…", CYAN);
     new Thread(() -> {
       RoadEstimate car = null;
-      boolean metro = false;
+      MixedEstimate mixed = null;
       try { car = osrm(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon); } catch (Throwable ignored) {}
-      try { metro = hasMetroNear(origin.getLatitude(), origin.getLongitude(), 3500) && hasMetroNear(dest.lat, dest.lon, 3500); } catch (Throwable ignored) {}
-      RoadEstimate finalCar = car; boolean finalMetro = metro;
+      try { mixed = estimateMixed(a, origin, dest); } catch (Throwable ignored) {}
+
+      double direct = haversine(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon);
+      int walkSec = direct <= 15_000d ? walkingSeconds(direct) : Integer.MAX_VALUE;
+      RoadEstimate finalCar = car;
+      MixedEstimate finalMixed = mixed;
+
       a.runOnUiThread(() -> {
         if (!alive(a, s)) return;
         s.results.removeAllViews();
-        double direct = haversine(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon);
-        int walkSec = (int)Math.round((direct * 1.20) / 1.35);
+
         if (finalCar != null) {
-          int adj = adjustedEtaSeconds(finalCar.durationSec, finalCar.distanceM, origin);
-          double consumption = finalCar.distanceM / 100000d * prefs(a).getInt("fuel_l100", 8);
-          s.results.addView(text(a, "خودرو: " + formatMinutes(adj) + " • " + formatDistance(finalCar.distanceM), 16, WHITE, Typeface.BOLD));
-          s.results.addView(text(a, String.format(Locale.US, "مصرف تقریبی با تنظیم فعلی: %.1f لیتر", consumption), 12, MUTED, Typeface.NORMAL));
+          double liters = finalCar.distanceM / 100000d * prefs(a).getInt("fuel_l100", 8);
+          long cost = estimateCarCostToman(a, finalCar.distanceM);
+          s.results.addView(optionCard(a,
+              "🚗 خودرو",
+              formatMinutes(finalCar.durationSec) + " • " + formatDistance(finalCar.distanceM)
+                  + " • " + String.format(Locale.US, "%.1f لیتر", liters)
+                  + " • حدود " + formatToman(cost),
+              BLUE,
+              () -> routeTo(a, dest, Router.Vehicle)));
         }
-        s.results.addView(text(a, "پیاده: حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20), 15, WHITE, Typeface.NORMAL));
-        s.results.addView(text(a, finalMetro ? "مترو/ترکیبی: ایستگاه مناسب در هر دو سمت پیدا شد" : "مترو/ترکیبی: ایستگاه مناسب در هر دو سمت پیدا نشد", 14, finalMetro ? GREEN : AMBER, Typeface.BOLD));
-        s.results.addView(button(a, "مسیر خودرو", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
-        if (finalMetro) s.results.addView(button(a, "مسیر مترو/ترکیبی", GREEN, () -> routeTo(a, dest, Router.Transit)));
-        s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+
+        if (finalMixed != null) {
+          long cost = estimateMixedCostToman(a, finalMixed);
+          s.results.addView(optionCard(a,
+              "🚇 سفر ترکیبی",
+              formatMinutes(finalMixed.totalSec) + " • "
+                  + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
+                  + " • حدود " + formatToman(cost),
+              GREEN,
+              () -> routeTo(a, dest, Router.Transit)));
+          s.results.addView(text(a,
+              "زمان مترو بر اساس ساختار خطوط/ایستگاه‌های OSM و مدل زمان سفر برآورد می‌شود؛ داده زنده قطار متصل نیست.",
+              11, MUTED, Typeface.NORMAL));
+        }
+
+        if (walkSec < Integer.MAX_VALUE) {
+          s.results.addView(optionCard(a,
+              "🚶 پیاده",
+              "حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20d) + " • بدون هزینه",
+              CYAN,
+              () -> routeTo(a, dest, Router.Pedestrian)));
+        }
+
+        if (finalCar == null && finalMixed == null && walkSec == Integer.MAX_VALUE) {
+          setStatus(s, "مقایسه آنلاین در دسترس نیست؛ از موتور آفلاین نقشه استفاده کنید.", AMBER);
+          s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+          return;
+        }
         setStatus(s, "مقایسه برای «" + dest.title + "» آماده است", GREEN);
       });
     }, "nv-v031-compare").start();
+  }
+
+  private static long estimateCarCostToman(MwmActivity a, double distanceM) {
+    SharedPreferences p = prefs(a);
+    double liters = distanceM / 100000d * p.getInt("fuel_l100", 8);
+    return Math.max(0L, Math.round(liters * p.getInt("fuel_price_toman", 3000)));
+  }
+
+  private static long estimateTaxiCostToman(MwmActivity a, double distanceM) {
+    SharedPreferences p = prefs(a);
+    return Math.max(0L, p.getInt("taxi_base_toman", 30000)
+        + Math.round((distanceM / 1000d) * p.getInt("taxi_km_toman", 10000)));
+  }
+
+  private static long estimateMixedCostToman(MwmActivity a, MixedEstimate m) {
+    long total = prefs(a).getInt("metro_fare_toman", 6000);
+    if ("تاکسی".equals(m.accessMode)) total += estimateTaxiCostToman(a, m.accessDistanceM);
+    if ("تاکسی".equals(m.egressMode)) total += estimateTaxiCostToman(a, m.egressDistanceM);
+    return total;
+  }
+
+  private static String formatToman(long value) {
+    return String.format(Locale.US, "%,d تومان", value);
   }
 
   private static void verifyMixedThenRoute(MwmActivity a, Screen s, Location origin, Place dest) {
