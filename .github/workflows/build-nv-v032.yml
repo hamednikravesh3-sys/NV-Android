@@ -1,4 +1,5 @@
 name: Build NV v0.32 User Friendly APK
+# v0.32 user-friendly CI
 
 concurrency:
   group: nv-v032-real-eta-${{ github.ref }}
