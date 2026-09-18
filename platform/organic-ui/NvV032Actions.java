@@ -156,7 +156,25 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   public static void install(MwmActivity a) {
     if (INSTANCES.containsKey(a)) return;
+    migratePreferences(a);
     INSTANCES.put(a, new NvV032Actions(a));
+  }
+
+  private static void migratePreferences(Context c) {
+    SharedPreferences current = prefs(c);
+    if (current.getBoolean("_migrated_v031", false)) return;
+    SharedPreferences old = c.getSharedPreferences("nv_v031", Context.MODE_PRIVATE);
+    SharedPreferences.Editor e = current.edit();
+    for (Map.Entry<String, ?> item : old.getAll().entrySet()) {
+      String k = item.getKey();
+      Object v = item.getValue();
+      if (v instanceof Boolean) e.putBoolean(k, (Boolean)v);
+      else if (v instanceof Integer) e.putInt(k, (Integer)v);
+      else if (v instanceof Long) e.putLong(k, (Long)v);
+      else if (v instanceof Float) e.putFloat(k, (Float)v);
+      else if (v instanceof String) e.putString(k, (String)v);
+    }
+    e.putBoolean("_migrated_v031", true).apply();
   }
 
   @Override public void onDestroy(LifecycleOwner owner) {
