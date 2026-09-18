@@ -19,6 +19,7 @@ for name in ['NvMapMenuOverlay.java', 'NvRuntimeController.java', 'NvCodeCodec.j
              'NvSmartActions.java', 'NvV031Actions.java', 'NvAnimatedBrand.java', 'NvSmartTravelUi.java']:
     (dst / name).write_bytes((src / name).read_bytes())
 (test_dst / 'NvCodeCodecTest.java').write_bytes((src / 'NvCodeCodecTest.java').read_bytes())
+(test_dst / 'NvV031LogicTest.java').write_bytes((src / 'NvV031LogicTest.java').read_bytes())
 
 # Application id.
 f = root / 'android/build.gradle'
