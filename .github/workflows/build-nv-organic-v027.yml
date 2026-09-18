@@ -3,6 +3,7 @@ name: Build NV v0.29 Clean Smart Travel APK
 on:
   push:
     branches:
+      - nv-organic-v027-smart-routing
       - nv-v029-clean-ui
   workflow_dispatch:
 
