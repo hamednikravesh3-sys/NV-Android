@@ -1442,7 +1442,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private static List<Place> subwayEntrances(Place station, MapObject target) throws Exception {
-    String around=String.format(Locale.US,"(around:%d,%.7f,%.7f)",700,station.lat,station.lon);
+    String around=String.format(Locale.US,"(around:%d,%.7f,%.7f)",550,station.lat,station.lon);
     String q="[out:json][timeout:12];(node"+around+"[\"railway\"=\"subway_entrance\"];);out tags;";
     JSONArray els=overpassElements(q);
     List<Place> out=new ArrayList<>();
@@ -1459,8 +1459,10 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
           name=ref.isEmpty()?"خروجی مترو":"خروجی "+ref;
         }
       }
+      double stationDistance=haversine(station.lat,station.lon,la,lo);
+      if(stationDistance>550d) continue;
       double d=target!=null?haversine(la,lo,target.getLat(),target.getLon())
-          :haversine(station.lat,station.lon,la,lo);
+          :stationDistance;
       out.add(new Place(name,"خروجی مترو",la,lo,d,"railway","subway_entrance",0));
     }
     out.sort(Comparator.comparingDouble(p->p.distanceMeters));
