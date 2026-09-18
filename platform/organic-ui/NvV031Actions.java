@@ -719,21 +719,7 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
     String around = String.format(Locale.US, "(around:%d,%.7f,%.7f)", radius, midLat, midLon);
     String q = "[out:json][timeout:20];relation" + around
         + "[\"type\"=\"route\"][\"route\"=\"subway\"];out body;>;out tags;";
-    HttpURLConnection conn = (HttpURLConnection)new URL("https://overpass-api.de/api/interpreter").openConnection();
-    conn.setConnectTimeout(8_000);
-    conn.setReadTimeout(22_000);
-    conn.setRequestMethod("POST");
-    conn.setDoOutput(true);
-    conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.31");
-    byte[] body = ("data=" + URLEncoder.encode(q, "UTF-8")).getBytes(StandardCharsets.UTF_8);
-    try (java.io.OutputStream os = conn.getOutputStream()) { os.write(body); }
-    if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300)
-      throw new IllegalStateException("metro graph HTTP " + conn.getResponseCode());
-
-    JSONArray elements = new JSONObject(readAll(conn.getInputStream())).optJSONArray("elements");
-    conn.disconnect();
-    if (elements == null) return null;
+    JSONArray elements = overpassElements(q);
 
     Map<Long, MetroNode> nodes = new HashMap<>();
     List<JSONObject> relations = new ArrayList<>();
