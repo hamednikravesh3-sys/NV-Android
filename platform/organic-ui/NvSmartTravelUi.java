@@ -33,8 +33,8 @@ public final class NvSmartTravelUi {
   private static final int OUTLINE = Color.rgb(30, 151, 219);
 
   private static final String[] TITLES = {
-      "چت هوشمند سفر", "حالت عجله دارم", "مسیر ترکیبی", "تعویض هوشمند ایستگاه", "حرکت زنده مترو",
-      "هماهنگی تاکسی", "اطمینان زمان رسیدن", "مقایسه زمان و هزینه", "راهنمای پیاده", "ترجیحات سفر هوشمند"
+      "چت هوشمند سفر", "حالت عجله دارم", "مسیر ترکیبی", "تعویض هوشمند ایستگاه", "مترو و ایستگاه‌ها",
+      "تاکسی و محل سوارشدن", "اطمینان زمان رسیدن", "مقایسه زمان و هزینه", "راهنمای پیاده", "ترجیحات سفر هوشمند"
   };
 
   private NvSmartTravelUi() {}
@@ -81,9 +81,10 @@ public final class NvSmartTravelUi {
     s.body.addView(chatBubble(a, "من عجله دارم!", true));
     s.body.addView(chatBubble(a, "مقصد را بگویید؛ NV نوع سفر، مسیرهای قابل استفاده و زمان تقریبی را بررسی می‌کند.", false));
     s.body.addView(section(a, "سریع‌ترین مسیر پیشنهادی", GREEN));
-    s.body.addView(routeStrip(a));
+    s.body.addView(infoBanner(a, "NV", "بدون عدد ساختگی",
+        "زمان، فاصله و نوع سفر فقط بعد از انتخاب مقصد و محاسبه واقعی نمایش داده می‌شود.", GREEN));
     s.body.addView(referenceMapCard(a, "موقعیت فعلی  •  مترو  •  تاکسی  •  مقصد", BLUE));
-    s.body.addView(primary(a, "شروع چت و انتخاب مقصد", BLUE, () -> go(a, () -> NvV027Actions.openChat(a))));
+    s.body.addView(primary(a, "شروع چت و انتخاب مقصد", BLUE, () -> go(a, () -> NvV030Actions.openChat(a))));
   }
 
   private static void hurry(MwmActivity a) {
@@ -93,7 +94,7 @@ public final class NvSmartTravelUi {
     s.body.addView(option(a, "🚗  مستقیم", "مسیر خودرو • کمترین زمان قابل محاسبه", BLUE));
     s.body.addView(option(a, "🚇  مترو + تاکسی", "در صورت وجود ایستگاه قابل استفاده", GREEN));
     s.body.addView(option(a, "🚶  پیاده + مترو", "برای سفرهای شهری مناسب", PURPLE));
-    s.body.addView(primary(a, "محاسبه سریع‌ترین مسیر", BLUE, () -> go(a, () -> NvV027Actions.openHurry(a))));
+    s.body.addView(primary(a, "محاسبه سریع‌ترین مسیر", BLUE, () -> go(a, () -> NvV030Actions.openHurry(a))));
   }
 
   private static void mixed(MwmActivity a) {
@@ -105,7 +106,7 @@ public final class NvSmartTravelUi {
     s.body.addView(step(a, "۲", "🚇", "مترو", "بررسی ایستگاه مناسب مبدأ و مقصد", BLUE));
     s.body.addView(step(a, "۳", "🚶", "پیاده‌روی / تعویض خط", "هدایت مرحله‌به‌مرحله", PURPLE));
     s.body.addView(step(a, "۴", "🚕", "تاکسی تا مقصد", "در صورت نیاز", GREEN));
-    s.body.addView(primary(a, "محاسبه و شروع سفر", BLUE, () -> go(a, () -> NvV027Actions.openMixed(a))));
+    s.body.addView(primary(a, "محاسبه و شروع سفر", BLUE, () -> go(a, () -> NvV030Actions.openMixed(a))));
   }
 
   private static void stationTransfer(MwmActivity a) {
@@ -115,31 +116,31 @@ public final class NvSmartTravelUi {
     s.body.addView(step(a, "۱", "🚇", "در ایستگاه مناسب پیاده شوید", "بر اساس مقصد نهایی", BLUE));
     s.body.addView(step(a, "۲", "↗", "خروجی پیشنهادی را انتخاب کنید", "خروجی نزدیک به ادامه مسیر", CYAN));
     s.body.addView(step(a, "۳", "🚶", "ادامه مسیر", "پیاده یا تاکسی", GREEN));
-    s.body.addView(primary(a, "پیدا کردن ایستگاه و خروجی", BLUE, () -> go(a, () -> NvV027Actions.openStationTransfer(a))));
+    s.body.addView(primary(a, "پیدا کردن ایستگاه و خروجی", BLUE, () -> go(a, () -> NvV030Actions.openStationTransfer(a))));
   }
 
   private static void metro(MwmActivity a) {
-    Screen s = screen(a, "حرکت زنده مترو", "وضعیت ایستگاه‌ها و خطوط", true);
-    s.body.addView(mapWindow(a, "خطوط مترو روی نقشه • ایستگاه‌های نزدیک"));
+    Screen s = screen(a, "مترو و ایستگاه‌ها", "ایستگاه‌های نزدیک و وضعیت داده‌های موجود", true);
+    s.body.addView(mapWindow(a, "ایستگاه‌های مترو روی نقشه • نزدیک‌ترین‌ها"));
     s.body.addView(infoBanner(a, "🚇", "وضعیت کلی مترو", "فقط اطلاعات معتبر و موجود نمایش داده می‌شود؛ داده ساختگی نمایش داده نمی‌شود.", GREEN));
     s.body.addView(metric(a, "ایستگاه نزدیک", "بررسی از موقعیت فعلی", BLUE));
     s.body.addView(metric(a, "وضعیت سرویس", "فعال / نامشخص", GREEN));
-    s.body.addView(primary(a, "مشاهده مترو و ایستگاه‌ها", BLUE, () -> go(a, () -> NvV027Actions.openMetroStatus(a))));
+    s.body.addView(primary(a, "مشاهده مترو و ایستگاه‌ها", BLUE, () -> go(a, () -> NvV030Actions.openMetroStatus(a))));
   }
 
   private static void taxi(MwmActivity a) {
-    Screen s = screen(a, "هماهنگی تاکسی", "هماهنگی زمان خروج با رسیدن تاکسی", true);
+    Screen s = screen(a, "تاکسی و محل سوارشدن", "نقاط تاکسی ثبت‌شده و مسیر تا محل سوارشدن", true);
     s.body.addView(mapWindow(a, "خروجی ایستگاه  ───  محل سوار شدن تاکسی"));
     s.body.addView(infoBanner(a, "🚕", "محل سوار شدن", "نقطه مناسب بعد از محاسبه مسیر و خروجی تعیین می‌شود.", AMBER));
-    s.body.addView(metric(a, "زمان خروج", "پس از محاسبه سفر", BLUE));
+    s.body.addView(metric(a, "زمان خروج", "پس از محاسبه مسیر", BLUE));
     s.body.addView(metric(a, "فاصله تا سوار شدن", "از موقعیت فعلی", GREEN));
-    s.body.addView(primary(a, "پیدا کردن تاکسی و ادامه مسیر", BLUE, () -> go(a, () -> NvV027Actions.openTaxi(a))));
+    s.body.addView(primary(a, "پیدا کردن تاکسی و ادامه مسیر", BLUE, () -> go(a, () -> NvV030Actions.openTaxi(a))));
   }
 
   private static void eta(MwmActivity a) {
     Screen s = screen(a, "اطمینان زمان رسیدن", "تحلیل ETA و عوامل تغییر زمان", false);
     LinearLayout hero = panel(a, BLUE);
-    TextView eta = text(a, "ETA\n۱۰:۰۳", 31, WHITE, Typeface.BOLD);
+    TextView eta = text(a, "ETA\nپس از محاسبه مسیر", 25, WHITE, Typeface.BOLD);
     eta.setGravity(Gravity.CENTER);
     hero.addView(eta, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 110)));
     TextView confidence = text(a, "٪ اطمینان پس از محاسبه مسیر واقعی", 13, CYAN, Typeface.BOLD);
@@ -149,7 +150,7 @@ public final class NvSmartTravelUi {
     s.body.addView(metric(a, "ترافیک یا تأخیر", "بر اساس داده در دسترس", RED));
     s.body.addView(metric(a, "وضعیت مسیر", "بسته / عملیات / هشدار", AMBER));
     s.body.addView(metric(a, "سرعت واقعی دستگاه", "در محاسبه ETA استفاده می‌شود", GREEN));
-    s.body.addView(primary(a, "محاسبه ETA واقعی", BLUE, () -> go(a, () -> NvV027Actions.openEta(a))));
+    s.body.addView(primary(a, "محاسبه ETA واقعی", BLUE, () -> go(a, () -> NvV030Actions.openEta(a))));
   }
 
   private static void compare(MwmActivity a) {
@@ -158,27 +159,30 @@ public final class NvSmartTravelUi {
     s.body.addView(option(a, "🚕🚇🚶  متعادل", "ترکیب تاکسی، مترو و پیاده", GREEN));
     s.body.addView(option(a, "⛽  اقتصادی", "مصرف تقریبی سوخت بر اساس تنظیمات", AMBER));
     s.body.addView(infoBanner(a, "⇄", "مقایسه واقعی", "بعد از انتخاب مقصد، زمان و فاصله گزینه‌ها محاسبه می‌شود.", CYAN));
-    s.body.addView(primary(a, "محاسبه و مقایسه", BLUE, () -> go(a, () -> NvV027Actions.openTimeCost(a))));
+    s.body.addView(primary(a, "محاسبه و مقایسه", BLUE, () -> go(a, () -> NvV030Actions.openTimeCost(a))));
   }
 
   private static void walk(MwmActivity a) {
     Screen s = screen(a, "راهنمای پیاده", "مسیر پیاده با راهنمای مرحله‌ای", true);
-    s.body.addView(mapWindow(a, "↱  ۱۵۰ متر • سپس به سمت راست بپیچید"));
+    s.body.addView(mapWindow(a, "راهنمای پیچ بعدی پس از شروع مسیر واقعی نمایش داده می‌شود"));
     s.body.addView(metric(a, "فاصله باقی‌مانده", "از موتور مسیر پیاده", BLUE));
     s.body.addView(metric(a, "زمان باقی‌مانده", "برآورد پویا", GREEN));
-    s.body.addView(primary(a, "شروع راهنمای پیاده", BLUE, () -> go(a, () -> NvV027Actions.openWalk(a))));
+    s.body.addView(primary(a, "شروع راهنمای پیاده", BLUE, () -> go(a, () -> NvV030Actions.openWalk(a))));
   }
 
   private static void preferences(MwmActivity a) {
-    Screen s = screen(a, "ترجیحات سفر هوشمند", "شخصی‌سازی تجربه مسیریابی", false);
-    s.body.addView(toggleRow(a, "استفاده از مترو (اولویت بالا)", true, "🚇"));
-    s.body.addView(toggleRow(a, "استفاده از تاکسی", true, "🚕"));
-    s.body.addView(toggleRow(a, "به حداقل رساندن هزینه", false, "₮"));
-    s.body.addView(toggleRow(a, "سریع‌ترین مسیر را پیشنهاد بده", true, "⚡"));
-    s.body.addView(toggleRow(a, "اجتناب از بزرگراه‌ها", false, "⊘"));
-    s.body.addView(toggleRow(a, "مسیرهای پیاده‌روی کمتر", false, "🚶"));
-    s.body.addView(toggleRow(a, "ترجیح مسیرهای امن‌تر", true, "🛡"));
-    s.body.addView(primary(a, "تنظیم و ذخیره ترجیحات", BLUE, () -> go(a, () -> NvV027Actions.openPreferences(a))));
+    Screen s = screen(a, "ترجیحات سفر هوشمند", "تنظیمات ذخیره می‌شوند و در محاسبات NV استفاده می‌شوند", false);
+    s.body.addView(toggleRow(a, "استفاده از مترو (اولویت بالا)", "use_metro", true, "🚇"));
+    s.body.addView(toggleRow(a, "استفاده از تاکسی", "use_taxi", true, "🚕"));
+    s.body.addView(toggleRow(a, "به حداقل رساندن هزینه", "min_cost", false, "₮"));
+    s.body.addView(toggleRow(a, "سریع‌ترین مسیر را پیشنهاد بده", "prefer_fastest", true, "⚡"));
+    s.body.addView(toggleRow(a, "اجتناب از بزرگراه‌ها", "avoid_highways", false, "⊘"));
+    s.body.addView(toggleRow(a, "مسیرهای پیاده‌روی کمتر", "less_walking", false, "🚶"));
+    s.body.addView(toggleRow(a, "ترجیح مسیرهای امن‌تر", "safer_route", true, "🛡"));
+    s.body.addView(infoBanner(a, "i", "تنظیمات واقعی",
+        "مترو، تاکسی، هزینه و میزان پیاده‌روی مستقیماً در برنامه‌ریز NV استفاده می‌شوند. محدودیت بزرگراه و ایمنی به قابلیت موتور پایه نیز وابسته‌اند.",
+        CYAN));
+    s.body.addView(primary(a, "تنظیم مصرف سوخت و هشدارها", BLUE, () -> go(a, () -> NvV030Actions.openPreferences(a))));
   }
 
   private static Screen screen(MwmActivity a, String title, String subtitle, boolean revealMap) {
@@ -236,7 +240,6 @@ public final class NvSmartTravelUi {
   }
 
   private static void go(MwmActivity a, Runnable r) {
-    remove(a);
     r.run();
   }
 
@@ -389,13 +392,40 @@ public final class NvSmartTravelUi {
     TextView t = text(a, title, 14, accent, Typeface.BOLD); t.setPadding(dp(a, 3), dp(a, 8), dp(a, 3), dp(a, 3)); return t;
   }
 
-  private static View toggleRow(MwmActivity a, String title, boolean on, String icon) {
-    LinearLayout r = new LinearLayout(a); r.setOrientation(LinearLayout.HORIZONTAL); r.setGravity(Gravity.CENTER_VERTICAL); r.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    r.setPadding(dp(a, 10), dp(a, 6), dp(a, 10), dp(a, 6)); r.setBackground(round(a, PANEL, OUTLINE, 14, 1));
-    TextView i = text(a, icon, 18, on ? CYAN : MUTED, Typeface.BOLD); i.setGravity(Gravity.CENTER); r.addView(i, new LinearLayout.LayoutParams(dp(a, 42), dp(a, 38)));
-    TextView t = text(a, title, 13, WHITE, Typeface.BOLD); r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-    TextView sw = text(a, on ? "●━━" : "━━●", 15, on ? BLUE : Color.GRAY, Typeface.BOLD); sw.setGravity(Gravity.CENTER); r.addView(sw, new LinearLayout.LayoutParams(dp(a, 62), dp(a, 36)));
-    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 52)); lp.setMargins(0, dp(a, 3), 0, dp(a, 3)); r.setLayoutParams(lp);
+  private static View toggleRow(MwmActivity a, String title, String key, boolean defaultValue, String icon) {
+    android.content.SharedPreferences prefs = a.getSharedPreferences("nv_v030", Context.MODE_PRIVATE);
+    final boolean[] state = {prefs.getBoolean(key, defaultValue)};
+
+    LinearLayout r = new LinearLayout(a);
+    r.setOrientation(LinearLayout.HORIZONTAL);
+    r.setGravity(Gravity.CENTER_VERTICAL);
+    r.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    r.setPadding(dp(a, 10), dp(a, 6), dp(a, 10), dp(a, 6));
+    r.setBackground(round(a, PANEL, OUTLINE, 14, 1));
+    r.setClickable(true);
+
+    TextView i = text(a, icon, 18, state[0] ? CYAN : MUTED, Typeface.BOLD);
+    i.setGravity(Gravity.CENTER);
+    r.addView(i, new LinearLayout.LayoutParams(dp(a, 42), dp(a, 38)));
+
+    TextView t = text(a, title, 13, WHITE, Typeface.BOLD);
+    r.addView(t, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+    TextView sw = text(a, state[0] ? "●━━" : "━━●", 15, state[0] ? BLUE : Color.GRAY, Typeface.BOLD);
+    sw.setGravity(Gravity.CENTER);
+    r.addView(sw, new LinearLayout.LayoutParams(dp(a, 62), dp(a, 36)));
+
+    r.setOnClickListener(v -> {
+      state[0] = !state[0];
+      prefs.edit().putBoolean(key, state[0]).apply();
+      i.setTextColor(state[0] ? CYAN : MUTED);
+      sw.setText(state[0] ? "●━━" : "━━●");
+      sw.setTextColor(state[0] ? BLUE : Color.GRAY);
+    });
+
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 52));
+    lp.setMargins(0, dp(a, 3), 0, dp(a, 3));
+    r.setLayoutParams(lp);
     return r;
   }
 
