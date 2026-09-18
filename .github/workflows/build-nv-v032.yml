@@ -14,7 +14,7 @@ on:
 jobs:
   build-v032:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout NV repository
         uses: actions/checkout@v4
@@ -61,6 +61,10 @@ jobs:
           grep -q 'osrmAlternatives' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'geocodePhoton' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'onlineServicesEnabled' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'mixed_stage' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'NvV032TextParser' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'NvV032Actions.openPreferences' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
+
           grep -q 'ONLINE_ETA_REFRESH_MOVE_M = 500' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'بازه بدون ترافیک زنده' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'map_prompted_region' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
@@ -171,9 +175,25 @@ jobs:
             test -n "$APK"
             adb install -r "$APK"
             adb shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v032-smoke.txt
-            sleep 4
-            adb shell pidof ir.nv.navigation.web.debug
+            sleep 5
+            if ! adb shell pidof ir.nv.navigation.web.debug; then
+              adb logcat -d -t 400 > /tmp/nv-v032-logcat.txt
+              exit 1
+            fi
+            adb shell dumpsys activity activities | grep -q 'ir.nv.navigation.web.debug'
             grep -q 'Status: ok' /tmp/nv-v032-smoke.txt
+            adb logcat -d -t 200 > /tmp/nv-v032-logcat.txt
+
+      - name: Upload smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.32-smoke-diagnostics
+          path: |
+            /tmp/nv-v032-smoke.txt
+            /tmp/nv-v032-logcat.txt
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Upload final APK
         uses: actions/upload-artifact@v4
