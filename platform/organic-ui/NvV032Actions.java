@@ -1126,9 +1126,12 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
         s.results.removeAllViews();
         if (result != null) {
           int adjusted = result.durationSec;
+          int low = Math.max(60, (int)Math.round(adjusted * 0.86d));
+          int high = Math.max(low + 60, (int)Math.round(adjusted * 1.22d));
           setStatus(s, "مقصد: " + dest.title + (hurry ? " • اولویت سرعت" : ""), GREEN);
-          s.results.addView(text(a, "برآورد NV آنلاین: " + formatMinutes(adjusted) + " • " + formatDistance(result.distanceM), 17, WHITE, Typeface.BOLD));
-          s.results.addView(text(a, "این زمان بر پایه مسیر جاده‌ای آنلاین است؛ ترافیک زنده در دسترس نیست.", 12, MUTED, Typeface.NORMAL));
+          s.results.addView(text(a, "برآورد جاده‌ای NV: " + formatMinutes(adjusted) + " • " + formatDistance(result.distanceM), 17, WHITE, Typeface.BOLD));
+          s.results.addView(text(a, "بازه بدون ترافیک زنده: " + formatMinutes(low) + " تا " + formatMinutes(high), 12, CYAN, Typeface.BOLD));
+          s.results.addView(text(a, "این زمان بر پایه مسیر جاده‌ای است و ترافیک لحظه‌ای را جعل نمی‌کند.", 11, MUTED, Typeface.NORMAL));
         } else {
           setStatus(s, "برآورد آنلاین در دسترس نیست؛ مسیر آفلاین موتور نقشه استفاده می‌شود.", AMBER);
         }
