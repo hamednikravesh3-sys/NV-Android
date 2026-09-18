@@ -29,6 +29,8 @@ import app.organicmaps.sdk.bookmarks.data.MapObject;
 import app.organicmaps.sdk.location.LocationHelper;
 import app.organicmaps.sdk.routing.RoutingController;
 import app.organicmaps.sdk.routing.RoutingInfo;
+import app.organicmaps.sdk.routing.RoutingOptions;
+import app.organicmaps.sdk.settings.RoadType;
 import app.organicmaps.sdk.util.Distance;
 
 import org.json.JSONArray;
@@ -1052,8 +1054,22 @@ public final class NvV030Actions implements DefaultLifecycleObserver {
   private static void routeTo(MwmActivity a, Place p, Router router) {
     Location loc=MwmApplication.from(a).getLocationHelper().getSavedLocation();
     if(!freshEnough(loc)){Toast.makeText(a,"GPS برای شروع مسیر کافی نیست",Toast.LENGTH_LONG).show();NvRuntimeController.showLocationStatus(a);return;}
+
+    if (router == Router.Vehicle) {
+      boolean avoidHighways = prefs(a).getBoolean("avoid_highways", false);
+      boolean safer = prefs(a).getBoolean("safer_route", true);
+      if (avoidHighways) RoutingOptions.addOption(RoadType.Motorway);
+      else RoutingOptions.removeOption(RoadType.Motorway);
+      // Organic Maps has no generic "safe route" score. The concrete supported
+      // safety-related option we can apply is avoiding dirty/unpaved roads.
+      if (safer) RoutingOptions.addOption(RoadType.Dirty);
+      else RoutingOptions.removeOption(RoadType.Dirty);
+    }
+
     MapObject start=MapObject.createMapObject(MapObject.MY_POSITION,"موقعیت من","",loc.getLatitude(),loc.getLongitude());
-    MapObject end=MapObject.createMapObject(MapObject.SEARCH,p.title,p.address,p.lat,p.lon); removeScreen(a); RoutingController.get().prepare(start,end,router);
+    MapObject end=MapObject.createMapObject(MapObject.SEARCH,p.title,p.address,p.lat,p.lon);
+    removeScreen(a);
+    RoutingController.get().prepare(start,end,router);
   }
 
   private static boolean freshEnough(Location l){return l!=null&&System.currentTimeMillis()-l.getTime()<=FRESH_ROUTE_MS&&(!l.hasAccuracy()||l.getAccuracy()<=MAX_ROUTE_ACCURACY);}
