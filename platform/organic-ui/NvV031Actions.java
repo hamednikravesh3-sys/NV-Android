@@ -9,6 +9,7 @@ import android.location.Location;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -872,30 +873,67 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   private static void compareModes(MwmActivity a, Screen s, Location origin, Place dest) {
-    setStatus(s, "در حال مقایسه گزینه‌ها…", CYAN);
+    setStatus(s, "در حال مقایسه زمان، فاصله و هزینه تقریبی…", CYAN);
     new Thread(() -> {
       RoadEstimate car = null;
-      boolean metro = false;
+      MixedEstimate mixed = null;
       try { car = osrm(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon); } catch (Throwable ignored) {}
-      try { metro = hasMetroNear(origin.getLatitude(), origin.getLongitude(), 3500) && hasMetroNear(dest.lat, dest.lon, 3500); } catch (Throwable ignored) {}
-      RoadEstimate finalCar = car; boolean finalMetro = metro;
+      if (prefs(a).getBoolean("use_metro", true)) {
+        try { mixed = estimateMixed(a, origin, dest); } catch (Throwable ignored) {}
+      }
+
+      double direct = haversine(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon);
+      int walkSec = direct <= 15_000d ? walkingSeconds(direct) : Integer.MAX_VALUE;
+      RoadEstimate finalCar = car;
+      MixedEstimate finalMixed = mixed;
+
       a.runOnUiThread(() -> {
         if (!alive(a, s)) return;
         s.results.removeAllViews();
-        double direct = haversine(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon);
-        int walkSec = (int)Math.round((direct * 1.20) / 1.35);
+
+        int fuelL100 = prefs(a).getInt("fuel_l100", 8);
+        int fuelPrice = prefs(a).getInt("fuel_price_toman", 3000);
+        int taxiBase = prefs(a).getInt("taxi_base_toman", 25000);
+        int taxiPerKm = prefs(a).getInt("taxi_per_km_toman", 9000);
+        int metroFare = prefs(a).getInt("metro_fare_toman", 6000);
+
         if (finalCar != null) {
-          int adj = adjustedEtaSeconds(finalCar.durationSec, finalCar.distanceM, origin);
-          double consumption = finalCar.distanceM / 100000d * prefs(a).getInt("fuel_l100", 8);
-          s.results.addView(text(a, "خودرو: " + formatMinutes(adj) + " • " + formatDistance(finalCar.distanceM), 16, WHITE, Typeface.BOLD));
-          s.results.addView(text(a, String.format(Locale.US, "مصرف تقریبی با تنظیم فعلی: %.1f لیتر", consumption), 12, MUTED, Typeface.NORMAL));
+          double liters = finalCar.distanceM / 100000d * fuelL100;
+          long fuelCost = Math.round(liters * fuelPrice);
+          s.results.addView(optionCard(a,
+              "🚗 خودرو",
+              formatMinutes(finalCar.durationSec) + " • " + formatDistance(finalCar.distanceM)
+                  + " • سوخت ≈ " + formatToman(fuelCost),
+              BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+          s.results.addView(text(a,
+              "هزینه خودرو فقط سوخت است؛ عوارض، پارکینگ و ترافیک زنده در این عدد لحاظ نشده‌اند.",
+              10, MUTED, Typeface.NORMAL));
         }
-        s.results.addView(text(a, "پیاده: حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20), 15, WHITE, Typeface.NORMAL));
-        s.results.addView(text(a, finalMetro ? "مترو/ترکیبی: ایستگاه مناسب در هر دو سمت پیدا شد" : "مترو/ترکیبی: ایستگاه مناسب در هر دو سمت پیدا نشد", 14, finalMetro ? GREEN : AMBER, Typeface.BOLD));
-        s.results.addView(button(a, "مسیر خودرو", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
-        if (finalMetro) s.results.addView(button(a, "مسیر مترو/ترکیبی", GREEN, () -> routeTo(a, dest, Router.Transit)));
-        s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
-        setStatus(s, "مقایسه برای «" + dest.title + "» آماده است", GREEN);
+
+        if (finalMixed != null) {
+          long cost = metroFare;
+          if ("تاکسی".equals(finalMixed.accessMode))
+            cost += taxiBase + Math.round((finalMixed.accessDistanceM / 1000d) * taxiPerKm);
+          if ("تاکسی".equals(finalMixed.egressMode))
+            cost += taxiBase + Math.round((finalMixed.egressDistanceM / 1000d) * taxiPerKm);
+          s.results.addView(optionCard(a,
+              "🚇 ترکیبی",
+              formatMinutes(finalMixed.totalSec) + " • " + finalMixed.stationCount + " ایستگاه • "
+                  + finalMixed.transfers + " تعویض • هزینه تنظیم‌شده ≈ " + formatToman(cost),
+              GREEN, () -> buildMixedPlan(a, s, origin, dest)));
+        }
+
+        if (walkSec < Integer.MAX_VALUE) {
+          s.results.addView(optionCard(a,
+              "🚶 پیاده",
+              "حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20d) + " • هزینه ۰",
+              CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+        }
+
+        if (finalCar == null && finalMixed == null && walkSec == Integer.MAX_VALUE)
+          setStatus(s, "هیچ گزینه قابل محاسبه‌ای آماده نشد.", AMBER);
+        else
+          setStatus(s, "مقایسه برای «" + dest.title + "» آماده است", GREEN);
       });
     }, "nv-v031-compare").start();
   }
@@ -1065,13 +1103,54 @@ public final class NvV031Actions implements DefaultLifecycleObserver {
   }
 
   public static void openPreferences(MwmActivity a) {
-    Screen s = screen(a, "ترجیحات سفر هوشمند", "تنظیمات واقعی برای ETA، مصرف و هشدارها");
-    s.results.addView(text(a, "مصرف سوخت مبنا برای مقایسه زمان/مصرف:", 14, WHITE, Typeface.BOLD));
+    Screen s = screen(a, "ترجیحات سفر هوشمند", "هزینه‌ها قابل ویرایش‌اند و فقط برای مقایسه تقریبی استفاده می‌شوند");
+    SharedPreferences p = prefs(a);
+
+    s.results.addView(text(a, "مصرف سوخت:", 14, WHITE, Typeface.BOLD));
     int[] fuel = {6, 8, 10, 12};
-    for (int f : fuel) s.results.addView(button(a, f + " لیتر در ۱۰۰ کیلومتر", prefs(a).getInt("fuel_l100", 8) == f ? GREEN : PANEL2, () -> {
-      prefs(a).edit().putInt("fuel_l100", f).apply(); Toast.makeText(a, "مصرف مبنا ذخیره شد", Toast.LENGTH_SHORT).show(); removeScreen(a);
+    LinearLayout fuelRow = new LinearLayout(a);
+    fuelRow.setOrientation(LinearLayout.HORIZONTAL);
+    fuelRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    for (int f : fuel) fuelRow.addView(smallButton(a, f + " L/100", p.getInt("fuel_l100",8)==f?GREEN:PANEL2,
+        () -> p.edit().putInt("fuel_l100", f).apply()), weight(a));
+    s.results.addView(fuelRow,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(a,44)));
+
+    EditText fuelPrice = numberInput(a, "قیمت هر لیتر سوخت (تومان)", p.getInt("fuel_price_toman",3000));
+    EditText taxiBase = numberInput(a, "هزینه پایه تاکسی (تومان)", p.getInt("taxi_base_toman",25000));
+    EditText taxiKm = numberInput(a, "هزینه تاکسی به ازای هر km (تومان)", p.getInt("taxi_per_km_toman",9000));
+    EditText metroFare = numberInput(a, "کرایه مترو (تومان)", p.getInt("metro_fare_toman",6000));
+    s.results.addView(fuelPrice); s.results.addView(taxiBase); s.results.addView(taxiKm); s.results.addView(metroFare);
+
+    s.results.addView(button(a, "ذخیره هزینه‌های تقریبی", GREEN, () -> {
+      p.edit()
+        .putInt("fuel_price_toman", parsePositiveInt(fuelPrice,3000))
+        .putInt("taxi_base_toman", parsePositiveInt(taxiBase,25000))
+        .putInt("taxi_per_km_toman", parsePositiveInt(taxiKm,9000))
+        .putInt("metro_fare_toman", parsePositiveInt(metroFare,6000))
+        .apply();
+      Toast.makeText(a,"تنظیمات هزینه ذخیره شد",Toast.LENGTH_SHORT).show();
     }));
     s.results.addView(button(a, "تنظیم هشدارهای مسیر", BLUE, () -> openRouteAlerts(a)));
+  }
+
+  private static EditText numberInput(MwmActivity a,String hint,int value){
+    EditText e=input(a,hint);
+    e.setSingleLine(true);
+    e.setInputType(InputType.TYPE_CLASS_NUMBER);
+    e.setText(String.valueOf(value));
+    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(a,54));
+    lp.setMargins(0,dp(a,4),0,dp(a,4));
+    e.setLayoutParams(lp);
+    return e;
+  }
+
+  private static int parsePositiveInt(EditText e,int fallback){
+    try{return Math.max(0,Integer.parseInt(e.getText().toString().trim()));}
+    catch(Throwable ignored){return fallback;}
+  }
+
+  private static String formatToman(long value){
+    return String.format(Locale.US,"%,d تومان",Math.max(0,value));
   }
 
   private static List<Place> geocodeRanked(String query, Location origin) throws Exception {
