@@ -178,9 +178,9 @@ public final class NvSmartTravelUi {
     s.body.addView(toggleRow(a, "سریع‌ترین مسیر را پیشنهاد بده", "prefer_fastest", true, "⚡"));
     s.body.addView(toggleRow(a, "اجتناب از بزرگراه‌ها", "avoid_highways", false, "⊘"));
     s.body.addView(toggleRow(a, "مسیرهای پیاده‌روی کمتر", "less_walking", false, "🚶"));
-    s.body.addView(toggleRow(a, "ترجیح مسیرهای امن‌تر", "safer_route", true, "🛡"));
+    s.body.addView(toggleRow(a, "اجتناب از جاده‌های خاکی/نامناسب", "safer_route", true, "🛡"));
     s.body.addView(infoBanner(a, "i", "تنظیمات واقعی",
-        "مترو، تاکسی، هزینه و میزان پیاده‌روی مستقیماً در برنامه‌ریز NV استفاده می‌شوند. محدودیت بزرگراه و ایمنی به قابلیت موتور پایه نیز وابسته‌اند.",
+        "مترو، تاکسی، هزینه و میزان پیاده‌روی مستقیماً در برنامه‌ریز NV استفاده می‌شوند. اجتناب از بزرگراه و جاده خاکی مستقیماً به گزینه‌های قابل پشتیبانی موتور پایه متصل است.",
         CYAN));
     s.body.addView(primary(a, "تنظیم مصرف سوخت و هشدارها", BLUE, () -> go(a, () -> NvV031Actions.openPreferences(a))));
   }
