@@ -1016,8 +1016,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       for (int j = 0; j < toCount; j++) pairs.add(new int[]{i,j});
     }
     pairs.sort((x,y) -> Double.compare(
-        from.get(x[0]).distanceMeters + to.get(y[1]).distanceMeters,
-        from.get(y[0]).distanceMeters + to.get(x[1]).distanceMeters));
+        from.get(x[0]).distanceMeters + to.get(x[1]).distanceMeters,
+        from.get(y[0]).distanceMeters + to.get(y[1]).distanceMeters));
 
     for (int[] pair : pairs) {
       if (evaluated >= 7) break;
