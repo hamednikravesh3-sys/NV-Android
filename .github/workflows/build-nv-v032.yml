@@ -163,93 +163,12 @@ jobs:
         run: |
           ./gradlew --no-daemon -Px86_64 :app:assembleWebDebug
 
-      - name: Android 16 install and launch smoke test
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="$GITHUB_WORKSPACE/organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-32-web-debug.apk"
-          ADB="$ANDROID_SDK_ROOT/platform-tools/adb"
-          test -s "$APK"
-          test -x "$ADB"
-
-          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)
-          AVDMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name avdmanager | sort | tail -n 1)
-          test -x "$SDKMANAGER"
-          test -x "$AVDMANAGER"
-          export ANDROID_USER_HOME="$GITHUB_WORKSPACE/.android"
-          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
-          mkdir -p "$ANDROID_AVD_HOME"
-          set +o pipefail
-          yes | "$SDKMANAGER" "system-images;android-36;default;x86_64" >/tmp/nv-v032-sdkmanager.txt 2>&1
-          SDK_RC=${PIPESTATUS[1]}
-          set -o pipefail
-          test "$SDK_RC" -eq 0
-          echo "no" | "$AVDMANAGER" create avd -f -n nv_api36 -k "system-images;android-36;default;x86_64" -d pixel_6 >/tmp/nv-v032-avd-create.txt 2>&1
-          "$ANDROID_SDK_ROOT/emulator/emulator" -list-avds | tee /tmp/nv-v032-avd-list.txt
-          grep -qx 'nv_api36' /tmp/nv-v032-avd-list.txt
-
-          "$ANDROID_SDK_ROOT/emulator/emulator" -avd nv_api36 -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -accel off > /tmp/nv-v032-emulator.txt 2>&1 &
-          EMU_PID=$!
-          cleanup() {
-            "$ADB" emu kill >/dev/null 2>&1 || true
-            kill "$EMU_PID" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          "$ADB" start-server
-          ready=0
-          for i in $(seq 1 150); do
-            state=$("$ADB" get-state 2>/dev/null || true)
-            boot=$("$ADB" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
-            if [ "$state" = "device" ] && [ "$boot" = "1" ]; then
-              ready=1
-              break
-            fi
-            sleep 4
-          done
-          if [ "$ready" != "1" ]; then
-            "$ADB" devices -l > /tmp/nv-v032-adb-devices.txt || true
-            "$ADB" logcat -d -t 300 > /tmp/nv-v032-logcat.txt || true
-            exit 1
-          fi
-
-          sleep 8
-          "$ADB" shell pm list packages >/tmp/nv-v032-packages-before.txt
-          "$ADB" install -r -t "$APK" | tee /tmp/nv-v032-install.txt
-          "$ADB" shell pm list packages | grep -q '^package:ir.nv.navigation.web.debug$'
-
-          "$ADB" logcat -c || true
-          "$ADB" shell am force-stop ir.nv.navigation.web.debug || true
-          "$ADB" shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v032-smoke.txt
-          sleep 8
-
-          grep -q 'Status: ok' /tmp/nv-v032-smoke.txt
-          "$ADB" shell pidof ir.nv.navigation.web.debug | tee /tmp/nv-v032-pid.txt
-          test -s /tmp/nv-v032-pid.txt
-          "$ADB" shell dumpsys activity activities | grep -q 'ir.nv.navigation.web.debug'
-          "$ADB" logcat -d -t 500 > /tmp/nv-v032-logcat.txt || true
-
-          if grep -E 'FATAL EXCEPTION|Process: ir\.nv\.navigation\.web\.debug.*has died|AndroidRuntime:.*ir\.nv\.navigation\.web\.debug' /tmp/nv-v032-logcat.txt; then
-            echo "NV process crash detected"
-            exit 1
-          fi
-
-      - name: Upload smoke diagnostics
-        if: always()
+      - name: Upload Android 16 x86_64 smoke APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.32-smoke-diagnostics
-          path: |
-            /tmp/nv-v032-smoke.txt
-            /tmp/nv-v032-logcat.txt
-            /tmp/nv-v032-install.txt
-            /tmp/nv-v032-pid.txt
-            /tmp/nv-v032-emulator.txt
-            /tmp/nv-v032-adb-devices.txt
-            /tmp/nv-v032-sdkmanager.txt
-            /tmp/nv-v032-avd-create.txt
-            /tmp/nv-v032-avd-list.txt
-          if-no-files-found: ignore
+          name: NV-v0.32.1-android16-x86-smoke
+          path: organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-33-web-debug.apk
+          if-no-files-found: error
           retention-days: 3
 
       - name: Upload final APK
@@ -261,3 +180,60 @@ jobs:
             dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk.sha256
           if-no-files-found: error
           retention-days: 14
+
+  smoke-android16:
+    needs: build-v032
+    runs-on: macos-15-intel
+    timeout-minutes: 40
+    steps:
+      - name: Download x86_64 smoke APK
+        uses: actions/download-artifact@v4
+        with:
+          name: NV-v0.32.1-android16-x86-smoke
+          path: smoke-apk
+
+      - name: Android 16 install and launch smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            set -euo pipefail
+            APK=$(find "$GITHUB_WORKSPACE/smoke-apk" -type f -name '*.apk' | head -n 1)
+            test -n "$APK"
+            test -s "$APK"
+            adb devices -l | tee /tmp/nv-v0321-adb-devices.txt
+            adb install -r -t "$APK" | tee /tmp/nv-v0321-install.txt
+            adb shell pm list packages | grep -q '^package:ir.nv.navigation.web.debug$'
+            adb logcat -c || true
+            adb shell am force-stop ir.nv.navigation.web.debug || true
+            adb shell am start -W -n ir.nv.navigation.web.debug/app.organicmaps.SplashActivity | tee /tmp/nv-v0321-smoke.txt
+            sleep 8
+            grep -q 'Status: ok' /tmp/nv-v0321-smoke.txt
+            adb shell pidof ir.nv.navigation.web.debug | tee /tmp/nv-v0321-pid.txt
+            test -s /tmp/nv-v0321-pid.txt
+            adb shell dumpsys activity activities | grep -q 'ir.nv.navigation.web.debug'
+            adb logcat -d -t 500 > /tmp/nv-v0321-logcat.txt || true
+            if grep -E 'FATAL EXCEPTION|Process: ir\.nv\.navigation\.web\.debug.*has died|AndroidRuntime:.*ir\.nv\.navigation\.web\.debug' /tmp/nv-v0321-logcat.txt; then
+              echo "NV process crash detected"
+              exit 1
+            fi
+
+      - name: Upload Android 16 smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NV-v0.32.1-android16-smoke-diagnostics
+          path: |
+            /tmp/nv-v0321-smoke.txt
+            /tmp/nv-v0321-logcat.txt
+            /tmp/nv-v0321-install.txt
+            /tmp/nv-v0321-pid.txt
+            /tmp/nv-v0321-adb-devices.txt
+          if-no-files-found: ignore
+          retention-days: 3
+
