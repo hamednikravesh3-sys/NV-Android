@@ -69,18 +69,18 @@ import java.util.WeakHashMap;
  * - keep claims honest: no fabricated live metro positions or fake traffic data.
  */
 public final class NvV032Actions implements DefaultLifecycleObserver {
-  private static final int BG = Color.rgb(8, 20, 32);
-  private static final int PANEL = Color.rgb(7, 33, 55);
-  private static final int PANEL2 = Color.rgb(10, 48, 78);
-  private static final int OUTLINE = Color.rgb(45, 126, 171);
+  private static final int BG = Color.rgb(15, 23, 42);
+  private static final int PANEL = Color.rgb(22, 34, 53);
+  private static final int PANEL2 = Color.rgb(30, 41, 59);
+  private static final int OUTLINE = Color.rgb(71, 85, 105);
   private static final int WHITE = Color.WHITE;
-  private static final int MUTED = Color.rgb(205, 220, 231);
-  private static final int CYAN = Color.rgb(40, 206, 255);
-  private static final int BLUE = Color.rgb(45, 139, 255);
-  private static final int PURPLE = Color.rgb(153, 102, 255);
-  private static final int GREEN = Color.rgb(42, 214, 113);
-  private static final int AMBER = Color.rgb(255, 188, 54);
-  private static final int RED = Color.rgb(255, 70, 89);
+  private static final int MUTED = Color.rgb(203, 213, 225);
+  private static final int CYAN = Color.rgb(14, 165, 233);
+  private static final int BLUE = Color.rgb(59, 130, 246);
+  private static final int PURPLE = Color.rgb(139, 92, 246);
+  private static final int GREEN = Color.rgb(34, 197, 94);
+  private static final int AMBER = Color.rgb(249, 115, 22);
+  private static final int RED = Color.rgb(239, 68, 68);
   private static final String SCREEN_TAG = "nv-v032-screen";
   private static final String ETA_TAG = "nv-v032-eta-chip";
   private static final String PREFS = "nv_v032";
@@ -679,23 +679,44 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
                                    Runnable searchAction, Runnable mapAction) {
     LinearLayout card = new LinearLayout(a);
     card.setOrientation(LinearLayout.VERTICAL);
-    card.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
-    card.setBackground(round(a, PANEL, accent, 16));
+    card.setPadding(dp(a, 14), dp(a, 12), dp(a, 14), dp(a, 12));
+    card.setBackground(round(a, PANEL, OUTLINE, 22));
+    card.setElevation(dp(a, 5));
+
+    LinearLayout head = new LinearLayout(a);
+    head.setOrientation(LinearLayout.HORIZONTAL);
+    head.setGravity(Gravity.CENTER_VERTICAL);
+    head.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
     String icon = "مبدأ".equals(title) ? "●" : "⚑";
-    card.addView(text(a, icon + "  " + title, 17, accent, Typeface.BOLD));
-    card.addView(text(a, value, 13, WHITE, Typeface.NORMAL));
+    TextView badge = text(a, icon, "مبدأ".equals(title) ? 23 : 27, accent, Typeface.BOLD);
+    badge.setGravity(Gravity.CENTER);
+    badge.setBackground(round(a,
+        Color.argb(32, Color.red(accent), Color.green(accent), Color.blue(accent)),
+        Color.argb(105, Color.red(accent), Color.green(accent), Color.blue(accent)), 18));
+    head.addView(badge, new LinearLayout.LayoutParams(dp(a, 44), dp(a, 44)));
+
+    LinearLayout tx = new LinearLayout(a);
+    tx.setOrientation(LinearLayout.VERTICAL);
+    tx.setPadding(dp(a, 10), 0, dp(a, 10), 0);
+    tx.addView(text(a, title, 14, MUTED, Typeface.BOLD));
+    TextView valueView = text(a, value, 16, WHITE, Typeface.BOLD);
+    valueView.setMaxLines(2);
+    tx.addView(valueView);
+    head.addView(tx, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    card.addView(head);
 
     LinearLayout row = new LinearLayout(a);
     row.setOrientation(LinearLayout.HORIZONTAL);
     row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    row.addView(smallButton(a, "جستجو", accent, searchAction), weight(a));
-    row.addView(smallButton(a, "روی نقشه", PANEL2, mapAction), weight(a));
-    card.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 46)));
+    row.setPadding(0, dp(a, 8), 0, 0);
+    row.addView(smallButton(a, "⌕  جستجو", accent, searchAction), weight(a));
+    row.addView(smallButton(a, "⌖  انتخاب روی نقشه", PANEL2, mapAction), weight(a));
+    card.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 50)));
 
     LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    lp.setMargins(dp(a, 4), dp(a, 6), dp(a, 4), dp(a, 6));
+    lp.setMargins(0, dp(a, 7), 0, dp(a, 7));
     card.setLayoutParams(lp);
     return card;
   }
@@ -1549,13 +1570,38 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private static View optionCard(MwmActivity a, String title, String subtitle, int color, Runnable action) {
     LinearLayout card = new LinearLayout(a);
     card.setOrientation(LinearLayout.VERTICAL);
-    card.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
-    card.setBackground(round(a, PANEL, color, 14));
-    card.addView(text(a, title, 15, WHITE, Typeface.BOLD));
-    card.addView(text(a, subtitle, 12, MUTED, Typeface.NORMAL));
-    card.addView(button(a, "انتخاب", color, action));
-    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    lp.setMargins(0, dp(a, 5), 0, dp(a, 5));
+    card.setPadding(dp(a, 14), dp(a, 12), dp(a, 14), dp(a, 12));
+    card.setBackground(round(a, PANEL, OUTLINE, 20));
+    card.setElevation(dp(a, 3));
+
+    LinearLayout titleRow = new LinearLayout(a);
+    titleRow.setOrientation(LinearLayout.HORIZONTAL);
+    titleRow.setGravity(Gravity.CENTER_VERTICAL);
+    titleRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+
+    View accent = new View(a);
+    accent.setBackground(round(a, color, color, 6));
+    titleRow.addView(accent, new LinearLayout.LayoutParams(dp(a, 5), dp(a, 34)));
+
+    LinearLayout copy = new LinearLayout(a);
+    copy.setOrientation(LinearLayout.VERTICAL);
+    copy.setPadding(dp(a, 10), 0, dp(a, 10), 0);
+    copy.addView(text(a, title, 16, WHITE, Typeface.BOLD));
+    TextView sub = text(a, subtitle, 12, MUTED, Typeface.NORMAL);
+    sub.setMaxLines(3);
+    copy.addView(sub);
+    titleRow.addView(copy, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    card.addView(titleRow);
+
+    TextView choose = smallButton(a, "انتخاب این مسیر", color, action);
+    LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 46));
+    cp.setMargins(0, dp(a, 10), 0, 0);
+    card.addView(choose, cp);
+
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(0, dp(a, 6), 0, dp(a, 6));
     card.setLayoutParams(lp);
     return card;
   }
@@ -2379,13 +2425,73 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   private static SharedPreferences prefs(Context c){return c.getSharedPreferences(PREFS,Context.MODE_PRIVATE);}
 
-  private static Screen screen(MwmActivity a,String title,String subtitle){removeScreen(a);ViewGroup host=a.findViewById(android.R.id.content);FrameLayout root=new FrameLayout(a);root.setTag(SCREEN_TAG);root.setBackgroundColor(BG);root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);host.addView(root,new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));LinearLayout col=new LinearLayout(a);col.setOrientation(LinearLayout.VERTICAL);col.setPadding(dp(a,14),dp(a,36),dp(a,14),dp(a,14));LinearLayout head=new LinearLayout(a);head.setOrientation(LinearLayout.HORIZONTAL);head.setGravity(Gravity.CENTER_VERTICAL);TextView x=text(a,"×",30,WHITE,Typeface.NORMAL);x.setGravity(Gravity.CENTER);x.setOnClickListener(v->removeScreen(a));head.addView(x,new LinearLayout.LayoutParams(dp(a,50),dp(a,54)));LinearLayout titles=new LinearLayout(a);titles.setOrientation(LinearLayout.VERTICAL);titles.addView(text(a,title,20,WHITE,Typeface.BOLD));titles.addView(text(a,subtitle,12,MUTED,Typeface.NORMAL));head.addView(titles,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));col.addView(head);TextView status=text(a,"",14,CYAN,Typeface.NORMAL);status.setPadding(dp(a,8),dp(a,8),dp(a,8),dp(a,8));col.addView(status);LinearLayout controls=new LinearLayout(a);controls.setOrientation(LinearLayout.VERTICAL);col.addView(controls);ScrollView sv=new ScrollView(a);LinearLayout results=new LinearLayout(a);results.setOrientation(LinearLayout.VERTICAL);results.setPadding(0,dp(a,5),0,dp(a,20));sv.addView(results);col.addView(sv,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,0,1f));root.addView(col,new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));return new Screen(root,status,controls,results);}
-  private static EditText input(MwmActivity a,String hint){EditText v=new EditText(a);v.setSingleLine(false);v.setMaxLines(3);v.setHint(hint);v.setHintTextColor(MUTED);v.setTextColor(WHITE);v.setTextSize(16);v.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);v.setPadding(dp(a,12),dp(a,8),dp(a,12),dp(a,8));v.setBackground(round(a,PANEL2,OUTLINE,14));v.setImeOptions(EditorInfo.IME_ACTION_GO);return v;}
-  private static void setStatus(Screen s,String t,int c){s.status.setText(t);s.status.setTextColor(c);}
+  private static Screen screen(MwmActivity a, String title, String subtitle) {
+    removeScreen(a);
+    ViewGroup host = a.findViewById(android.R.id.content);
+    FrameLayout root = new FrameLayout(a);
+    root.setTag(SCREEN_TAG);
+    root.setBackgroundColor(BG);
+    root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    host.addView(root, new ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+    LinearLayout col = new LinearLayout(a);
+    col.setOrientation(LinearLayout.VERTICAL);
+    col.setPadding(dp(a, 16), dp(a, 28), dp(a, 16), dp(a, 14));
+
+    LinearLayout head = new LinearLayout(a);
+    head.setOrientation(LinearLayout.HORIZONTAL);
+    head.setGravity(Gravity.CENTER_VERTICAL);
+    head.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+
+    LinearLayout titles = new LinearLayout(a);
+    titles.setOrientation(LinearLayout.VERTICAL);
+    TextView titleView = text(a, title, 22, WHITE, Typeface.BOLD);
+    TextView subtitleView = text(a, subtitle, 12, MUTED, Typeface.NORMAL);
+    subtitleView.setMaxLines(2);
+    titles.addView(titleView);
+    titles.addView(subtitleView);
+    head.addView(titles, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+    TextView x = text(a, "×", 27, WHITE, Typeface.NORMAL);
+    x.setGravity(Gravity.CENTER);
+    x.setBackground(round(a, PANEL2, OUTLINE, 18));
+    x.setOnClickListener(v -> removeScreen(a));
+    head.addView(x, new LinearLayout.LayoutParams(dp(a, 46), dp(a, 46)));
+    col.addView(head);
+
+    TextView status = text(a, "", 13, CYAN, Typeface.BOLD);
+    status.setPadding(dp(a, 12), dp(a, 9), dp(a, 12), dp(a, 9));
+    LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    sp.setMargins(0, dp(a, 10), 0, dp(a, 4));
+    col.addView(status, sp);
+
+    LinearLayout controls = new LinearLayout(a);
+    controls.setOrientation(LinearLayout.VERTICAL);
+    col.addView(controls);
+
+    ScrollView sv = new ScrollView(a);
+    sv.setFillViewport(false);
+    sv.setClipToPadding(false);
+    LinearLayout results = new LinearLayout(a);
+    results.setOrientation(LinearLayout.VERTICAL);
+    results.setPadding(0, dp(a, 8), 0, dp(a, 24));
+    sv.addView(results);
+    col.addView(sv, new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+    root.addView(col, new FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    return new Screen(root, status, controls, results);
+  }
+
+  private static EditText input(MwmActivity a,String hint){EditText v=new EditText(a);v.setSingleLine(true);v.setHint(hint);v.setHintTextColor(MUTED);v.setTextColor(WHITE);v.setTextSize(16);v.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);v.setPadding(dp(a,16),0,dp(a,16),0);v.setBackground(round(a,PANEL2,OUTLINE,18));v.setImeOptions(EditorInfo.IME_ACTION_SEARCH);v.setElevation(dp(a,2));return v;}
+  private static void setStatus(Screen s,String t,int c){s.status.setText(t);s.status.setTextColor(c);s.status.setBackground(round(s.status.getContext(),Color.argb(28,Color.red(c),Color.green(c),Color.blue(c)),Color.argb(75,Color.red(c),Color.green(c),Color.blue(c)),16));}
   private static void removeScreen(MwmActivity a){ViewGroup h=a.findViewById(android.R.id.content);if(h==null)return;View v=h.findViewWithTag(SCREEN_TAG);if(v!=null)h.removeView(v);}
   private static boolean alive(MwmActivity a,Screen s){ViewGroup h=a.findViewById(android.R.id.content);return h!=null&&h.findViewWithTag(SCREEN_TAG)==s.root;}
-  private static TextView button(MwmActivity a,String label,int color,Runnable r){TextView v=text(a,label,14,WHITE,Typeface.BOLD);v.setGravity(Gravity.CENTER);v.setBackground(round(a,color,color==PANEL2?OUTLINE:color,14));v.setOnClickListener(x->r.run());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(a,52));p.setMargins(dp(a,4),dp(a,5),dp(a,4),dp(a,5));v.setLayoutParams(p);return v;}
-  private static TextView smallButton(MwmActivity a,String label,int color,Runnable r){TextView v=text(a,label,11,WHITE,Typeface.BOLD);v.setGravity(Gravity.CENTER);v.setBackground(round(a,color,color,12));v.setOnClickListener(x->r.run());return v;}
+  private static TextView button(MwmActivity a,String label,int color,Runnable r){TextView v=text(a,label,14,WHITE,Typeface.BOLD);v.setGravity(Gravity.CENTER);v.setBackground(round(a,color,color==PANEL2?OUTLINE:color,18));v.setElevation(dp(a,3));v.setOnClickListener(x->r.run());LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(a,56));p.setMargins(0,dp(a,6),0,dp(a,6));v.setLayoutParams(p);return v;}
+  private static TextView smallButton(MwmActivity a,String label,int color,Runnable r){TextView v=text(a,label,12,WHITE,Typeface.BOLD);v.setGravity(Gravity.CENTER);v.setBackground(round(a,color,color==PANEL2?OUTLINE:color,16));v.setOnClickListener(x->r.run());return v;}
   private static TextView text(MwmActivity a,String s,int sp,int color,int style){TextView v=new TextView(a);v.setText(s);v.setTextSize(sp);v.setTextColor(color);v.setTypeface(Typeface.DEFAULT,style);v.setGravity(Gravity.RIGHT);v.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);return v;}
   private static LinearLayout.LayoutParams weight(MwmActivity a){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.MATCH_PARENT,1f);p.setMargins(dp(a,3),dp(a,3),dp(a,3),dp(a,3));return p;}
   private static GradientDrawable round(Context c,int fill,int stroke,int radius){GradientDrawable d=new GradientDrawable();d.setColor(fill);d.setCornerRadius(dp(c,radius));d.setStroke(dp(c,1),stroke);return d;}
