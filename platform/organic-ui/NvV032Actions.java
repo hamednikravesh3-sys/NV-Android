@@ -920,7 +920,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
         if (finalMixed != null) {
           String details = formatMinutes(finalMixed.totalSec) + " • "
-              + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
+              + mixedModeLabel(finalMixed.accessMode) + " → مترو → " + mixedModeLabel(finalMixed.egressMode)
+              + " • " + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
               + " • حدود " + formatToman(estimateMixedCostToman(a, finalMixed));
           s.results.addView(optionCard(a,
               "🚇 ترکیبی" + ("ترکیبی".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
@@ -973,7 +974,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
         setStatus(s, "برآورد سفر ترکیبی برای «" + dest.title + "» آماده است", GREEN);
         s.results.addView(text(a, "کل برآورد: " + formatMinutes(result.totalSec), 18, WHITE, Typeface.BOLD));
-        s.results.addView(stepCard(a, "۱", result.accessMode + " تا " + result.fromStation.title,
+        s.results.addView(stepCard(a, "۱", mixedModeLabel(result.accessMode) + " تا " + result.fromStation.title,
             formatMinutes(result.accessSec) + " • " + formatDistance(result.accessDistanceM), GREEN));
         s.results.addView(stepCard(a, "۲", "مترو: " + result.fromStation.title + " → " + result.toStation.title,
             formatMinutes(result.metroSec)
@@ -981,7 +982,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
                 + (result.metroStops >= 0 ? " • " + result.metroStops + " ایستگاه" : "")
                 + (result.metroTransfers >= 0 ? " • " + result.metroTransfers + " تعویض" : "")
                 + " • بدون داده زنده قطار", BLUE));
-        s.results.addView(stepCard(a, "۳", result.egressMode + " تا مقصد",
+        s.results.addView(stepCard(a, "۳", mixedModeLabel(result.egressMode) + " تا مقصد",
             formatMinutes(result.egressSec) + " • " + formatDistance(result.egressDistanceM), PURPLE));
         s.results.addView(text(a, "هزینه تقریبی کل: " + formatToman(estimateMixedCostToman(a, result)),
             13, CYAN, Typeface.BOLD));
@@ -993,41 +994,49 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   private static MixedEstimate estimateMixed(MwmActivity a, Location origin, Place dest) throws Exception {
     if (!prefs(a).getBoolean("use_metro", true)) return null;
-    List<Place> from = metroStations(origin.getLatitude(), origin.getLongitude(), 5_000);
-    List<Place> to = metroStations(dest.lat, dest.lon, 5_000);
-    if (from.isEmpty() || to.isEmpty()) return null;
 
     boolean minCost = prefs(a).getBoolean("min_cost", false);
     boolean lessWalking = prefs(a).getBoolean("less_walking", false);
-    boolean taxi = prefs(a).getBoolean("use_taxi", true) && (!minCost || lessWalking);
+    boolean allowVehicle = prefs(a).getBoolean("use_taxi", true);
 
-    // Do not blindly choose the nearest station on each side.
-    // Evaluate a few low-access-distance pairs and choose the best connected metro pair.
+    int stationRadius = allowVehicle && !minCost ? 8_000 : 5_000;
+    List<Place> from = metroStations(origin.getLatitude(), origin.getLongitude(), stationRadius);
+    List<Place> to = metroStations(dest.lat, dest.lon, stationRadius);
+    if (from.isEmpty() || to.isEmpty()) return null;
+
     Place aStation = null, bStation = null;
     MetroRouteEstimate metro = null;
     double bestPreliminary = Double.MAX_VALUE;
     int evaluated = 0;
-    int fromCount = Math.min(3, from.size());
-    int toCount = Math.min(3, to.size());
+    int fromCount = Math.min(4, from.size());
+    int toCount = Math.min(4, to.size());
 
     List<int[]> pairs = new ArrayList<>();
     for (int i = 0; i < fromCount; i++) {
       for (int j = 0; j < toCount; j++) pairs.add(new int[]{i,j});
     }
     pairs.sort((x,y) -> Double.compare(
-        from.get(x[0]).distanceMeters + to.get(x[1]).distanceMeters,
-        from.get(y[0]).distanceMeters + to.get(y[1]).distanceMeters));
+        from.get(x[0]).distanceMeters + to.get(y[1]).distanceMeters,
+        from.get(y[0]).distanceMeters + to.get(x[1]).distanceMeters));
 
     for (int[] pair : pairs) {
-      if (evaluated >= 4) break;
+      if (evaluated >= 7) break;
       Place f = from.get(pair[0]), t = to.get(pair[1]);
       MetroRouteEstimate candidate = null;
       try { candidate = metroNetworkEstimate(f, t); } catch (Throwable ignored) {}
       evaluated++;
       if (candidate == null) continue;
 
-      double accessApprox = f.distanceMeters / (taxi ? 8.0d : 1.35d);
-      double egressApprox = t.distanceMeters / (taxi ? 8.0d : 1.35d);
+      double accessWalkApprox = f.distanceMeters / 1.35d;
+      double egressWalkApprox = t.distanceMeters / 1.35d;
+      double accessVehicleApprox = f.distanceMeters / 8.0d + 3 * 60d;
+      double egressVehicleApprox = t.distanceMeters / 8.0d + 5 * 60d;
+
+      double accessApprox = preliminaryLegSeconds(
+          accessWalkApprox, accessVehicleApprox, allowVehicle, minCost, lessWalking);
+      double egressApprox = preliminaryLegSeconds(
+          egressWalkApprox, egressVehicleApprox, allowVehicle, minCost, lessWalking);
+
       double preliminary = accessApprox + candidate.seconds + egressApprox
           + candidate.transfers * 90d;
       if (preliminary < bestPreliminary) {
@@ -1043,17 +1052,30 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       bStation = to.get(0);
     }
 
-    RoadEstimate access;
-    RoadEstimate egress;
-    if (taxi) {
-      access = osrm(origin.getLatitude(), origin.getLongitude(), aStation.lat, aStation.lon);
-      egress = osrm(bStation.lat, bStation.lon, dest.lat, dest.lon);
-    } else {
-      double ad = haversine(origin.getLatitude(), origin.getLongitude(), aStation.lat, aStation.lon) * 1.20d;
-      double ed = haversine(bStation.lat, bStation.lon, dest.lat, dest.lon) * 1.20d;
-      access = new RoadEstimate(ad, walkingSeconds(ad / 1.20d));
-      egress = new RoadEstimate(ed, walkingSeconds(ed / 1.20d));
+    double accessDirect = haversine(origin.getLatitude(), origin.getLongitude(), aStation.lat, aStation.lon);
+    double egressDirect = haversine(bStation.lat, bStation.lon, dest.lat, dest.lon);
+    double accessWalkDistance = accessDirect * 1.20d;
+    double egressWalkDistance = egressDirect * 1.20d;
+    RoadEstimate accessWalk = new RoadEstimate(accessWalkDistance, walkingSeconds(accessDirect));
+    RoadEstimate egressWalk = new RoadEstimate(egressWalkDistance, walkingSeconds(egressDirect));
+
+    RoadEstimate accessVehicle = null;
+    RoadEstimate egressVehicle = null;
+    if (allowVehicle && !minCost) {
+      try {
+        RoadEstimate raw = osrm(origin.getLatitude(), origin.getLongitude(), aStation.lat, aStation.lon);
+        if (raw != null)
+          accessVehicle = new RoadEstimate(raw.distanceM, raw.durationSec + 3 * 60);
+      } catch (Throwable ignored) {}
+      try {
+        RoadEstimate raw = osrm(bStation.lat, bStation.lon, dest.lat, dest.lon);
+        if (raw != null)
+          egressVehicle = new RoadEstimate(raw.distanceM, raw.durationSec + 5 * 60);
+      } catch (Throwable ignored) {}
     }
+
+    MixedLeg access = chooseMixedLeg(accessWalk, accessVehicle, allowVehicle, minCost, lessWalking);
+    MixedLeg egress = chooseMixedLeg(egressWalk, egressVehicle, allowVehicle, minCost, lessWalking);
 
     double metroDistance;
     int metroSec;
@@ -1074,16 +1096,37 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       metroSource = "برآورد فاصله‌ای";
     }
 
-    int total = access.durationSec + metroSec + egress.durationSec;
+    int total = access.estimate.durationSec + metroSec + egress.estimate.durationSec;
     return new MixedEstimate(
         aStation, bStation,
-        access.distanceM, access.durationSec,
+        access.estimate.distanceM, access.estimate.durationSec,
         metroDistance, metroSec,
-        egress.distanceM, egress.durationSec,
+        egress.estimate.distanceM, egress.estimate.durationSec,
         total,
-        taxi ? "تاکسی" : "پیاده",
-        taxi ? "تاکسی" : "پیاده",
+        access.mode,
+        egress.mode,
         metroStops, metroTransfers, metroSource);
+  }
+
+  private static double preliminaryLegSeconds(double walkSec, double vehicleSec,
+                                              boolean allowVehicle, boolean minCost,
+                                              boolean lessWalking) {
+    if (!allowVehicle || minCost) return walkSec;
+    if (lessWalking) return vehicleSec;
+    return vehicleSec + 90d < walkSec ? vehicleSec : walkSec;
+  }
+
+  private static MixedLeg chooseMixedLeg(RoadEstimate walk, RoadEstimate vehicle,
+                                         boolean allowVehicle, boolean minCost,
+                                         boolean lessWalking) {
+    if (!allowVehicle || minCost || vehicle == null) return new MixedLeg(walk, "پیاده");
+    if (lessWalking) return new MixedLeg(vehicle, "تاکسی");
+    if (vehicle.durationSec + 90 < walk.durationSec) return new MixedLeg(vehicle, "تاکسی");
+    return new MixedLeg(walk, "پیاده");
+  }
+
+  private static String mixedModeLabel(String mode) {
+    return "تاکسی".equals(mode) ? "خودرو/تاکسی" : "پیاده";
   }
 
   private static MetroRouteEstimate metroNetworkEstimate(Place from, Place to) throws Exception {
@@ -1328,7 +1371,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
           s.results.addView(optionCard(a,
               "🚇 سفر ترکیبی",
               formatMinutes(finalMixed.totalSec) + " • "
-                  + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
+                  + mixedModeLabel(finalMixed.accessMode) + " → مترو → " + mixedModeLabel(finalMixed.egressMode)
+                  + " • " + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
                   + " • حدود " + formatToman(cost),
               GREEN,
               () -> startMixedSession(a, origin, finalMixed, dest)));
@@ -2053,6 +2097,10 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private static final class Screen { final FrameLayout root;final TextView status;final LinearLayout controls,results;Screen(FrameLayout r,TextView s,LinearLayout c,LinearLayout o){root=r;status=s;controls=c;results=o;} }
   private static final class Place { final String title,address;final double lat,lon,distanceMeters;final String category,type;int score;Place(String t,String a,double la,double lo,double d,String c,String ty,int sc){title=t;address=a;lat=la;lon=lo;distanceMeters=d;category=c;type=ty;score=sc;} }
   private static final class RoadEstimate { final double distanceM;final int durationSec;RoadEstimate(double d,int t){distanceM=d;durationSec=t;} }
+  private static final class MixedLeg {
+    final RoadEstimate estimate; final String mode;
+    MixedLeg(RoadEstimate estimate, String mode) { this.estimate=estimate; this.mode=mode; }
+  }
   private static final class MixedEstimate {
     final Place fromStation, toStation;
     final double accessDistanceM, metroDistanceM, egressDistanceM;
