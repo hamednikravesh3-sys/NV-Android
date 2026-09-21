@@ -18,16 +18,17 @@ import app.organicmaps.sdk.settings.MapLanguageCode;
 
 /** Compact Persian NV home overlay. All action cards delegate to real runtime features. */
 public final class NvMapMenuOverlay {
-  private static final int PANEL = Color.rgb(7, 33, 55);
-  private static final int PANEL_2 = Color.rgb(10, 48, 78);
-  private static final int CYAN = Color.rgb(40, 206, 255);
-  private static final int BLUE = Color.rgb(45, 139, 255);
-  private static final int GREEN = Color.rgb(42, 214, 113);
-  private static final int AMBER = Color.rgb(255, 188, 54);
-  private static final int RED = Color.rgb(255, 70, 89);
+  private static final int PANEL = Color.rgb(15, 23, 42);
+  private static final int PANEL_2 = Color.rgb(30, 41, 59);
+  private static final int CYAN = Color.rgb(14, 165, 233);
+  private static final int BLUE = Color.rgb(59, 130, 246);
+  private static final int GREEN = Color.rgb(34, 197, 94);
+  private static final int AMBER = Color.rgb(249, 115, 22);
+  private static final int PURPLE = Color.rgb(139, 92, 246);
+  private static final int RED = Color.rgb(239, 68, 68);
   private static final int WHITE = Color.WHITE;
-  private static final int MUTED = Color.rgb(205, 220, 231);
-  private static final int OUTLINE = Color.rgb(45, 126, 171);
+  private static final int MUTED = Color.rgb(203, 213, 225);
+  private static final int OUTLINE = Color.rgb(71, 85, 105);
 
   private static final String[] TITLES = {
       "صفحه اصلی", "مسیریابی", "اطراف من", "اورژانس", "جزئیات مکان", "هشدارهای مسیر",
@@ -75,28 +76,72 @@ public final class NvMapMenuOverlay {
     }
 
     private void addSearchBar() {
-      final LinearLayout bar = new LinearLayout(activity);
-      bar.setOrientation(LinearLayout.HORIZONTAL);
-      bar.setGravity(Gravity.CENTER_VERTICAL);
-      bar.setPadding(dp(10), dp(6), dp(10), dp(6));
-      bar.setBackground(round(Color.argb(250, 7, 33, 55), CYAN, 18));
-      bar.setElevation(dp(10));
-      bar.setClickable(true);
-      bar.setOnClickListener(v -> NvV032Actions.openRoutePlanner(activity));
+      final LinearLayout card = new LinearLayout(activity);
+      card.setOrientation(LinearLayout.VERTICAL);
+      card.setPadding(dp(14), dp(10), dp(14), dp(10));
+      card.setBackground(round(Color.argb(248, 15, 23, 42), Color.argb(120, 148, 163, 184), 24));
+      card.setElevation(dp(14));
+      card.setClickable(true);
+      card.setOnClickListener(v -> NvV032Actions.openRoutePlanner(activity));
 
-      final View nv = NvAnimatedBrand.createLogo(activity, 16, () -> NvRuntimeController.showCodeMenu(activity));
-      final LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(dp(50), dp(42));
-      np.setMargins(0, 0, dp(8), 0);
-      bar.addView(nv, np);
+      final LinearLayout titleRow = new LinearLayout(activity);
+      titleRow.setOrientation(LinearLayout.HORIZONTAL);
+      titleRow.setGravity(Gravity.CENTER_VERTICAL);
+      titleRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
-      final TextView prompt = label("مبدأ و مقصد را انتخاب کنید", 16, WHITE, Typeface.BOLD, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-      prompt.setSingleLine(true);
-      bar.addView(prompt, new LinearLayout.LayoutParams(0, dp(44), 1f));
-      bar.addView(label("⌕", 28, CYAN, Typeface.BOLD, Gravity.CENTER), new LinearLayout.LayoutParams(dp(44), dp(44)));
+      final View nv = NvAnimatedBrand.createLogo(activity, 14, () -> NvRuntimeController.showCodeMenu(activity));
+      final LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(dp(38), dp(34));
+      np.setMargins(dp(8), 0, 0, 0);
+      titleRow.addView(nv, np);
 
-      final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58), Gravity.TOP);
-      lp.setMargins(dp(14), dp(34), dp(14), 0);
-      overlay.addView(bar, lp);
+      final TextView title = label("مسیریابی NV", 13, MUTED, Typeface.BOLD, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+      titleRow.addView(title, new LinearLayout.LayoutParams(0, dp(34), 1f));
+
+      final TextView hint = label("انتخاب", 12, CYAN, Typeface.BOLD, Gravity.CENTER);
+      hint.setBackground(round(Color.argb(50, 14, 165, 233), Color.argb(90, 14, 165, 233), 14));
+      hint.setPadding(dp(10), 0, dp(10), 0);
+      titleRow.addView(hint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(30)));
+      card.addView(titleRow, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(36)));
+
+      card.addView(endpointPreview("●", "مبدأ", "جستجو یا انتخاب روی نقشه", PURPLE));
+
+      final View divider = new View(activity);
+      divider.setBackgroundColor(Color.argb(70, 148, 163, 184));
+      final LinearLayout.LayoutParams dpv = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+      dpv.setMargins(dp(42), 0, dp(8), 0);
+      card.addView(divider, dpv);
+
+      card.addView(endpointPreview("⚑", "مقصد", "جستجو یا انتخاب روی نقشه", AMBER));
+
+      final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT, dp(132), Gravity.TOP);
+      lp.setMargins(dp(14), dp(28), dp(14), 0);
+      overlay.addView(card, lp);
+    }
+
+    private View endpointPreview(String icon, String title, String subtitle, int accent) {
+      final LinearLayout row = new LinearLayout(activity);
+      row.setOrientation(LinearLayout.HORIZONTAL);
+      row.setGravity(Gravity.CENTER_VERTICAL);
+      row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+      row.setPadding(dp(4), dp(3), dp(4), dp(3));
+
+      final TextView mark = label(icon, "⚑".equals(icon) ? 25 : 22, accent, Typeface.BOLD, Gravity.CENTER);
+      row.addView(mark, new LinearLayout.LayoutParams(dp(38), dp(36)));
+
+      final LinearLayout texts = new LinearLayout(activity);
+      texts.setOrientation(LinearLayout.VERTICAL);
+      texts.setGravity(Gravity.RIGHT);
+      final TextView t = label(title, 14, WHITE, Typeface.BOLD, Gravity.RIGHT);
+      final TextView s = label(subtitle, 11, MUTED, Typeface.NORMAL, Gravity.RIGHT);
+      s.setSingleLine(true);
+      texts.addView(t);
+      texts.addView(s);
+      row.addView(texts, new LinearLayout.LayoutParams(0, dp(42), 1f));
+
+      final TextView arrow = label("‹", 28, MUTED, Typeface.NORMAL, Gravity.CENTER);
+      row.addView(arrow, new LinearLayout.LayoutParams(dp(30), dp(38)));
+      return row;
     }
 
     private void addQuickBar() {
@@ -110,17 +155,19 @@ public final class NvMapMenuOverlay {
       row.addView(location, quickWeight());
       row.addView(quickButton("✚", "اطراف من", CYAN, this::showNearby), quickWeight());
       row.addView(quickButton("SOS", "اضطراری", RED, this::showSOS), quickWeight());
-      row.addView(quickButton("☰", "منوها", AMBER, this::showAllMenus), quickWeight());
+      row.addView(quickButton("☰", "بیشتر", AMBER, this::showAllMenus), quickWeight());
 
-      final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48), Gravity.TOP);
-      lp.setMargins(dp(14), dp(100), dp(14), 0);
+      final FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT, dp(52), Gravity.TOP);
+      lp.setMargins(dp(14), dp(170), dp(14), 0);
       overlay.addView(row, lp);
     }
 
     private TextView quickButton(String icon, String title, int accent, Runnable action) {
-      final TextView t = label(icon + "  " + title, 12, WHITE, Typeface.BOLD, Gravity.CENTER);
+      final TextView t = label(icon + "  " + title, 11, WHITE, Typeface.BOLD, Gravity.CENTER);
       t.setSingleLine(true);
-      t.setBackground(round(Color.argb(245, 8, 39, 64), accent, 14));
+      t.setBackground(round(Color.argb(238, 15, 23, 42), Color.argb(150, Color.red(accent), Color.green(accent), Color.blue(accent)), 18));
+      t.setElevation(dp(8));
       t.setClickable(true);
       t.setOnClickListener(v -> action.run());
       return t;
@@ -169,7 +216,7 @@ public final class NvMapMenuOverlay {
     private View menuCard(int id) {
       final int idx = id - 1;
       final TextView card = label(ICONS[idx] + "\n" + TITLES[idx], 14, WHITE, Typeface.BOLD, Gravity.CENTER);
-      card.setBackground(round(PANEL_2, id == 12 ? RED : OUTLINE, 16));
+      card.setBackground(round(Color.argb(245, 30, 41, 59), id == 4 ? RED : OUTLINE, 20));
       card.setPadding(dp(6), dp(5), dp(6), dp(5));
       card.setClickable(true);
       card.setOnClickListener(v -> { closeSheet(); handleMenu(id); });
@@ -237,8 +284,8 @@ public final class NvMapMenuOverlay {
       final LinearLayout p = new LinearLayout(activity);
       p.setOrientation(LinearLayout.VERTICAL);
       p.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-      p.setBackground(round(Color.rgb(5, 27, 47), CYAN, 22));
-      p.setElevation(dp(20));
+      p.setBackground(round(Color.argb(252, 15, 23, 42), OUTLINE, 28));
+      p.setElevation(dp(24));
       p.setClickable(true);
       p.setOnClickListener(v -> {});
       return p;
@@ -265,7 +312,7 @@ public final class NvMapMenuOverlay {
 
     private View primary(String title, int color, Runnable action) {
       final TextView b = label(title, 14, WHITE, Typeface.BOLD, Gravity.CENTER);
-      b.setBackground(round(color, color == PANEL_2 ? OUTLINE : color, 15));
+      b.setBackground(round(color, color == PANEL_2 ? OUTLINE : color, 18));
       b.setClickable(true);
       b.setOnClickListener(v -> action.run());
       final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
@@ -276,7 +323,7 @@ public final class NvMapMenuOverlay {
 
     private View actionCard(String title, Runnable action) {
       final TextView t = label(title, 14, WHITE, Typeface.BOLD, Gravity.CENTER);
-      t.setBackground(round(PANEL_2, OUTLINE, 14));
+      t.setBackground(round(Color.argb(245, 30, 41, 59), OUTLINE, 18));
       t.setClickable(true);
       t.setOnClickListener(v -> action.run());
       return t;
