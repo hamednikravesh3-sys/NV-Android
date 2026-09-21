@@ -118,6 +118,32 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     void onPointSelected(double lat, double lon, String address);
   }
 
+  public interface MapPointSearchCallback
+  {
+    void onResults(List<MapPointSearchResult> results, String error);
+  }
+
+  public interface MapPointSearchListener
+  {
+    void onSearch(String query, MapPointSearchCallback callback);
+  }
+
+  public static final class MapPointSearchResult
+  {
+    public final String title;
+    public final String subtitle;
+    public final double lat;
+    public final double lon;
+
+    public MapPointSearchResult(String title, String subtitle, double lat, double lon)
+    {
+      this.title = title == null ? "" : title;
+      this.subtitle = subtitle == null ? "" : subtitle;
+      this.lat = lat;
+      this.lon = lon;
+    }
+  }
+
 
   private final MwmActivity activity;
   private final ViewGroup host;
@@ -234,9 +260,20 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
                                       boolean originPoint,
                                       MapPointSelectionListener listener)
   {
+    selectPointOnMap(activity, title, subtitle, confirmLabel, originPoint, null, listener);
+  }
+
+  public static void selectPointOnMap(MwmActivity activity,
+                                      String title,
+                                      String subtitle,
+                                      String confirmLabel,
+                                      boolean originPoint,
+                                      MapPointSearchListener searchListener,
+                                      MapPointSelectionListener listener)
+  {
     final NvRuntimeController c = require(activity);
     if (c != null)
-      c.showRoutePointPicker(title, subtitle, confirmLabel, originPoint, listener);
+      c.showRoutePointPicker(title, subtitle, confirmLabel, originPoint, searchListener, listener);
   }
 
   public static void showLocationStatus(MwmActivity activity)
@@ -802,9 +839,145 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
                                     String subtitle,
                                     String confirmLabel,
                                     boolean originPoint,
+                                    MapPointSearchListener searchListener,
                                     MapPointSelectionListener listener)
   {
     beginTransparent();
+
+    if (searchListener != null)
+    {
+      final LinearLayout searchPanel = new LinearLayout(activity);
+      searchPanel.setOrientation(LinearLayout.VERTICAL);
+      searchPanel.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+      searchPanel.setPadding(dp(8), dp(8), dp(8), dp(8));
+      searchPanel.setBackground(round(Color.argb(250, 255, 255, 255), SHEET_BORDER, 22));
+      searchPanel.setElevation(dp(18));
+      searchPanel.setClickable(true);
+
+      final LinearLayout searchRow = new LinearLayout(activity);
+      searchRow.setOrientation(LinearLayout.HORIZONTAL);
+      searchRow.setGravity(Gravity.CENTER_VERTICAL);
+      searchRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+
+      final EditText searchInput = new EditText(activity);
+      searchInput.setSingleLine(true);
+      searchInput.setHint(originPoint ? "جستجوی مبدأ؛ مثال: میدان انقلاب" : "جستجوی مقصد؛ مثال: میدان تجریش");
+      searchInput.setHintTextColor(SHEET_MUTED);
+      searchInput.setTextColor(SHEET_TEXT);
+      searchInput.setTextSize(15);
+      searchInput.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+      searchInput.setPadding(dp(12), 0, dp(12), 0);
+      searchInput.setBackground(round(SHEET_SOFT, SHEET_BORDER, 16));
+      searchInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+      searchRow.addView(searchInput, new LinearLayout.LayoutParams(0, dp(48), 1f));
+
+      final TextView searchButton = label("⌕", 24, WHITE, Typeface.BOLD, Gravity.CENTER);
+      searchButton.setBackground(round(originPoint ? ORIGIN_PICKER : DESTINATION_PICKER,
+          originPoint ? ORIGIN_PICKER : DESTINATION_PICKER, 16));
+      final LinearLayout.LayoutParams sbp = new LinearLayout.LayoutParams(dp(48), dp(48));
+      sbp.setMargins(dp(6), 0, 0, 0);
+      searchRow.addView(searchButton, sbp);
+      searchPanel.addView(searchRow);
+
+      final TextView searchStatus = label("", 11, SHEET_MUTED, Typeface.NORMAL, Gravity.RIGHT);
+      searchStatus.setPadding(dp(6), dp(4), dp(6), 0);
+      searchPanel.addView(searchStatus);
+
+      final LinearLayout suggestions = new LinearLayout(activity);
+      suggestions.setOrientation(LinearLayout.VERTICAL);
+      suggestions.setVisibility(View.GONE);
+      searchPanel.addView(suggestions);
+
+      final Runnable doSearch = () -> {
+        final String query = searchInput.getText().toString().trim();
+        if (query.isEmpty())
+        {
+          searchStatus.setText("نام مکان یا آدرس را بنویسید");
+          return;
+        }
+
+        hideKeyboard(searchInput);
+        suggestions.removeAllViews();
+        suggestions.setVisibility(View.GONE);
+        searchStatus.setText("در حال جستجو…");
+
+        searchListener.onSearch(query, (results, error) -> activity.runOnUiThread(() -> {
+          if (!customMode || customLayer.getVisibility() != View.VISIBLE)
+            return;
+
+          if (results == null || results.isEmpty())
+          {
+            searchStatus.setText(TextUtils.isEmpty(error) ? "نتیجه‌ای پیدا نشد" : error);
+            return;
+          }
+
+          final MapPointSearchResult first = results.get(0);
+          try
+          {
+            Framework.nativeSetViewportCenter(first.lat, first.lon, 17);
+            searchStatus.setText("روی «" + first.title + "» قرار گرفت؛ برای دقت بیشتر نقشه را حرکت دهید");
+          }
+          catch (Throwable ignored)
+          {
+            searchStatus.setText(first.title);
+          }
+
+          final int count = Math.min(4, results.size());
+          if (count > 1)
+          {
+            suggestions.setVisibility(View.VISIBLE);
+            for (int i = 0; i < count; i++)
+            {
+              final MapPointSearchResult item = results.get(i);
+              final LinearLayout option = new LinearLayout(activity);
+              option.setOrientation(LinearLayout.VERTICAL);
+              option.setPadding(dp(10), dp(6), dp(10), dp(6));
+              option.setBackground(round(i == 0 ? SHEET_SOFT : SHEET_BG, SHEET_BORDER, 12));
+              option.setClickable(true);
+
+              final TextView ot = label(item.title, 13, SHEET_TEXT, Typeface.BOLD, Gravity.RIGHT);
+              option.addView(ot);
+              if (!TextUtils.isEmpty(item.subtitle))
+              {
+                final TextView os = label(item.subtitle, 10, SHEET_MUTED, Typeface.NORMAL, Gravity.RIGHT);
+                os.setSingleLine(true);
+                option.addView(os);
+              }
+
+              option.setOnClickListener(v -> {
+                try
+                {
+                  Framework.nativeSetViewportCenter(item.lat, item.lon, 17);
+                  searchStatus.setText("روی «" + item.title + "» قرار گرفت؛ در صورت نیاز نقشه را کمی جابه‌جا کنید");
+                  suggestions.setVisibility(View.GONE);
+                }
+                catch (Throwable ignored) {}
+              });
+
+              final LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(
+                  ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+              op.setMargins(0, dp(4), 0, 0);
+              suggestions.addView(option, op);
+            }
+          }
+        }));
+      };
+
+      searchButton.setOnClickListener(v -> doSearch.run());
+      searchInput.setOnEditorActionListener((v, actionId, event) -> {
+        if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_GO)
+        {
+          doSearch.run();
+          return true;
+        }
+        return false;
+      });
+
+      final FrameLayout.LayoutParams spp = new FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP);
+      spp.setMargins(dp(12), dp(28), dp(12), 0);
+      customLayer.addView(searchPanel, spp);
+    }
 
     final LinearLayout markerBox = new LinearLayout(activity);
     markerBox.setOrientation(LinearLayout.VERTICAL);
@@ -828,18 +1001,24 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     customLayer.addView(markerBox, mp);
 
     final LinearLayout panel = bottomPanel();
-    panel.addView(header(
-        TextUtils.isEmpty(title) ? (originPoint ? "انتخاب مبدأ" : "انتخاب مقصد") : title,
-        TextUtils.isEmpty(subtitle)
-            ? "نقشه را حرکت دهید تا نشانگر دقیقاً روی مکان موردنظر قرار بگیرد"
-            : subtitle,
-        this::closeCustom));
 
-    panel.addView(body(
-        originPoint
-            ? "نشانگر بنفش، مبدأ سفر خواهد بود."
-            : "پرچم نارنجی، مقصد سفر خواهد بود.",
-        SHEET_MUTED));
+    final TextView dragHint = label(
+        originPoint ? "●  مبدأ را روی نقشه مشخص کنید" : "⚑  مقصد را روی نقشه مشخص کنید",
+        16,
+        originPoint ? ORIGIN_PICKER : DESTINATION_PICKER,
+        Typeface.BOLD,
+        Gravity.RIGHT);
+    dragHint.setPadding(dp(10), dp(4), dp(10), dp(2));
+    panel.addView(dragHint);
+
+    final TextView detailHint = label(
+        TextUtils.isEmpty(subtitle)
+            ? "نقشه را جابه‌جا کنید؛ نشانگر وسط صفحه ثابت می‌ماند"
+            : subtitle,
+        12, SHEET_MUTED, Typeface.NORMAL, Gravity.RIGHT);
+    detailHint.setPadding(dp(10), 0, dp(10), dp(6));
+    detailHint.setMaxLines(2);
+    panel.addView(detailHint);
 
     panel.addView(primary(
         TextUtils.isEmpty(confirmLabel)
@@ -878,7 +1057,7 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     panel.addView(primary("انصراف", PANEL_2, this::closeCustom));
 
     final FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(242), Gravity.BOTTOM);
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(196), Gravity.BOTTOM);
     pp.setMargins(dp(10), 0, dp(10), dp(18));
     panel.setClickable(true);
     customLayer.addView(panel, pp);
