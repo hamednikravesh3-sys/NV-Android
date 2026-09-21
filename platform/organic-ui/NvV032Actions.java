@@ -884,7 +884,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       MixedEstimate mixed = null;
       try { car = osrm(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon); } catch (Throwable ignored) {}
       if (prefs(a).getBoolean("use_metro", true)) {
-        try { mixed = estimateMixed(a, origin, dest); } catch (Throwable ignored) {}
+        try { mixed = estimateMixed(a, origin, dest, true); } catch (Throwable ignored) {}
       }
 
       double direct = haversine(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon);
@@ -993,10 +993,15 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   private static MixedEstimate estimateMixed(MwmActivity a, Location origin, Place dest) throws Exception {
+    return estimateMixed(a, origin, dest, false);
+  }
+
+  private static MixedEstimate estimateMixed(MwmActivity a, Location origin, Place dest,
+                                             boolean fastestPriority) throws Exception {
     if (!prefs(a).getBoolean("use_metro", true)) return null;
 
-    boolean minCost = prefs(a).getBoolean("min_cost", false);
-    boolean lessWalking = prefs(a).getBoolean("less_walking", false);
+    boolean minCost = !fastestPriority && prefs(a).getBoolean("min_cost", false);
+    boolean lessWalking = !fastestPriority && prefs(a).getBoolean("less_walking", false);
     boolean allowVehicle = prefs(a).getBoolean("use_taxi", true);
 
     int stationRadius = allowVehicle && !minCost ? 8_000 : 5_000;
