@@ -367,6 +367,17 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     }
 
     int stage = p.getInt("mixed_stage", 1);
+    if (stage == 1 && p.getBoolean("mixed_origin_explicit", false)) {
+      Place plannedOrigin = placeFromSession(p, "mixed_origin", "مبدأ انتخابی");
+      if (Double.isFinite(plannedOrigin.lat)) {
+        double fromPhone = haversine(loc.getLatitude(), loc.getLongitude(), plannedOrigin.lat, plannedOrigin.lon);
+        if (fromPhone > 1000d) {
+          mixedTripChip.setText("NV سفر ترکیبی • برنامه از " + plannedOrigin.title + " • برای نمایش مرحله ۱ بزنید");
+          mixedTripChip.setVisibility(View.VISIBLE);
+          return;
+        }
+      }
+    }
     Place from = placeFromSession(p, "mixed_from", "ایستگاه مترو");
     Place to = placeFromSession(p, "mixed_to", "ایستگاه مقصد");
     Place dest = placeFromSession(p, "mixed_dest", "مقصد");
@@ -417,6 +428,18 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     Place dest = placeFromSession(p, "mixed_dest", "مقصد");
 
     if (stage == 1) {
+      if (p.getBoolean("mixed_origin_explicit", false)) {
+        Place plannedOrigin = placeFromSession(p, "mixed_origin", "مبدأ انتخابی");
+        if (Double.isFinite(plannedOrigin.lat)) {
+          double fromPhone = haversine(loc.getLatitude(), loc.getLongitude(), plannedOrigin.lat, plannedOrigin.lon);
+          if (fromPhone > 1000d) {
+            Router first = "تاکسی".equals(p.getString("mixed_access_mode", "پیاده"))
+                ? Router.Vehicle : Router.Pedestrian;
+            routeBetween(activity, locationFromPlace(plannedOrigin), from, first);
+            return;
+          }
+        }
+      }
       double d = haversine(loc.getLatitude(), loc.getLongitude(), from.lat, from.lon);
       if (d <= 300d) {
         p.edit().putInt("mixed_stage", 2).apply();
@@ -455,11 +478,13 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
         .remove("mixed_to_lat").remove("mixed_to_lon").remove("mixed_to_name").remove("mixed_to_address")
         .remove("mixed_dest_lat").remove("mixed_dest_lon").remove("mixed_dest_name").remove("mixed_dest_address")
         .remove("mixed_access_mode").remove("mixed_egress_mode")
+        .remove("mixed_origin_explicit")
+        .remove("mixed_origin_lat").remove("mixed_origin_lon").remove("mixed_origin_name").remove("mixed_origin_address")
         .apply();
     mixedTripChip.setVisibility(View.GONE);
   }
 
-  private static void startMixedSession(MwmActivity a, MixedEstimate m, Place dest) {
+  private static void startMixedSession(MwmActivity a, Location origin, MixedEstimate m, Place dest) {
     SharedPreferences.Editor e = prefs(a).edit();
     e.putBoolean("mixed_active", true).putInt("mixed_stage", 1);
     putSessionPlace(e, "mixed_from", m.fromStation);
@@ -467,10 +492,16 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     putSessionPlace(e, "mixed_dest", dest);
     e.putString("mixed_access_mode", m.accessMode);
     e.putString("mixed_egress_mode", m.egressMode);
+    e.putBoolean("mixed_origin_explicit", isExplicitOrigin(origin));
+    if (isExplicitOrigin(origin)) {
+      Place plannedOrigin = new Place(originTitle(origin), "مبدأ جستجوشده",
+          origin.getLatitude(), origin.getLongitude(), -1d, "", "", 0);
+      putSessionPlace(e, "mixed_origin", plannedOrigin);
+    }
     e.apply();
 
     Router first = "تاکسی".equals(m.accessMode) ? Router.Vehicle : Router.Pedestrian;
-    routeTo(a, m.fromStation, first);
+    routeBetween(a, origin, m.fromStation, first);
   }
 
   private static void putSessionPlace(SharedPreferences.Editor e, String prefix, Place p) {
@@ -516,8 +547,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private static void openSearch(MwmActivity a, boolean detailMode) {
     Screen s = screen(a, detailMode ? "جزئیات مکان" : "جستجوی هوشمند NV",
         detailMode ? "مکان را جستجو کنید؛ نتیجه بر اساس نام، نوع مکان، شهر و فاصله رتبه‌بندی می‌شود"
-                   : "فارسی طبیعی، نام مکان، آدرس، راه‌آهن، مترو و عبارت سفر را می‌فهمد");
-    EditText input = input(a, detailMode ? "مثال: ایستگاه راه‌آهن یزد" : "مثال: می‌خوام برم میدان تجریش، عجله دارم");
+                   : "مبدأ و مقصد را از متن می‌فهمد؛ سپس خودرو و مسیر ترکیبی را مقایسه می‌کند");
+    EditText input = input(a, detailMode ? "مثال: ایستگاه راه‌آهن یزد" : "مثال: از میدان انقلاب برم میدان ونک");
     s.controls.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 64)));
     Runnable go = () -> {
       String q = input.getText().toString().trim();
@@ -619,7 +650,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   private static void openTripInput(MwmActivity a, Mode mode, String title, String subtitle) {
     Screen s = screen(a, title, subtitle);
-    EditText input = input(a, "مثال: می‌خوام برم میدان تجریش، عجله دارم");
+    EditText input = input(a, "مثال: از میدان انقلاب برم میدان ونک");
     s.controls.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 72)));
     Runnable go = () -> {
       String q = input.getText().toString().trim();
@@ -633,10 +664,51 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   private static void performTrip(MwmActivity a, Screen s, String raw, Mode mode) {
     String destination = extractDestination(raw);
+    String originQuery = extractOrigin(raw);
     if (destination.isEmpty()) { setStatus(s, "نام مقصد از جمله مشخص نشد.", AMBER); return; }
+
+    if (!onlineServicesEnabled(a)) {
+      setStatus(s, originQuery.isEmpty()
+          ? "حالت خصوصی فعال است؛ جستجوی آنلاین مقصد غیرفعال است."
+          : "برای تبدیل مبدأ و مقصد جستجوشده به مختصات، خدمات آنلاین باید فعال باشد.", AMBER);
+      s.results.removeAllViews();
+      s.results.addView(button(a, "جستجو با موتور داخلی نقشه", BLUE,
+          () -> { removeScreen(a); NvRuntimeController.openSearch(a, destination); }));
+      return;
+    }
+
+    if (!originQuery.isEmpty()) {
+      setStatus(s, "در حال تشخیص مبدأ «" + originQuery + "» و مقصد «" + destination + "»…", CYAN);
+      s.results.removeAllViews();
+      new Thread(() -> {
+        try {
+          // An explicitly typed origin must not be biased toward the phone's current GPS.
+          List<Place> origins = geocodeRanked(originQuery, null);
+          if (origins.isEmpty()) throw new IllegalStateException("no origin");
+          if (!destinationConfident(origins, originQuery)) {
+            a.runOnUiThread(() -> {
+              if (!alive(a, s)) return;
+              renderOriginChoices(a, s, raw, mode, destination, origins);
+            });
+            return;
+          }
+          Location resolvedOrigin = locationFromPlace(origins.get(0));
+          resolveDestinationForTrip(a, s, raw, mode, resolvedOrigin, destination);
+        } catch (Throwable e) {
+          a.runOnUiThread(() -> {
+            if (!alive(a, s)) return;
+            setStatus(s, "مبدأ جستجوشده با اطمینان کافی پیدا نشد.", AMBER);
+            s.results.removeAllViews();
+            s.results.addView(button(a, "جستجوی هوشمند مبدأ", BLUE, () -> openSmartSearch(a)));
+          });
+        }
+      }, "nv-v032-origin").start();
+      return;
+    }
+
     Location origin = MwmApplication.from(a).getLocationHelper().getSavedLocation();
     if (!planningLocationOkay(origin)) {
-      setStatus(s, "برای محاسبه مسیر، موقعیت تازه با خطای حداکثر ۱۲۰ متر لازم است.", RED);
+      setStatus(s, "برای مسیریابی از موقعیت فعلی، GPS تازه با خطای حداکثر ۱۲۰ متر لازم است؛ یا مبدأ را در متن بنویسید.", RED);
       s.results.removeAllViews();
       s.results.addView(button(a, "دریافت GPS بهتر", GREEN, () -> NvRuntimeController.showLocationStatus(a)));
       return;
@@ -644,24 +716,22 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     if (!freshEnough(origin)) {
       setStatus(s, "هشدار: دقت GPS فعلی " + Math.round(origin.getAccuracy()) + " متر است؛ محاسبه ممکن است از خیابان مجاور شروع شود.", AMBER);
     }
+    resolveDestinationForTrip(a, s, raw, mode, origin, destination);
+  }
 
-    setStatus(s, "در حال تشخیص مقصد «" + destination + "»…", CYAN);
+  private static void resolveDestinationForTrip(MwmActivity a, Screen s, String raw, Mode mode,
+                                                Location origin, String destination) {
+    setStatus(s, (isExplicitOrigin(origin) ? "مبدأ جستجوشده تأیید شد • " : "")
+        + "در حال تشخیص مقصد «" + destination + "»…", CYAN);
     s.results.removeAllViews();
-    final String dest = destination;
-
-    if (!onlineServicesEnabled(a)) {
-      setStatus(s, "حالت خصوصی فعال است؛ جستجوی آنلاین مقصد غیرفعال است.", AMBER);
-      s.results.addView(button(a, "جستجو با موتور داخلی نقشه", BLUE,
-          () -> { removeScreen(a); NvRuntimeController.openSearch(a, dest); }));
-      return;
-    }
 
     new Thread(() -> {
       try {
-        List<Place> list = geocodeRanked(dest, origin);
+        // Once the origin is known, use it as the geographic bias for destination ranking.
+        List<Place> list = geocodeRanked(destination, origin);
         if (list.isEmpty()) throw new IllegalStateException("no destination");
 
-        if (!destinationConfident(list, dest)) {
+        if (!destinationConfident(list, destination)) {
           a.runOnUiThread(() -> {
             if (!alive(a, s)) return;
             renderDestinationChoices(a, s, raw, mode, origin, list);
@@ -678,10 +748,53 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
         a.runOnUiThread(() -> {
           if (!alive(a, s)) return;
           setStatus(s, "مقصد با اطمینان کافی پیدا نشد.", AMBER);
+          s.results.removeAllViews();
           s.results.addView(button(a, "جستجوی هوشمند مقصد", BLUE, () -> openSmartSearch(a)));
         });
       }
-    }, "nv-v032-trip").start();
+    }, "nv-v032-destination").start();
+  }
+
+  private static void renderOriginChoices(MwmActivity a, Screen s, String raw, Mode mode,
+                                          String destination, List<Place> list) {
+    s.results.removeAllViews();
+    setStatus(s, "چند مبدأ مشابه پیدا شد؛ مبدأ درست را انتخاب کنید.", AMBER);
+    int count = Math.min(5, list.size());
+    for (int i = 0; i < count; i++) {
+      Place p = list.get(i);
+      LinearLayout card = new LinearLayout(a);
+      card.setOrientation(LinearLayout.VERTICAL);
+      card.setPadding(dp(a, 12), dp(a, 9), dp(a, 12), dp(a, 9));
+      card.setBackground(round(a, PANEL, OUTLINE, 14));
+      card.addView(text(a, (i + 1) + ". " + p.title, 15, WHITE, Typeface.BOLD));
+      card.addView(text(a, p.address, 11, MUTED, Typeface.NORMAL));
+      card.addView(button(a, "انتخاب این مبدأ", BLUE,
+          () -> resolveDestinationForTrip(a, s, raw, mode, locationFromPlace(p), destination)));
+      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+      lp.setMargins(0, dp(a, 5), 0, dp(a, 5));
+      s.results.addView(card, lp);
+    }
+  }
+
+  private static Location locationFromPlace(Place p) {
+    Location l = new Location("NV_SEARCH:" + p.title);
+    l.setLatitude(p.lat);
+    l.setLongitude(p.lon);
+    l.setAccuracy(10f);
+    l.setTime(System.currentTimeMillis());
+    return l;
+  }
+
+  private static boolean isExplicitOrigin(Location l) {
+    return l != null && l.getProvider() != null && l.getProvider().startsWith("NV_SEARCH:");
+  }
+
+  private static String originTitle(Location l) {
+    if (!isExplicitOrigin(l)) return "موقعیت فعلی";
+    String p = l.getProvider();
+    String name = p.substring("NV_SEARCH:".length()).trim();
+    return name.isEmpty() ? "مبدأ انتخابی" : name;
   }
 
   private static boolean destinationConfident(List<Place> list, String query) {
@@ -746,6 +859,12 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       return;
     }
 
+    if (mode == Mode.AUTO) {
+      setStatus(s, "مبدأ: " + originTitle(origin) + " • مقصد: " + best.title + " • بررسی گزینه‌های هوشمند…", CYAN);
+      compareHurryOptions(a, s, origin, best);
+      return;
+    }
+
     previewVehicle(a, s, origin, best, false);
   }
 
@@ -754,9 +873,9 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       setStatus(s, "حالت خصوصی فعال است؛ سریع‌ترین مسیر آنلاین مقایسه نمی‌شود.", AMBER);
       s.results.removeAllViews();
       s.results.addView(button(a, "شروع مسیر خودرو با موتور آفلاین", BLUE,
-          () -> routeTo(a, dest, Router.Vehicle)));
+          () -> routeBetween(a, origin, dest, Router.Vehicle)));
       s.results.addView(button(a, "مسیر پیاده با موتور آفلاین", CYAN,
-          () -> routeTo(a, dest, Router.Pedestrian)));
+          () -> routeBetween(a, origin, dest, Router.Pedestrian)));
       return;
     }
     setStatus(s, "در حال مقایسه همزمان گزینه‌های قابل استفاده…", CYAN);
@@ -785,7 +904,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
         if (best == Integer.MAX_VALUE) {
           setStatus(s, "هیچ برآورد قابل اعتمادی آماده نشد؛ مسیر آفلاین نقشه را امتحان کنید.", AMBER);
-          s.results.addView(button(a, "مسیر خودرو با موتور آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+          s.results.addView(button(a, "مسیر خودرو با موتور آفلاین", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
           return;
         }
 
@@ -796,7 +915,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
               "🚗 خودرو" + ("خودرو".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
               formatMinutes(finalCar.durationSec) + " • " + formatDistance(finalCar.distanceM),
               BLUE,
-              () -> routeTo(a, dest, Router.Vehicle)));
+              () -> routeBetween(a, origin, dest, Router.Vehicle)));
         }
 
         if (finalMixed != null) {
@@ -807,7 +926,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
               "🚇 ترکیبی" + ("ترکیبی".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
               details,
               GREEN,
-              () -> startMixedSession(a, finalMixed, dest)));
+              () -> startMixedSession(a, origin, finalMixed, dest)));
           s.results.addView(text(a,
               "مترو: " + finalMixed.metroSource
                   + (finalMixed.metroStops >= 0 ? " • " + finalMixed.metroStops + " ایستگاه" : "")
@@ -821,7 +940,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
               "🚶 پیاده" + ("پیاده".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
               "حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20d),
               CYAN,
-              () -> routeTo(a, dest, Router.Pedestrian)));
+              () -> routeBetween(a, origin, dest, Router.Pedestrian)));
         }
       });
     }, "nv-v032-hurry").start();
@@ -831,8 +950,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     if (!onlineServicesEnabled(a)) {
       setStatus(s, "برای ساخت سفر ترکیبی، دسترسی به داده آنلاین ایستگاه‌ها لازم است.", AMBER);
       s.results.removeAllViews();
-      s.results.addView(button(a, "مسیر پیاده آفلاین", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
-      s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+      s.results.addView(button(a, "مسیر پیاده آفلاین", CYAN, () -> routeBetween(a, origin, dest, Router.Pedestrian)));
+      s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
       return;
     }
     setStatus(s, "در حال ساخت سفر چندمرحله‌ای واقعی با ایستگاه‌های نزدیک…", CYAN);
@@ -847,8 +966,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
         if (result == null) {
           setStatus(s, "مترو مناسب نزدیک مبدأ یا مقصد پیدا نشد؛ گزینه‌های عملی جایگزین نمایش داده شدند.", AMBER);
-          s.results.addView(button(a, "سریع‌ترین مسیر خودرو", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
-          s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+          s.results.addView(button(a, "سریع‌ترین مسیر خودرو", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
+          s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeBetween(a, origin, dest, Router.Pedestrian)));
           return;
         }
 
@@ -866,7 +985,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
             formatMinutes(result.egressSec) + " • " + formatDistance(result.egressDistanceM), PURPLE));
         s.results.addView(text(a, "هزینه تقریبی کل: " + formatToman(estimateMixedCostToman(a, result)),
             13, CYAN, Typeface.BOLD));
-        s.results.addView(button(a, "شروع سفر ترکیبی مرحله‌به‌مرحله", GREEN, () -> startMixedSession(a, result, dest)));
+        s.results.addView(button(a, "شروع سفر ترکیبی مرحله‌به‌مرحله", GREEN, () -> startMixedSession(a, origin, result, dest)));
         s.results.addView(button(a, "مقایسه با خودرو", BLUE, () -> compareHurryOptions(a, s, origin, dest)));
       });
     }, "nv-v032-mixed").start();
@@ -1153,8 +1272,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
         } else {
           setStatus(s, "برآورد آنلاین در دسترس نیست؛ مسیر آفلاین موتور نقشه استفاده می‌شود.", AMBER);
         }
-        s.results.addView(button(a, "شروع مسیر خودرو", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
-        s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+        s.results.addView(button(a, "شروع مسیر خودرو", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
+        s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeBetween(a, origin, dest, Router.Pedestrian)));
       });
     }, "nv-v032-eta").start();
   }
@@ -1169,8 +1288,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     if (!onlineServicesEnabled(a)) {
       setStatus(s, "حالت خصوصی فعال است؛ مقایسه آنلاین مسیرها انجام نمی‌شود.", AMBER);
       s.results.removeAllViews();
-      s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
-      s.results.addView(button(a, "مسیر پیاده آفلاین", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+      s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
+      s.results.addView(button(a, "مسیر پیاده آفلاین", CYAN, () -> routeBetween(a, origin, dest, Router.Pedestrian)));
       return;
     }
     setStatus(s, "در حال محاسبه مسیرهای جایگزین، زمان و هزینه…", CYAN);
@@ -1200,7 +1319,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
                   + " • " + String.format(Locale.US, "%.1f لیتر", liters)
                   + " • حدود " + formatToman(cost),
               idx == 1 ? BLUE : PANEL2,
-              () -> routeTo(a, dest, Router.Vehicle)));
+              () -> routeBetween(a, origin, dest, Router.Vehicle)));
           idx++;
         }
 
@@ -1212,7 +1331,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
                   + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
                   + " • حدود " + formatToman(cost),
               GREEN,
-              () -> startMixedSession(a, finalMixed, dest)));
+              () -> startMixedSession(a, origin, finalMixed, dest)));
           s.results.addView(text(a,
               "مترو: " + finalMixed.metroSource
                   + (finalMixed.metroStops >= 0 ? " • " + finalMixed.metroStops + " ایستگاه" : "")
@@ -1226,12 +1345,12 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
               "🚶 پیاده",
               "حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20d) + " • بدون هزینه",
               CYAN,
-              () -> routeTo(a, dest, Router.Pedestrian)));
+              () -> routeBetween(a, origin, dest, Router.Pedestrian)));
         }
 
         if (finalCars.isEmpty() && finalMixed == null && walkSec == Integer.MAX_VALUE) {
           setStatus(s, "مقایسه آنلاین در دسترس نیست؛ از موتور آفلاین نقشه استفاده کنید.", AMBER);
-          s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+          s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
           return;
         }
         setStatus(s, "گزینه‌های قابل استفاده برای «" + dest.title + "» آماده است", GREEN);
@@ -1277,8 +1396,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
           s.results.addView(button(a, "مقایسه با خودرو", BLUE, () -> previewVehicle(a, s, origin, dest, true)));
         } else {
           setStatus(s, "مترو مناسب نزدیک مبدا یا مقصد وجود ندارد؛ به‌جای خطای «No metro route» گزینه‌های عملی نمایش داده شد.", AMBER);
-          s.results.addView(button(a, "سریع‌ترین مسیر خودرو", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
-          s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+          s.results.addView(button(a, "سریع‌ترین مسیر خودرو", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
+          s.results.addView(button(a, "مسیر پیاده", CYAN, () -> routeBetween(a, origin, dest, Router.Pedestrian)));
         }
       });
     }, "nv-v032-mixed").start();
@@ -1858,6 +1977,26 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     startRoute(a, p, router, loc);
   }
 
+  private static void routeBetween(MwmActivity a, Location origin, Place p, Router router) {
+    if (!isExplicitOrigin(origin)) {
+      routeTo(a, p, router);
+      return;
+    }
+    if (router == Router.Vehicle) {
+      boolean avoidHighways = prefs(a).getBoolean("avoid_highways", false);
+      boolean safer = prefs(a).getBoolean("safer_route", true);
+      if (avoidHighways) RoutingOptions.addOption(RoadType.Motorway);
+      else RoutingOptions.removeOption(RoadType.Motorway);
+      if (safer) RoutingOptions.addOption(RoadType.Dirty);
+      else RoutingOptions.removeOption(RoadType.Dirty);
+    }
+    MapObject start = MapObject.createMapObject(MapObject.SEARCH, originTitle(origin), "مبدأ جستجوشده",
+        origin.getLatitude(), origin.getLongitude());
+    MapObject end = MapObject.createMapObject(MapObject.SEARCH, p.title, p.address, p.lat, p.lon);
+    removeScreen(a);
+    RoutingController.get().prepare(start, end, router);
+  }
+
   private static void startRoute(MwmActivity a, Place p, Router router, Location loc) {
     if (router == Router.Vehicle) {
       boolean avoidHighways = prefs(a).getBoolean("avoid_highways", false);
@@ -1884,6 +2023,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
   private static boolean looksLikeTrip(String s){return containsAny(normalize(s),"میخوام","می خوام","می‌خوام","برم","برو","عجله","مسیر ترکیبی","پیاده","با مترو");}
   static String extractDestination(String raw) { return NvV032TextParser.extractDestination(raw); }
+  static String extractOrigin(String raw) { return NvV032TextParser.extractOrigin(raw); }
 
   static String normalize(String s) { return NvV032TextParser.normalize(s); }
 
