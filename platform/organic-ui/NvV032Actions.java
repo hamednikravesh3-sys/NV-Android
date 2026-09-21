@@ -85,6 +85,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private static final String ETA_TAG = "nv-v032-eta-chip";
   private static final String PREFS = "nv_v032";
   private static final Map<MwmActivity, NvV032Actions> INSTANCES = new WeakHashMap<>();
+  private static final Map<MwmActivity, RoutePlannerState> ROUTE_PLANNERS = new WeakHashMap<>();
 
   private final MwmActivity activity;
   private final ViewGroup host;
@@ -541,7 +542,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     return prefs(a).getInt("radius_m", fallback);
   }
 
-  public static void openSmartSearch(MwmActivity a) { openSearch(a, false); }
+  public static void openSmartSearch(MwmActivity a) { openRoutePlanner(a); }
   public static void openPlaceDetails(MwmActivity a) { openSearch(a, true); }
 
   private static void openSearch(MwmActivity a, boolean detailMode) {
@@ -639,14 +640,184 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     s.results.addView(button(a, "نمایش روی نقشه", GREEN, () -> { removeScreen(a); Framework.nativeSetViewportCenter(p.lat, p.lon, 17); }));
   }
 
-  public static void openRouteMode(MwmActivity a) { openTripInput(a, Mode.AUTO, "حالت مسیریابی", "نوع مسیر از جمله شما تشخیص داده می‌شود"); }
-  public static void openChat(MwmActivity a) { openTripInput(a, Mode.CHAT, "چت هوشمند سفر", "طبیعی بنویسید؛ مقصد، عجله و نوع جابه‌جایی استخراج می‌شود"); }
-  public static void openHurry(MwmActivity a) { openTripInput(a, Mode.HURRY, "حالت عجله دارم", "سریع‌ترین گزینه عملی بررسی می‌شود و ETA پیش از شروع نمایش داده می‌شود"); }
-  public static void openMixed(MwmActivity a) { openTripInput(a, Mode.MIXED, "مسیر ترکیبی", "NV ابتدا وجود مترو نزدیک مبدا و مقصد را بررسی می‌کند؛ در نبود مترو خطای ساختگی نشان نمی‌دهد"); }
-  public static void openEta(MwmActivity a) { openTripInput(a, Mode.ETA, "زمان رسیدن", "ETA با منبع مشخص، هموارسازی و بازه عدم‌قطعیت نمایش داده می‌شود"); }
-  public static void openTimeCost(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه زمان و هزینه", "چند مسیر خودرو، سفر ترکیبی، پیاده، مصرف و هزینه تقریبی مقایسه می‌شوند"); }
-  public static void openWalk(MwmActivity a) { openTripInput(a, Mode.WALK, "راهنمای پیاده", "مسیر پیاده مستقل محاسبه می‌شود"); }
-  public static void openCompareRoutes(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه مسیرها", "مسیرهای جایگزین خودرو و گزینه‌های ترکیبی/پیاده در یک صفحه بررسی می‌شوند"); }
+  public static void openRoutePlanner(MwmActivity a) {
+    RoutePlannerState state = new RoutePlannerState();
+    ROUTE_PLANNERS.put(a, state);
+    renderRoutePlanner(a, state);
+  }
+
+  private static void renderRoutePlanner(MwmActivity a, RoutePlannerState state) {
+    Screen s = screen(a, "مسیریابی", "ابتدا مبدأ و مقصد را مشخص کنید");
+    s.results.removeAllViews();
+
+    s.results.addView(endpointCard(
+        a,
+        "مبدأ",
+        state.origin == null ? "هنوز انتخاب نشده" : state.originLabel,
+        PURPLE,
+        () -> openEndpointSearch(a, state, true),
+        () -> pickPlannerPointOnMap(a, state, true)));
+
+    s.results.addView(endpointCard(
+        a,
+        "مقصد",
+        state.destination == null ? "هنوز انتخاب نشده" : state.destination.title,
+        AMBER,
+        () -> openEndpointSearch(a, state, false),
+        () -> pickPlannerPointOnMap(a, state, false)));
+
+    if (state.origin == null || state.destination == null) {
+      setStatus(s, "برای هر کدام می‌توانید جستجو کنید یا نشانگر را روی نقشه جابه‌جا کنید.", CYAN);
+      return;
+    }
+
+    setStatus(s, "مبدأ و مقصد مشخص شدند؛ همه پیشنهادهای مسیر در حال محاسبه‌اند…", GREEN);
+    compareModes(a, s, state.origin, state.destination);
+  }
+
+  private static View endpointCard(MwmActivity a, String title, String value, int accent,
+                                   Runnable searchAction, Runnable mapAction) {
+    LinearLayout card = new LinearLayout(a);
+    card.setOrientation(LinearLayout.VERTICAL);
+    card.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
+    card.setBackground(round(a, PANEL, accent, 16));
+
+    String icon = "مبدأ".equals(title) ? "●" : "⚑";
+    card.addView(text(a, icon + "  " + title, 17, accent, Typeface.BOLD));
+    card.addView(text(a, value, 13, WHITE, Typeface.NORMAL));
+
+    LinearLayout row = new LinearLayout(a);
+    row.setOrientation(LinearLayout.HORIZONTAL);
+    row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    row.addView(smallButton(a, "جستجو", accent, searchAction), weight(a));
+    row.addView(smallButton(a, "روی نقشه", PANEL2, mapAction), weight(a));
+    card.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 46)));
+
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(dp(a, 4), dp(a, 6), dp(a, 4), dp(a, 6));
+    card.setLayoutParams(lp);
+    return card;
+  }
+
+  private static void openEndpointSearch(MwmActivity a, RoutePlannerState state, boolean originPoint) {
+    Screen s = screen(
+        a,
+        originPoint ? "جستجوی مبدأ" : "جستجوی مقصد",
+        originPoint ? "نام مکان یا آدرس مبدأ را وارد کنید" : "نام مکان یا آدرس مقصد را وارد کنید");
+
+    EditText input = input(a, originPoint ? "مثال: میدان انقلاب" : "مثال: میدان ونک");
+    s.controls.addView(input, new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 64)));
+
+    Runnable search = () -> {
+      String q = input.getText().toString().trim();
+      if (q.isEmpty()) {
+        setStatus(s, "نام مکان یا آدرس را وارد کنید.", AMBER);
+        return;
+      }
+      if (!onlineServicesEnabled(a)) {
+        setStatus(s, "برای جستجوی نام مکان، خدمات آنلاین باید روشن باشد.", AMBER);
+        return;
+      }
+
+      setStatus(s, "در حال جستجو…", CYAN);
+      s.results.removeAllViews();
+
+      new Thread(() -> {
+        try {
+          Location bias = originPoint ? null : state.origin;
+          List<Place> found = geocodeRanked(q, bias);
+          a.runOnUiThread(() -> {
+            if (!alive(a, s)) return;
+            s.results.removeAllViews();
+            if (found.isEmpty()) {
+              setStatus(s, "نتیجه‌ای پیدا نشد.", AMBER);
+              return;
+            }
+            setStatus(s, "نتیجه مناسب را انتخاب کنید.", GREEN);
+            int count = Math.min(8, found.size());
+            for (int i = 0; i < count; i++) {
+              Place p = found.get(i);
+              String details = p.address;
+              if (p.distanceMeters >= 0 && Double.isFinite(p.distanceMeters))
+                details += (details.isEmpty() ? "" : " • ") + formatDistance(p.distanceMeters);
+
+              s.results.addView(optionCard(
+                  a,
+                  p.title,
+                  details,
+                  originPoint ? PURPLE : AMBER,
+                  () -> {
+                    if (originPoint) {
+                      state.origin = locationFromPlace(p);
+                      state.originLabel = p.title;
+                    } else {
+                      state.destination = p;
+                    }
+                    renderRoutePlanner(a, state);
+                  }));
+            }
+          });
+        } catch (Throwable e) {
+          a.runOnUiThread(() -> {
+            if (!alive(a, s)) return;
+            setStatus(s, "جستجو پاسخ نداد. دوباره تلاش کنید یا از نقشه انتخاب کنید.", AMBER);
+          });
+        }
+      }, originPoint ? "nv-origin-search" : "nv-destination-search").start();
+    };
+
+    s.controls.addView(button(a, "جستجو", originPoint ? PURPLE : AMBER, search));
+    s.controls.addView(button(a, "انتخاب روی نقشه", PANEL2,
+        () -> pickPlannerPointOnMap(a, state, originPoint)));
+
+    input.setOnEditorActionListener((v, actionId, event) -> {
+      if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_SEARCH) {
+        search.run();
+        return true;
+      }
+      return false;
+    });
+    input.requestFocus();
+  }
+
+  private static void pickPlannerPointOnMap(MwmActivity a, RoutePlannerState state, boolean originPoint) {
+    removeScreen(a);
+    NvRuntimeController.selectPointOnMap(
+        a,
+        originPoint ? "انتخاب مبدأ" : "انتخاب مقصد",
+        originPoint
+            ? "نقشه را حرکت دهید تا نشانگر بنفش روی مبدأ قرار بگیرد"
+            : "نقشه را حرکت دهید تا پرچم نارنجی روی مقصد قرار بگیرد",
+        originPoint ? "تأیید مبدأ" : "تأیید مقصد",
+        originPoint,
+        (lat, lon, address) -> {
+          String label = TextUtils.isEmpty(address)
+              ? (originPoint ? "مبدأ انتخاب‌شده روی نقشه" : "مقصد انتخاب‌شده روی نقشه")
+              : address;
+          if (originPoint) {
+            state.origin = mapSelectionLocation(lat, lon, label);
+            state.originLabel = label;
+          } else {
+            double d = state.origin == null ? -1d
+                : haversine(state.origin.getLatitude(), state.origin.getLongitude(), lat, lon);
+            state.destination = new Place(label, address == null ? "" : address,
+                lat, lon, d, "map", "selected", 1000);
+          }
+          renderRoutePlanner(a, state);
+        });
+  }
+
+  // Legacy smart-route entry points now open the same simple origin/destination planner.
+  public static void openRouteMode(MwmActivity a) { openRoutePlanner(a); }
+  public static void openChat(MwmActivity a) { openRoutePlanner(a); }
+  public static void openHurry(MwmActivity a) { openRoutePlanner(a); }
+  public static void openMixed(MwmActivity a) { openRoutePlanner(a); }
+  public static void openEta(MwmActivity a) { openRoutePlanner(a); }
+  public static void openTimeCost(MwmActivity a) { openRoutePlanner(a); }
+  public static void openWalk(MwmActivity a) { openRoutePlanner(a); }
+  public static void openCompareRoutes(MwmActivity a) { openRoutePlanner(a); }
 
   private static void openTripInput(MwmActivity a, Mode mode, String title, String subtitle) {
     Screen s = screen(a, title, subtitle);
@@ -695,7 +866,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     NvRuntimeController.selectPointOnMap(
         a,
         "انتخاب مبدأ",
-        "نقشه را حرکت دهید؛ نقطه آبی دقیقاً مبدأ سفر خواهد بود",
+        "نقشه را حرکت دهید؛ نشانگر بنفش دقیقاً مبدأ سفر خواهد بود",
         "تأیید مبدأ و انتخاب مقصد",
         true,
         (lat, lon, address) -> {
@@ -710,7 +881,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     NvRuntimeController.selectPointOnMap(
         a,
         "انتخاب مقصد",
-        "نقشه را حرکت دهید؛ نقطه سبز دقیقاً مقصد سفر خواهد بود",
+        "نقشه را حرکت دهید؛ پرچم نارنجی دقیقاً مقصد سفر خواهد بود",
         "تأیید مقصد و بررسی مسیرها",
         false,
         (lat, lon, address) -> {
@@ -1034,7 +1205,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     setStatus(s, "در حال ساخت سفر چندمرحله‌ای واقعی با ایستگاه‌های نزدیک…", CYAN);
     new Thread(() -> {
       MixedEstimate mixed = null;
-      try { mixed = estimateMixed(a, origin, dest); } catch (Throwable ignored) {}
+      try { mixed = estimateMixed(a, origin, dest, true); } catch (Throwable ignored) {}
       MixedEstimate result = mixed;
 
       a.runOnUiThread(() -> {
@@ -1478,7 +1649,18 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
           s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
           return;
         }
-        setStatus(s, "گزینه‌های قابل استفاده برای «" + dest.title + "» آماده است", GREEN);
+        s.results.addView(button(a, "تغییر مبدأ یا مقصد", PANEL2, () -> {
+          RoutePlannerState current = ROUTE_PLANNERS.get(a);
+          if (current == null) {
+            current = new RoutePlannerState();
+            current.origin = origin;
+            current.originLabel = originTitle(origin);
+            current.destination = dest;
+            ROUTE_PLANNERS.put(a, current);
+          }
+          renderRoutePlanner(a, current);
+        }));
+        setStatus(s, "همه پیشنهادهای قابل استفاده برای «" + dest.title + "» آماده است", GREEN);
       });
     }, "nv-v032-compare").start();
   }
@@ -2175,6 +2357,12 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private static int dp(Context c,int v){return Math.max(1,Math.round(c.getResources().getDisplayMetrics().density))*v;}
 
   private enum Mode { AUTO, CHAT, HURRY, MIXED, ETA, COMPARE, WALK }
+  private static final class RoutePlannerState {
+    Location origin;
+    String originLabel = "";
+    Place destination;
+  }
+
   private static final class Screen { final FrameLayout root;final TextView status;final LinearLayout controls,results;Screen(FrameLayout r,TextView s,LinearLayout c,LinearLayout o){root=r;status=s;controls=c;results=o;} }
   private static final class Place { final String title,address;final double lat,lon,distanceMeters;final String category,type;int score;Place(String t,String a,double la,double lo,double d,String c,String ty,int sc){title=t;address=a;lat=la;lon=lo;distanceMeters=d;category=c;type=ty;score=sc;} }
   private static final class RoadEstimate { final double distanceM;final int durationSec;RoadEstimate(double d,int t){distanceM=d;durationSec=t;} }
