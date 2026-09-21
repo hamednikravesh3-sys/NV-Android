@@ -1,14 +1,14 @@
-name: Build NV v0.33.1 Snapp Map Picker APK
-# v0.32 user-friendly CI
+name: Build NV v0.34 Map First Online APK
+# v0.34 final map-first CI
 
 concurrency:
-  group: nv-v0321-smart-route-fix-${{ github.ref }}
+  group: nv-v034-final-map-first-${{ github.ref }}
   cancel-in-progress: true
 
 on:
   push:
     branches:
-      - nv-v0321-smart-route-fix
+      - nv-v034-final-map-first
   workflow_dispatch:
 
 jobs:
@@ -37,14 +37,14 @@ jobs:
           cd organicmaps
           git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
 
-      - name: Integrate NV v0.33.1 Snapp-style map picker
+      - name: Integrate NV v0.34 map-first online layer
         run: |
           set -euo pipefail
           python3 platform/patch_v032.py organicmaps
           python3 platform/patch_v027_resources.py organicmaps
           grep -q "appId = 'ir.nv.navigation'" organicmaps/android/build.gradle
-          grep -q "versionCode = 37" organicmaps/android/build.gradle
-          grep -q "versionName = '0.33.1'" organicmaps/android/build.gradle
+          grep -q "versionCode = 38" organicmaps/android/build.gradle
+          grep -q "versionName = '0.34.0'" organicmaps/android/build.gradle
           grep -q 'NvV032Actions.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
           grep -q 'NvV032Actions.openRoutePlanner' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'Modern map-first NV home overlay' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
@@ -61,7 +61,7 @@ jobs:
           grep -q 'correctedActiveEta' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'metroNetworkEstimate' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'planningLocationOkay' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
-          grep -q 'estimateMixedCostToman' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          ! grep -q 'estimateMixedCostToman' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'startMixedSession' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'osrmAlternatives' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'geocodePhoton' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
@@ -74,6 +74,14 @@ jobs:
           grep -q 'پرچم نارنجی' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'jumpSearchResultToMap' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'plannerMapSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'MAP_ROUTE_CHOICES_TAG' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'startNvRecommended' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'MapStyle.Dark' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'nv-v034-search-nominatim' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'nv-v034-search-photon' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          ! grep -q 'fuel_l100' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          ! grep -q 'fuel_price_toman' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          ! grep -q 'هزینه تقریبی کل' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'pickPlannerPointOnMap(a, state, originPoint);' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'جستجو یا انتخاب روی نقشه' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'MapPointSearchListener' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
@@ -84,7 +92,7 @@ jobs:
 
           grep -q 'ONLINE_ETA_REFRESH_MOVE_M = 500' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'بازه بدون ترافیک زنده' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
-          grep -q 'map_prompted_region' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          ! grep -q 'map_prompted_region' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           grep -q 'NvLocationPolicy.GOOD_ACCURACY_M' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           test -s organicmaps/android/app/src/main/java/app/organicmaps/NvLocationPolicy.java
           test -s organicmaps/android/app/src/main/java/app/organicmaps/NvV032TextParser.java
@@ -118,7 +126,7 @@ jobs:
       - name: Configure ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: nv-v0321-smart-route-fix-arm64
+          key: nv-v034-final-map-first-arm64
           max-size: 2G
 
       - name: Build and test
@@ -128,21 +136,21 @@ jobs:
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
         run: |
           set -o pipefail
-          ./gradlew --no-daemon -Parm64 :app:testWebDebugUnitTest :sdk:testDebug :app:assembleWebProfileable 2>&1 | tee /tmp/nv-v032-build.log
+          ./gradlew --no-daemon -Parm64 :app:testWebDebugUnitTest :sdk:testDebug :app:assembleWebProfileable 2>&1 | tee /tmp/nv-v034-build.log
 
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.32-build-diagnostics
-          path: /tmp/nv-v032-build.log
+          name: NV-v0.34-build-diagnostics
+          path: /tmp/nv-v034-build.log
           if-no-files-found: ignore
           retention-days: 3
 
       - name: Validate installable Android 16 APK
         run: |
           set -euo pipefail
-          exec > >(tee /tmp/nv-v032-validation.log) 2>&1
+          exec > >(tee /tmp/nv-v034-validation.log) 2>&1
           echo "Candidate APK files:"
           find organicmaps/android/app/build/outputs/apk -type f -name '*.apk' -print
           APK=$(find organicmaps/android/app/build/outputs/apk -type f -name '*.apk' | grep -i profileable | head -n 1)
@@ -150,26 +158,28 @@ jobs:
           test -n "$APK"
           test -s "$APK"
           unzip -t "$APK" >/dev/null
+          unzip -l "$APK" | grep -q 'assets/World.mwm'
+          unzip -l "$APK" | grep -q 'assets/WorldCoasts.mwm'
           BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
-          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v032-badging.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v034-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk
-          sha256sum dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk | tee dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk.sha256
-          grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v032-badging.txt
-          grep -q "application-label:'NV'" /tmp/nv-v032-badging.txt
-          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v032-badging.txt
-          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v032-badging.txt
+          cp "$APK" dist/NV-v0.34.0-map-first-arm64-profileable.apk
+          sha256sum dist/NV-v0.34.0-map-first-arm64-profileable.apk | tee dist/NV-v0.34.0-map-first-arm64-profileable.apk.sha256
+          grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v034-badging.txt
+          grep -q "application-label:'NV'" /tmp/nv-v034-badging.txt
+          grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v034-badging.txt
+          grep -q "native-code: 'arm64-v8a'" /tmp/nv-v034-badging.txt
 
       - name: Upload validation diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.32-validation-diagnostics
+          name: NV-v0.34-validation-diagnostics
           path: |
-            /tmp/nv-v032-validation.log
-            /tmp/nv-v032-badging.txt
+            /tmp/nv-v034-validation.log
+            /tmp/nv-v034-badging.txt
           if-no-files-found: ignore
           retention-days: 3
 
@@ -181,18 +191,18 @@ jobs:
       - name: Upload Android 16 x86_64 smoke APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.33.1-android16-x86-smoke
-          path: organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-37-web-debug.apk
+          name: NV-v0.34.0-android16-x86-smoke
+          path: organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-38-web-debug.apk
           if-no-files-found: error
           retention-days: 3
 
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.33.1-snapp-map-picker-arm64-profileable
+          name: NV-v0.34.0-map-first-arm64-profileable
           path: |
-            dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk
-            dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk.sha256
+            dist/NV-v0.34.0-map-first-arm64-profileable.apk
+            dist/NV-v0.34.0-map-first-arm64-profileable.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -207,7 +217,7 @@ jobs:
       - name: Download x86_64 smoke APK
         uses: actions/download-artifact@v4
         with:
-          name: NV-v0.33.1-android16-x86-smoke
+          name: NV-v0.34.0-android16-x86-smoke
           path: smoke-apk
 
       - name: Android 16 install and launch smoke test
@@ -228,7 +238,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.33.1-android16-smoke-diagnostics
+          name: NV-v0.34.0-android16-smoke-diagnostics
           path: |
             /tmp/nv-v0321-smoke.txt
             /tmp/nv-v0321-logcat.txt
