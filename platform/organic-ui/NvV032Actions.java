@@ -658,8 +658,81 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       performTrip(a, s, q, mode);
     };
     s.controls.addView(button(a, mode == Mode.HURRY ? "پیدا کردن سریع‌ترین مسیر" : "محاسبه", mode == Mode.HURRY ? RED : GREEN, go));
+
+    LinearLayout mapRow = new LinearLayout(a);
+    mapRow.setOrientation(LinearLayout.HORIZONTAL);
+    mapRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    mapRow.addView(smallButton(a, "مبدأ + مقصد روی نقشه", BLUE,
+        () -> startMapEndpointFlow(a, mode, true)), weight(a));
+    mapRow.addView(smallButton(a, "GPS من + مقصد روی نقشه", PANEL2,
+        () -> startMapEndpointFlow(a, mode, false)), weight(a));
+    s.controls.addView(mapRow, new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 48)));
+
     input.setOnEditorActionListener((v, actionId, event) -> { if (actionId == EditorInfo.IME_ACTION_GO) { go.run(); return true; } return false; });
     input.requestFocus();
+  }
+
+  private static void startMapEndpointFlow(MwmActivity a, Mode mode, boolean chooseOriginOnMap) {
+    removeScreen(a);
+
+    if (!chooseOriginOnMap) {
+      Location origin = MwmApplication.from(a).getLocationHelper().getSavedLocation();
+      if (!planningLocationOkay(origin)) {
+        Screen s = screen(a, "انتخاب مقصد روی نقشه",
+            "برای استفاده از موقعیت فعلی، GPS تازه و دقیق لازم است");
+        setStatus(s, "GPS مناسب در دسترس نیست. مبدأ را روی نقشه انتخاب کنید.", AMBER);
+        s.results.addView(button(a, "انتخاب مبدأ روی نقشه", BLUE,
+            () -> startMapEndpointFlow(a, mode, true)));
+        s.results.addView(button(a, "بررسی وضعیت GPS", GREEN,
+            () -> { removeScreen(a); NvRuntimeController.showLocationStatus(a); }));
+        return;
+      }
+      pickDestinationOnMap(a, mode, origin);
+      return;
+    }
+
+    NvRuntimeController.selectPointOnMap(
+        a,
+        "انتخاب مبدأ",
+        "نقشه را حرکت دهید؛ نقطه آبی دقیقاً مبدأ سفر خواهد بود",
+        "تأیید مبدأ و انتخاب مقصد",
+        true,
+        (lat, lon, address) -> {
+          Location origin = mapSelectionLocation(lat, lon,
+              TextUtils.isEmpty(address) ? "مبدأ انتخاب‌شده روی نقشه" : address);
+          try { Framework.nativeSetViewportCenter(lat, lon, 16); } catch (Throwable ignored) {}
+          pickDestinationOnMap(a, mode, origin);
+        });
+  }
+
+  private static void pickDestinationOnMap(MwmActivity a, Mode mode, Location origin) {
+    NvRuntimeController.selectPointOnMap(
+        a,
+        "انتخاب مقصد",
+        "نقشه را حرکت دهید؛ نقطه سبز دقیقاً مقصد سفر خواهد بود",
+        "تأیید مقصد و بررسی مسیرها",
+        false,
+        (lat, lon, address) -> {
+          String title = TextUtils.isEmpty(address) ? "مقصد انتخاب‌شده روی نقشه" : address;
+          double distance = haversine(origin.getLatitude(), origin.getLongitude(), lat, lon);
+          Place destination = new Place(title, address == null ? "" : address,
+              lat, lon, distance, "map", "selected", 1000);
+
+          Screen s = screen(a, "مسیر انتخاب‌شده روی نقشه",
+              "مبدأ و مقصد تأیید شدند؛ گزینه‌های سفر در حال بررسی هستند");
+          setStatus(s, "مبدأ: " + originTitle(origin) + " • مقصد: " + title, GREEN);
+          dispatchResolvedTrip(a, s, "", mode, origin, destination);
+        });
+  }
+
+  private static Location mapSelectionLocation(double lat, double lon, String label) {
+    Location l = new Location("NV_MAP:" + (TextUtils.isEmpty(label) ? "مبدأ روی نقشه" : label));
+    l.setLatitude(lat);
+    l.setLongitude(lon);
+    l.setAccuracy(5f);
+    l.setTime(System.currentTimeMillis());
+    return l;
   }
 
   private static void performTrip(MwmActivity a, Screen s, String raw, Mode mode) {
@@ -787,13 +860,16 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   private static boolean isExplicitOrigin(Location l) {
-    return l != null && l.getProvider() != null && l.getProvider().startsWith("NV_SEARCH:");
+    if (l == null || l.getProvider() == null) return false;
+    String provider = l.getProvider();
+    return provider.startsWith("NV_SEARCH:") || provider.startsWith("NV_MAP:");
   }
 
   private static String originTitle(Location l) {
     if (!isExplicitOrigin(l)) return "موقعیت فعلی";
     String p = l.getProvider();
-    String name = p.substring("NV_SEARCH:".length()).trim();
+    String prefix = p.startsWith("NV_MAP:") ? "NV_MAP:" : "NV_SEARCH:";
+    String name = p.substring(prefix.length()).trim();
     return name.isEmpty() ? "مبدأ انتخابی" : name;
   }
 
