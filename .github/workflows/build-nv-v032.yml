@@ -1,4 +1,4 @@
-name: Build NV v0.32.1 Smart Route Fix APK
+name: Build NV v0.32.2 Simple Route Planner APK
 # v0.32 user-friendly CI
 
 concurrency:
@@ -43,8 +43,8 @@ jobs:
           python3 platform/patch_v032.py organicmaps
           python3 platform/patch_v027_resources.py organicmaps
           grep -q "appId = 'ir.nv.navigation'" organicmaps/android/build.gradle
-          grep -q "versionCode = 33" organicmaps/android/build.gradle
-          grep -q "versionName = '0.32.1'" organicmaps/android/build.gradle
+          grep -q "versionCode = 34" organicmaps/android/build.gradle
+          grep -q "versionName = '0.32.2'" organicmaps/android/build.gradle
           grep -q 'NvV032Actions.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
           grep -q 'NvV032Actions.openSmartSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'NvV032Actions.openRouteAlerts' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
@@ -140,8 +140,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v032-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk
-          sha256sum dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk | tee dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk.sha256
+          cp "$APK" dist/NV-v0.32.2-simple-route-planner-arm64-profileable.apk
+          sha256sum dist/NV-v0.32.2-simple-route-planner-arm64-profileable.apk | tee dist/NV-v0.32.2-simple-route-planner-arm64-profileable.apk.sha256
           grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v032-badging.txt
           grep -q "application-label:'NV'" /tmp/nv-v032-badging.txt
           grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v032-badging.txt
@@ -166,7 +166,7 @@ jobs:
       - name: Upload Android 16 x86_64 smoke APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.32.1-android16-x86-smoke
+          name: NV-v0.32.2-android16-x86-smoke
           path: organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-33-web-debug.apk
           if-no-files-found: error
           retention-days: 3
@@ -174,10 +174,10 @@ jobs:
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.32.1-smart-route-fix-arm64-profileable
+          name: NV-v0.32.2-simple-route-planner-arm64-profileable
           path: |
-            dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk
-            dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk.sha256
+            dist/NV-v0.32.2-simple-route-planner-arm64-profileable.apk
+            dist/NV-v0.32.2-simple-route-planner-arm64-profileable.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -192,7 +192,7 @@ jobs:
       - name: Download x86_64 smoke APK
         uses: actions/download-artifact@v4
         with:
-          name: NV-v0.32.1-android16-x86-smoke
+          name: NV-v0.32.2-android16-x86-smoke
           path: smoke-apk
 
       - name: Android 16 install and launch smoke test
@@ -213,7 +213,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.32.1-android16-smoke-diagnostics
+          name: NV-v0.32.2-android16-smoke-diagnostics
           path: |
             /tmp/nv-v0321-smoke.txt
             /tmp/nv-v0321-logcat.txt
