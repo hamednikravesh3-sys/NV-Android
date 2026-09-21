@@ -1,14 +1,14 @@
-name: Build NV v0.32 User Friendly APK
+name: Build NV v0.32.1 Smart Route Fix APK
 # v0.32 user-friendly CI
 
 concurrency:
-  group: nv-v032-user-friendly-${{ github.ref }}
+  group: nv-v0321-smart-route-fix-${{ github.ref }}
   cancel-in-progress: true
 
 on:
   push:
     branches:
-      - nv-v032-user-friendly
+      - nv-v0321-smart-route-fix
   workflow_dispatch:
 
 jobs:
@@ -43,8 +43,8 @@ jobs:
           python3 platform/patch_v032.py organicmaps
           python3 platform/patch_v027_resources.py organicmaps
           grep -q "appId = 'ir.nv.navigation'" organicmaps/android/build.gradle
-          grep -q "versionCode = 32" organicmaps/android/build.gradle
-          grep -q "versionName = '0.32.0'" organicmaps/android/build.gradle
+          grep -q "versionCode = 33" organicmaps/android/build.gradle
+          grep -q "versionName = '0.32.1'" organicmaps/android/build.gradle
           grep -q 'NvV032Actions.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
           grep -q 'NvV032Actions.openSmartSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'NvV032Actions.openRouteAlerts' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
@@ -63,6 +63,8 @@ jobs:
           grep -q 'onlineServicesEnabled' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'mixed_stage' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'NvV032TextParser' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'extractOrigin(raw)' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'routeBetween' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'NvV032Actions.openPreferences' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
 
           grep -q 'ONLINE_ETA_REFRESH_MOVE_M = 500' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
@@ -101,7 +103,7 @@ jobs:
       - name: Configure ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: nv-v032-user-friendly-arm64
+          key: nv-v0321-smart-route-fix-arm64
           max-size: 2G
 
       - name: Build and test
@@ -138,8 +140,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v032-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.32.0-user-friendly-arm64-profileable.apk
-          sha256sum dist/NV-v0.32.0-user-friendly-arm64-profileable.apk | tee dist/NV-v0.32.0-user-friendly-arm64-profileable.apk.sha256
+          cp "$APK" dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk
+          sha256sum dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk | tee dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk.sha256
           grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v032-badging.txt
           grep -q "application-label:'NV'" /tmp/nv-v032-badging.txt
           grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v032-badging.txt
@@ -253,9 +255,9 @@ jobs:
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.32.0-user-friendly-arm64-profileable
+          name: NV-v0.32.1-smart-route-fix-arm64-profileable
           path: |
-            dist/NV-v0.32.0-user-friendly-arm64-profileable.apk
-            dist/NV-v0.32.0-user-friendly-arm64-profileable.apk.sha256
+            dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk
+            dist/NV-v0.32.1-smart-route-fix-arm64-profileable.apk.sha256
           if-no-files-found: error
           retention-days: 14
