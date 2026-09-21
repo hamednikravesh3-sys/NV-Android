@@ -105,6 +105,12 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
 
   private static final Map<MwmActivity, NvRuntimeController> CONTROLLERS = new WeakHashMap<>();
 
+  public interface MapPointSelectionListener
+  {
+    void onPointSelected(double lat, double lon, String address);
+  }
+
+
   private final MwmActivity activity;
   private final ViewGroup host;
   private final int density;
@@ -211,6 +217,18 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     final NvRuntimeController c = require(activity);
     if (c != null)
       c.showPointPicker();
+  }
+
+  public static void selectPointOnMap(MwmActivity activity,
+                                      String title,
+                                      String subtitle,
+                                      String confirmLabel,
+                                      boolean originPoint,
+                                      MapPointSelectionListener listener)
+  {
+    final NvRuntimeController c = require(activity);
+    if (c != null)
+      c.showRoutePointPicker(title, subtitle, confirmLabel, originPoint, listener);
   }
 
   public static void showLocationStatus(MwmActivity activity)
@@ -767,6 +785,90 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
 
     FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, dp(300), Gravity.BOTTOM);
+    pp.setMargins(dp(10), 0, dp(10), dp(18));
+    panel.setClickable(true);
+    customLayer.addView(panel, pp);
+  }
+
+  private void showRoutePointPicker(String title,
+                                    String subtitle,
+                                    String confirmLabel,
+                                    boolean originPoint,
+                                    MapPointSelectionListener listener)
+  {
+    beginTransparent();
+
+    final LinearLayout markerBox = new LinearLayout(activity);
+    markerBox.setOrientation(LinearLayout.VERTICAL);
+    markerBox.setGravity(Gravity.CENTER);
+    markerBox.setClickable(false);
+
+    final TextView bubble = label(originPoint ? "مبدأ" : "مقصد", 14, WHITE, Typeface.BOLD, Gravity.CENTER);
+    final int markerColor = originPoint ? BLUE : GREEN;
+    bubble.setBackground(round(markerColor, markerColor, 16));
+    bubble.setPadding(dp(12), dp(5), dp(12), dp(5));
+    markerBox.addView(bubble, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34)));
+
+    final TextView marker = label(originPoint ? "●" : "■", 34, markerColor, Typeface.BOLD, Gravity.CENTER);
+    marker.setShadowLayer(7f, 0f, 2f, Color.BLACK);
+    markerBox.addView(marker, new LinearLayout.LayoutParams(dp(52), dp(48)));
+
+    final FrameLayout.LayoutParams mp = new FrameLayout.LayoutParams(dp(120), dp(88), Gravity.CENTER);
+    mp.setMargins(0, 0, 0, dp(26));
+    customLayer.addView(markerBox, mp);
+
+    final LinearLayout panel = bottomPanel();
+    panel.addView(header(
+        TextUtils.isEmpty(title) ? (originPoint ? "انتخاب مبدأ" : "انتخاب مقصد") : title,
+        TextUtils.isEmpty(subtitle)
+            ? "نقشه را حرکت دهید تا نشانگر دقیقاً روی مکان موردنظر قرار بگیرد"
+            : subtitle,
+        this::closeCustom));
+
+    panel.addView(body(
+        originPoint
+            ? "نقطه آبی، مبدأ سفر خواهد بود."
+            : "نقطه سبز، مقصد سفر خواهد بود.",
+        MUTED));
+
+    panel.addView(primary(
+        TextUtils.isEmpty(confirmLabel)
+            ? (originPoint ? "تأیید مبدأ" : "تأیید مقصد")
+            : confirmLabel,
+        originPoint ? BLUE : GREEN,
+        () -> {
+          try
+          {
+            final double[] center = Framework.nativeGetScreenRectCenter();
+            if (center == null || center.length < 2)
+              throw new IllegalStateException("No map center");
+
+            String address = "";
+            try
+            {
+              final String found = Framework.nativeGetAddress(center[0], center[1]);
+              if (!TextUtils.isEmpty(found))
+                address = found.trim();
+            }
+            catch (Throwable ignored) {}
+
+            final double lat = center[0];
+            final double lon = center[1];
+            final String selectedAddress = address;
+            closeCustom();
+            if (listener != null)
+              listener.onPointSelected(lat, lon, selectedAddress);
+          }
+          catch (Throwable e)
+          {
+            Toast.makeText(activity, "مختصات این نقطه خوانده نشد", Toast.LENGTH_SHORT).show();
+          }
+        }));
+
+    panel.addView(primary("انصراف", PANEL_2, this::closeCustom));
+
+    final FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(260), Gravity.BOTTOM);
     pp.setMargins(dp(10), 0, dp(10), dp(18));
     panel.setClickable(true);
     customLayer.addView(panel, pp);
