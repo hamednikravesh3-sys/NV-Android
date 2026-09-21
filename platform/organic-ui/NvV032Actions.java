@@ -1680,8 +1680,10 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     if (!onlineServicesEnabled(a)) {
       setStatus(s, "حالت خصوصی فعال است؛ مقایسه آنلاین مسیرها انجام نمی‌شود.", AMBER);
       s.results.removeAllViews();
-      s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
-      s.results.addView(button(a, "مسیر پیاده آفلاین", CYAN, () -> routeBetween(a, origin, dest, Router.Pedestrian)));
+      s.results.addView(routeOptionCard(a, "🚗 خودرو آفلاین", "محاسبه با موتور داخلی نقشه",
+          PLANNER_BLUE, true, () -> routeBetween(a, origin, dest, Router.Vehicle)));
+      s.results.addView(routeOptionCard(a, "🚶 پیاده آفلاین", "محاسبه با موتور داخلی نقشه",
+          GREEN, false, () -> routeBetween(a, origin, dest, Router.Pedestrian)));
       return;
     }
     setStatus(s, "در حال محاسبه مسیرهای جایگزین، زمان و هزینه…", CYAN);
@@ -1689,7 +1691,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       List<RoadEstimate> carRoutes = new ArrayList<>();
       MixedEstimate mixed = null;
       try { carRoutes = osrmAlternatives(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon); } catch (Throwable ignored) {}
-      try { mixed = estimateMixed(a, origin, dest); } catch (Throwable ignored) {}
+      try { mixed = estimateMixed(a, origin, dest, true); } catch (Throwable ignored) {}
 
       double direct = haversine(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon);
       int walkSec = direct <= 15_000d ? walkingSeconds(direct) : Integer.MAX_VALUE;
@@ -1700,53 +1702,67 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
         if (!alive(a, s)) return;
         s.results.removeAllViews();
 
+        int bestSec = Integer.MAX_VALUE;
+        for (RoadEstimate car : finalCars) bestSec = Math.min(bestSec, car.durationSec);
+        if (finalMixed != null) bestSec = Math.min(bestSec, finalMixed.totalSec);
+        if (walkSec < Integer.MAX_VALUE) bestSec = Math.min(bestSec, walkSec);
+
         int idx = 1;
         for (RoadEstimate car : finalCars) {
           double liters = car.distanceM / 100000d * prefs(a).getInt("fuel_l100", 8);
           long cost = estimateCarCostToman(a, car.distanceM);
-          String tag = idx == 1 ? "سریع‌ترین" : "جایگزین " + idx;
-          s.results.addView(optionCard(a,
+          String tag = idx == 1 ? "مسیر اصلی" : "جایگزین " + idx;
+          boolean recommended = car.durationSec == bestSec;
+          s.results.addView(routeOptionCard(a,
               "🚗 خودرو • " + tag,
-              formatMinutes(car.durationSec) + " • " + formatDistance(car.distanceM)
-                  + " • " + String.format(Locale.US, "%.1f لیتر", liters)
-                  + " • حدود " + formatToman(cost),
-              idx == 1 ? BLUE : PANEL2,
+              formatMinutes(car.durationSec) + "  •  " + formatDistance(car.distanceM)
+                  + "  •  " + String.format(Locale.US, "%.1f لیتر", liters)
+                  + "  •  حدود " + formatToman(cost),
+              PLANNER_BLUE,
+              recommended,
               () -> routeBetween(a, origin, dest, Router.Vehicle)));
           idx++;
         }
 
         if (finalMixed != null) {
           long cost = estimateMixedCostToman(a, finalMixed);
-          s.results.addView(optionCard(a,
+          boolean recommended = finalMixed.totalSec == bestSec;
+          s.results.addView(routeOptionCard(a,
               "🚇 سفر ترکیبی",
-              formatMinutes(finalMixed.totalSec) + " • "
+              formatMinutes(finalMixed.totalSec) + "  •  "
                   + mixedModeLabel(finalMixed.accessMode) + " → مترو → " + mixedModeLabel(finalMixed.egressMode)
-                  + " • " + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
-                  + " • حدود " + formatToman(cost),
+                  + "\n" + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
+                  + "  •  حدود " + formatToman(cost),
               GREEN,
+              recommended,
               () -> startMixedSession(a, origin, finalMixed, dest)));
-          s.results.addView(text(a,
+          TextView metroInfo = text(a,
               "مترو: " + finalMixed.metroSource
                   + (finalMixed.metroStops >= 0 ? " • " + finalMixed.metroStops + " ایستگاه" : "")
                   + (finalMixed.metroTransfers >= 0 ? " • " + finalMixed.metroTransfers + " تعویض خط" : "")
-                  + " • بدون داده زنده قطار.",
-              11, MUTED, Typeface.NORMAL));
+                  + " • بدون داده زنده قطار",
+              11, PLANNER_MUTED, Typeface.NORMAL);
+          metroInfo.setPadding(dp(a, 8), 0, dp(a, 8), dp(a, 4));
+          s.results.addView(metroInfo);
         }
 
         if (walkSec < Integer.MAX_VALUE) {
-          s.results.addView(optionCard(a,
+          boolean recommended = walkSec == bestSec;
+          s.results.addView(routeOptionCard(a,
               "🚶 پیاده",
-              "حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20d) + " • بدون هزینه",
-              CYAN,
+              "حدود " + formatMinutes(walkSec) + "  •  " + formatDistance(direct * 1.20d) + "  •  بدون هزینه",
+              Color.rgb(14, 165, 233),
+              recommended,
               () -> routeBetween(a, origin, dest, Router.Pedestrian)));
         }
 
         if (finalCars.isEmpty() && finalMixed == null && walkSec == Integer.MAX_VALUE) {
           setStatus(s, "مقایسه آنلاین در دسترس نیست؛ از موتور آفلاین نقشه استفاده کنید.", AMBER);
-          s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeBetween(a, origin, dest, Router.Vehicle)));
+          s.results.addView(routeOptionCard(a, "🚗 خودرو آفلاین", "محاسبه با موتور داخلی نقشه",
+              PLANNER_BLUE, true, () -> routeBetween(a, origin, dest, Router.Vehicle)));
           return;
         }
-        s.results.addView(button(a, "تغییر مبدأ یا مقصد", PANEL2, () -> {
+        s.results.addView(plannerSecondaryButton(a, "تغییر مبدأ یا مقصد", () -> {
           RoutePlannerState current = ROUTE_PLANNERS.get(a);
           if (current == null) {
             current = new RoutePlannerState();
