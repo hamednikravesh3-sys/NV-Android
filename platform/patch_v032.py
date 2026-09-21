@@ -106,7 +106,8 @@ method_new = '''  private void ensureCurrentRegionMap()
     // or requires a regional offline-map download. Offline maps remain a
     // deliberate user action in the native downloader.
   }
-'''
+
+  private void refreshLocationChip'''
 t2, n = method_re.subn(method_new, t, count=1)
 if n != 1:
     raise SystemExit('current-region map patch failed')
