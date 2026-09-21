@@ -88,8 +88,8 @@ import java.util.concurrent.Executors;
 public final class NvRuntimeController implements DefaultLifecycleObserver, LocationListener
 {
   private static final int NAVY = Color.rgb(4, 18, 33);
-  private static final int PANEL = Color.rgb(7, 33, 55);
-  private static final int PANEL_2 = Color.rgb(10, 48, 78);
+  private static final int PANEL = Color.rgb(15, 23, 42);
+  private static final int PANEL_2 = Color.rgb(30, 41, 59);
   private static final int CYAN = Color.rgb(40, 206, 255);
   private static final int BLUE = Color.rgb(45, 139, 255);
   private static final int GREEN = Color.rgb(42, 214, 113);
@@ -100,7 +100,7 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
   private static final int DESTINATION_PICKER = Color.rgb(255, 111, 0); // orange
   private static final int WHITE = Color.WHITE;
   private static final int MUTED = Color.rgb(205, 220, 231);
-  private static final int OUTLINE = Color.rgb(45, 126, 171);
+  private static final int OUTLINE = Color.rgb(71, 85, 105);
 
   private static final double TEHRAN_LAT = 35.6892;
   private static final double TEHRAN_LON = 51.3890;
@@ -806,15 +806,17 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     markerBox.setGravity(Gravity.CENTER);
     markerBox.setClickable(false);
 
-    final TextView bubble = label(originPoint ? "مبدأ" : "مقصد", 14, WHITE, Typeface.BOLD, Gravity.CENTER);
     final int markerColor = originPoint ? ORIGIN_PICKER : DESTINATION_PICKER;
-    bubble.setBackground(round(markerColor, markerColor, 16));
-    bubble.setPadding(dp(12), dp(5), dp(12), dp(5));
+
+    final TextView bubble = label(originPoint ? "مبدأ" : "مقصد", 13, WHITE, Typeface.BOLD, Gravity.CENTER);
+    bubble.setBackground(round(Color.argb(245, 15, 23, 42), markerColor, 18));
+    bubble.setPadding(dp(13), dp(5), dp(13), dp(5));
+    bubble.setElevation(dp(6));
     markerBox.addView(bubble, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34)));
 
-    final TextView marker = label(originPoint ? "●" : "⚑", originPoint ? 34 : 40, markerColor, Typeface.BOLD, Gravity.CENTER);
-    marker.setShadowLayer(7f, 0f, 2f, Color.BLACK);
-    markerBox.addView(marker, new LinearLayout.LayoutParams(dp(52), dp(48)));
+    final TextView marker = label(originPoint ? "●" : "⚑", originPoint ? 38 : 44, markerColor, Typeface.BOLD, Gravity.CENTER);
+    marker.setShadowLayer(10f, 0f, 3f, Color.argb(180, 0, 0, 0));
+    markerBox.addView(marker, new LinearLayout.LayoutParams(dp(58), dp(54)));
 
     final FrameLayout.LayoutParams mp = new FrameLayout.LayoutParams(dp(120), dp(88), Gravity.CENTER);
     mp.setMargins(0, 0, 0, dp(26));
@@ -871,7 +873,7 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     panel.addView(primary("انصراف", PANEL_2, this::closeCustom));
 
     final FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(260), Gravity.BOTTOM);
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(242), Gravity.BOTTOM);
     pp.setMargins(dp(10), 0, dp(10), dp(18));
     panel.setClickable(true);
     customLayer.addView(panel, pp);
@@ -1111,9 +1113,9 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     final LinearLayout panel = new LinearLayout(activity);
     panel.setOrientation(LinearLayout.VERTICAL);
     panel.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    panel.setPadding(dp(12), dp(10), dp(12), dp(14));
-    panel.setBackground(round(Color.argb(252, 5, 28, 47), CYAN, 22));
-    panel.setElevation(dp(14));
+    panel.setPadding(dp(14), dp(12), dp(14), dp(16));
+    panel.setBackground(round(Color.argb(252, 15, 23, 42), OUTLINE, 28));
+    panel.setElevation(dp(22));
     panel.setClickable(true);
     panel.setOnClickListener(v -> {});
     return panel;
@@ -1162,10 +1164,11 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
   private TextView primary(String text, int color, Runnable action)
   {
     final TextView v = label(text, 14, WHITE, Typeface.BOLD, Gravity.CENTER);
-    v.setBackground(round(color, color == PANEL_2 ? OUTLINE : color, 14));
+    v.setBackground(round(color, color == PANEL_2 ? OUTLINE : color, 18));
     v.setClickable(true);
     v.setOnClickListener(x -> action.run());
-    final LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+    v.setElevation(dp(3));
+    final LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
     p.setMargins(dp(8), dp(5), dp(8), dp(5));
     v.setLayoutParams(p);
     return v;
