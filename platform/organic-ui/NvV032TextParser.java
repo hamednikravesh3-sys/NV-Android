@@ -22,6 +22,14 @@ final class NvV032TextParser {
       if (go >= 0) q = q.substring(go + (q.startsWith(" بروم ", go) ? 6 : 5)).trim();
     }
 
+    if (q.startsWith("از ")) {
+      int viaTo = q.lastIndexOf(" به ");
+      int viaUntil = q.lastIndexOf(" تا ");
+      int marker = Math.max(viaTo, viaUntil);
+      if (marker > 2)
+        q = q.substring(marker + 4).trim();
+    }
+
     if (q.startsWith("به ")) q = q.substring(3).trim();
 
     String[] suffixes = {
@@ -43,6 +51,31 @@ final class NvV032TextParser {
     } while (changed);
 
     return q.replaceAll("[،,؛;:!؟?]+", " ").replaceAll("\\s+", " ").trim();
+  }
+
+  static String extractOrigin(String raw) {
+    String q = normalize(raw);
+    if (q.isEmpty()) return "";
+
+    int from = q.indexOf("از ");
+    if (from < 0) return "";
+    String tail = q.substring(from + 3).trim();
+    if (tail.isEmpty()) return "";
+
+    String[] separators = {
+        " برم به ", " بروم به ", " میخوام برم ", " می خواهم برم ", " می خواهم بروم ",
+        " برم ", " بروم ", " به ", " تا "
+    };
+    int cut = -1;
+    for (String separator : separators) {
+      int i = tail.indexOf(separator);
+      if (i > 0 && (cut < 0 || i < cut)) cut = i;
+    }
+    if (cut <= 0) return "";
+
+    String origin = tail.substring(0, cut).trim();
+    origin = origin.replaceAll("^(مبدا|مبدأ)\\s*[:：]?\\s*", "");
+    return origin.replaceAll("[،,؛;:!؟?]+", " ").replaceAll("\\s+", " ").trim();
   }
 
   static String normalize(String s) {
