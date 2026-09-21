@@ -113,7 +113,7 @@ public final class NvSmartActions {
               () -> { removeScreen(activity); NvRuntimeController.openSearch(activity, category.fallbackQuery); }));
         });
       }
-    }, "nv-nearby-v032").start();
+    }, "nv-nearby-v033").start();
   }
 
   public static void openPlanner(MwmActivity activity, int menuId) {
@@ -222,7 +222,7 @@ public final class NvSmartActions {
           }));
         });
       }
-    }, "nv-trip-geocode-v032").start();
+    }, "nv-trip-geocode-v033").start();
   }
 
   private static void renderNearby(MwmActivity activity, Screen ui, NvNearbyCategory category,
@@ -300,7 +300,7 @@ public final class NvSmartActions {
     conn.setDoOutput(true);
     conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
     conn.setRequestProperty("Accept", "application/json");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.32");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.33");
     final byte[] payload = ("data=" + URLEncoder.encode(query, "UTF-8")).getBytes(StandardCharsets.UTF_8);
     try (OutputStream out = conn.getOutputStream()) { out.write(payload); }
     final int code = conn.getResponseCode();
@@ -403,7 +403,7 @@ public final class NvSmartActions {
     conn.setReadTimeout(12000);
     conn.setRequestMethod("GET");
     conn.setRequestProperty("Accept", "application/json");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.32");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.33");
     final int code = conn.getResponseCode();
     if (code < 200 || code >= 300) {
       conn.disconnect();
@@ -532,7 +532,7 @@ public final class NvSmartActions {
   }
 
   private static boolean onlineServicesEnabled(Context c) {
-    return c.getSharedPreferences("nv_v032", Context.MODE_PRIVATE)
+    return c.getSharedPreferences("nv_v033", Context.MODE_PRIVATE)
         .getBoolean("online_services", true);
   }
 
