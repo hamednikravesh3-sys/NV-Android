@@ -613,7 +613,7 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
   public static void openHurry(MwmActivity a) { openTripInput(a, Mode.HURRY, "حالت عجله دارم", "سریع‌ترین گزینه عملی بررسی می‌شود و ETA پیش از شروع نمایش داده می‌شود"); }
   public static void openMixed(MwmActivity a) { openTripInput(a, Mode.MIXED, "مسیر ترکیبی", "NV ابتدا وجود مترو نزدیک مبدا و مقصد را بررسی می‌کند؛ در نبود مترو خطای ساختگی نشان نمی‌دهد"); }
   public static void openEta(MwmActivity a) { openTripInput(a, Mode.ETA, "زمان رسیدن", "ETA با منبع مشخص، هموارسازی و بازه عدم‌قطعیت نمایش داده می‌شود"); }
-  public static void openTimeCost(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه زمان و هزینه", "چند مسیر خودرو، سفر ترکیبی، پیاده، مصرف و هزینه تقریبی مقایسه می‌شوند"); }
+  public static void openTimeCost(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه مسیرها", "خودرو، مترو/پیاده و مسیرهای ترکیبی بر اساس زمان و نوع سفر مقایسه می‌شوند"); }
   public static void openWalk(MwmActivity a) { openTripInput(a, Mode.WALK, "راهنمای پیاده", "مسیر پیاده مستقل محاسبه می‌شود"); }
   public static void openCompareRoutes(MwmActivity a) { openTripInput(a, Mode.COMPARE, "مقایسه مسیرها", "مسیرهای جایگزین خودرو و گزینه‌های ترکیبی/پیاده در یک صفحه بررسی می‌شوند"); }
 
@@ -801,8 +801,7 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
 
         if (finalMixed != null) {
           String details = formatMinutes(finalMixed.totalSec) + " • "
-              + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
-              + " • حدود " + formatToman(estimateMixedCostToman(a, finalMixed));
+              + finalMixed.fromStation.title + " → " + finalMixed.toStation.title;
           s.results.addView(optionCard(a,
               "🚇 ترکیبی" + ("ترکیبی".equals(bestName) ? "  ✓ سریع‌ترین" : ""),
               details,
@@ -864,8 +863,6 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
                 + " • بدون داده زنده قطار", BLUE));
         s.results.addView(stepCard(a, "۳", result.egressMode + " تا مقصد",
             formatMinutes(result.egressSec) + " • " + formatDistance(result.egressDistanceM), PURPLE));
-        s.results.addView(text(a, "هزینه تقریبی کل: " + formatToman(estimateMixedCostToman(a, result)),
-            13, CYAN, Typeface.BOLD));
         s.results.addView(button(a, "شروع سفر ترکیبی مرحله‌به‌مرحله", GREEN, () -> startMixedSession(a, result, dest)));
         s.results.addView(button(a, "مقایسه با خودرو", BLUE, () -> compareHurryOptions(a, s, origin, dest)));
       });
@@ -873,14 +870,15 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
   }
 
   private static MixedEstimate estimateMixed(MwmActivity a, Location origin, Place dest) throws Exception {
+    boolean preferTaxi = prefs(a).getBoolean("use_taxi", true) && prefs(a).getBoolean("less_walking", false);
+    return estimateMixed(a, origin, dest, preferTaxi);
+  }
+
+  private static MixedEstimate estimateMixed(MwmActivity a, Location origin, Place dest, boolean taxi) throws Exception {
     if (!prefs(a).getBoolean("use_metro", true)) return null;
     List<Place> from = metroStations(origin.getLatitude(), origin.getLongitude(), 5_000);
     List<Place> to = metroStations(dest.lat, dest.lon, 5_000);
     if (from.isEmpty() || to.isEmpty()) return null;
-
-    boolean minCost = prefs(a).getBoolean("min_cost", false);
-    boolean lessWalking = prefs(a).getBoolean("less_walking", false);
-    boolean taxi = prefs(a).getBoolean("use_taxi", true) && (!minCost || lessWalking);
 
     // Do not blindly choose the nearest station on each side.
     // Evaluate a few low-access-distance pairs and choose the best connected metro pair.
@@ -1167,100 +1165,105 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
 
   private static void compareModes(MwmActivity a, Screen s, Location origin, Place dest) {
     if (!onlineServicesEnabled(a)) {
-      setStatus(s, "حالت خصوصی فعال است؛ مقایسه آنلاین مسیرها انجام نمی‌شود.", AMBER);
+      setStatus(s, "حالت خصوصی فعال است؛ مقایسه آنلاین انجام نمی‌شود.", AMBER);
       s.results.removeAllViews();
-      s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
-      s.results.addView(button(a, "مسیر پیاده آفلاین", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
+      s.results.addView(button(a, "مسیر خودرو با موتور آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
+      s.results.addView(button(a, "مسیر پیاده با موتور آفلاین", CYAN, () -> routeTo(a, dest, Router.Pedestrian)));
       return;
     }
-    setStatus(s, "در حال محاسبه مسیرهای جایگزین، زمان و هزینه…", CYAN);
+
+    setStatus(s, "در حال محاسبه خودرو و روش‌های ترکیبی…", CYAN);
     new Thread(() -> {
-      List<RoadEstimate> carRoutes = new ArrayList<>();
-      MixedEstimate mixed = null;
-      try { carRoutes = osrmAlternatives(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon); } catch (Throwable ignored) {}
-      try { mixed = estimateMixed(a, origin, dest); } catch (Throwable ignored) {}
+      List<RoadEstimate> cars = new ArrayList<>();
+      MixedEstimate mixedWalk = null;
+      MixedEstimate mixedTaxi = null;
+
+      try { cars = osrmAlternatives(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon); }
+      catch (Throwable ignored) {}
+
+      try { mixedWalk = estimateMixed(a, origin, dest, false); }
+      catch (Throwable ignored) {}
+
+      if (prefs(a).getBoolean("use_taxi", true)) {
+        try { mixedTaxi = estimateMixed(a, origin, dest, true); }
+        catch (Throwable ignored) {}
+      }
 
       double direct = haversine(origin.getLatitude(), origin.getLongitude(), dest.lat, dest.lon);
-      int walkSec = direct <= 15_000d ? walkingSeconds(direct) : Integer.MAX_VALUE;
-      List<RoadEstimate> finalCars = carRoutes;
-      MixedEstimate finalMixed = mixed;
+      int walkSec = direct <= 20_000d ? walkingSeconds(direct) : Integer.MAX_VALUE;
+
+      List<RoadEstimate> finalCars = cars;
+      MixedEstimate finalWalkMixed = mixedWalk;
+      MixedEstimate finalTaxiMixed = mixedTaxi;
 
       a.runOnUiThread(() -> {
         if (!alive(a, s)) return;
         s.results.removeAllViews();
 
-        int idx = 1;
+        int index = 1;
         for (RoadEstimate car : finalCars) {
-          double liters = car.distanceM / 100000d * prefs(a).getInt("fuel_l100", 8);
-          long cost = estimateCarCostToman(a, car.distanceM);
-          String tag = idx == 1 ? "سریع‌ترین" : "جایگزین " + idx;
+          String tag = index == 1 ? "پیشنهاد NV" : "جایگزین " + index;
           s.results.addView(optionCard(a,
               "🚗 خودرو • " + tag,
-              formatMinutes(car.durationSec) + " • " + formatDistance(car.distanceM)
-                  + " • " + String.format(Locale.US, "%.1f لیتر", liters)
-                  + " • حدود " + formatToman(cost),
-              idx == 1 ? BLUE : PANEL2,
+              formatMinutes(car.durationSec) + " • " + formatDistance(car.distanceM),
+              index == 1 ? BLUE : PANEL2,
               () -> routeTo(a, dest, Router.Vehicle)));
-          idx++;
+          index++;
         }
 
-        if (finalMixed != null) {
-          long cost = estimateMixedCostToman(a, finalMixed);
+        if (finalWalkMixed != null) {
           s.results.addView(optionCard(a,
-              "🚇 سفر ترکیبی",
-              formatMinutes(finalMixed.totalSec) + " • "
-                  + finalMixed.fromStation.title + " → " + finalMixed.toStation.title
-                  + " • حدود " + formatToman(cost),
+              "🚇 پیاده + مترو + پیاده",
+              formatMinutes(finalWalkMixed.totalSec) + " • "
+                  + finalWalkMixed.fromStation.title + " → " + finalWalkMixed.toStation.title,
               GREEN,
-              () -> startMixedSession(a, finalMixed, dest)));
-          s.results.addView(text(a,
-              "مترو: " + finalMixed.metroSource
-                  + (finalMixed.metroStops >= 0 ? " • " + finalMixed.metroStops + " ایستگاه" : "")
-                  + (finalMixed.metroTransfers >= 0 ? " • " + finalMixed.metroTransfers + " تعویض خط" : "")
-                  + " • بدون داده زنده قطار.",
-              11, MUTED, Typeface.NORMAL));
+              () -> startMixedSession(a, finalWalkMixed, dest)));
+        }
+
+        if (finalTaxiMixed != null) {
+          boolean materiallyDifferent = finalWalkMixed == null
+              || Math.abs(finalTaxiMixed.totalSec - finalWalkMixed.totalSec) >= 120;
+          if (materiallyDifferent) {
+            s.results.addView(optionCard(a,
+                "🚕 تاکسی + مترو + ادامه مسیر",
+                formatMinutes(finalTaxiMixed.totalSec) + " • "
+                    + finalTaxiMixed.fromStation.title + " → " + finalTaxiMixed.toStation.title,
+                PURPLE,
+                () -> startMixedSession(a, finalTaxiMixed, dest)));
+          }
         }
 
         if (walkSec < Integer.MAX_VALUE) {
           s.results.addView(optionCard(a,
               "🚶 پیاده",
-              "حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20d) + " • بدون هزینه",
+              "حدود " + formatMinutes(walkSec) + " • " + formatDistance(direct * 1.20d),
               CYAN,
               () -> routeTo(a, dest, Router.Pedestrian)));
         }
 
-        if (finalCars.isEmpty() && finalMixed == null && walkSec == Integer.MAX_VALUE) {
-          setStatus(s, "مقایسه آنلاین در دسترس نیست؛ از موتور آفلاین نقشه استفاده کنید.", AMBER);
+        if (finalWalkMixed == null && finalTaxiMixed == null) {
+          LinearLayout info = new LinearLayout(a);
+          info.setOrientation(LinearLayout.VERTICAL);
+          info.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
+          info.setBackground(round(a, PANEL, AMBER, 14));
+          info.addView(text(a, "🚇 مسیر ترکیبی پیدا نشد", 14, WHITE, Typeface.BOLD));
+          info.addView(text(a,
+              "NV اتصال واقعی مترو نزدیک مبدأ و مقصد را بررسی کرد؛ مسیر غیرواقعی نمایش داده نمی‌شود.",
+              11, MUTED, Typeface.NORMAL));
+          s.results.addView(info);
+        }
+
+        if (finalCars.isEmpty() && finalWalkMixed == null && finalTaxiMixed == null && walkSec == Integer.MAX_VALUE) {
+          setStatus(s, "مسیر آنلاین آماده نشد؛ موتور آفلاین نقشه قابل استفاده است.", AMBER);
           s.results.addView(button(a, "مسیر خودرو آفلاین", BLUE, () -> routeTo(a, dest, Router.Vehicle)));
           return;
         }
-        setStatus(s, "گزینه‌های قابل استفاده برای «" + dest.title + "» آماده است", GREEN);
+        setStatus(s, "پیشنهادهای مسیر برای «" + dest.title + "» آماده است", GREEN);
       });
     }, "nv-v033-compare").start();
   }
 
-  private static long estimateCarCostToman(MwmActivity a, double distanceM) {
-    SharedPreferences p = prefs(a);
-    double liters = distanceM / 100000d * p.getInt("fuel_l100", 8);
-    return Math.max(0L, Math.round(liters * p.getInt("fuel_price_toman", 3000)));
-  }
 
-  private static long estimateTaxiCostToman(MwmActivity a, double distanceM) {
-    SharedPreferences p = prefs(a);
-    return Math.max(0L, p.getInt("taxi_base_toman", 30000)
-        + Math.round((distanceM / 1000d) * p.getInt("taxi_km_toman", 10000)));
-  }
-
-  private static long estimateMixedCostToman(MwmActivity a, MixedEstimate m) {
-    long total = prefs(a).getInt("metro_fare_toman", 6000);
-    if ("تاکسی".equals(m.accessMode)) total += estimateTaxiCostToman(a, m.accessDistanceM);
-    if ("تاکسی".equals(m.egressMode)) total += estimateTaxiCostToman(a, m.egressDistanceM);
-    return total;
-  }
-
-  private static String formatToman(long value) {
-    return String.format(Locale.US, "%,d تومان", value);
-  }
 
   private static void verifyMixedThenRoute(MwmActivity a, Screen s, Location origin, Place dest) {
     setStatus(s, "در حال بررسی ایستگاه مترو نزدیک مبدا و مقصد…", CYAN);
@@ -1442,75 +1445,30 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
   }
 
   public static void openPreferences(MwmActivity a) {
-    Screen s = screen(a, "تنظیمات سفر", "رفتار مسیریابی، حریم خصوصی، هزینه و مصرف را اینجا تنظیم کنید");
+    Screen s = screen(a, "تنظیمات سفر", "فقط تنظیمات مرتبط با نوع مسیر، اینترنت و هشدارها");
     SharedPreferences p = prefs(a);
 
     s.results.addView(sectionText(a, "حریم خصوصی و اینترنت"));
     s.results.addView(togglePreference(a, p, "online_services", true,
         "خدمات هوشمند آنلاین",
-        "در صورت خاموش بودن، مقصد/مختصات برای OSRM، Nominatim، Photon و Overpass ارسال نمی‌شود."));
+        "برای جستجوی سریع، ETA جاده‌ای و پیدا کردن ایستگاه‌ها. در حالت خصوصی این سرویس‌ها استفاده نمی‌شوند."));
     s.results.addView(text(a,
         p.getBoolean("online_services", true)
-            ? "حالت آنلاین: ETA جاده‌ای، جستجوی هوشمند و داده ایستگاه‌ها فعال است."
-            : "حالت خصوصی: فقط قابلیت‌های محلی/آفلاین نقشه استفاده می‌شوند.",
+            ? "حالت آنلاین فعال است؛ برای استفاده از برنامه نیازی به دانلود اجباری نقشه منطقه نیست."
+            : "حالت خصوصی فعال است؛ قابلیت‌های آنلاین خاموش هستند.",
         11, p.getBoolean("online_services", true) ? CYAN : GREEN, Typeface.NORMAL));
 
-    s.results.addView(sectionText(a, "شیوه سفر"));
-    s.results.addView(togglePreference(a, p, "use_metro", true, "استفاده از مترو", "در سفر ترکیبی مترو بررسی شود."));
-    s.results.addView(togglePreference(a, p, "use_taxi", true, "استفاده از تاکسی", "برای دسترسی به ایستگاه یا مقصد امکان تاکسی در نظر گرفته شود."));
-    s.results.addView(togglePreference(a, p, "min_cost", false, "اولویت هزینه کمتر", "در سفر ترکیبی، تا حد امکان گزینه ارزان‌تر ترجیح داده شود."));
-    s.results.addView(togglePreference(a, p, "less_walking", false, "پیاده‌روی کمتر", "در صورت امکان تاکسی برای بخش‌های دسترسی ترجیح داده شود."));
-    s.results.addView(togglePreference(a, p, "avoid_highways", false, "اجتناب از بزرگراه", "در مسیریابی خودرو از بزرگراه‌ها اجتناب شود."));
-    s.results.addView(togglePreference(a, p, "safer_route", true, "اجتناب از جاده خاکی/نامناسب", "گزینه قابل پشتیبانی موتور نقشه برای جاده‌های خاکی فعال می‌شود."));
-
-    s.results.addView(sectionText(a, "مصرف و هزینه تقریبی"));
-    int[] fuel = {6, 8, 10, 12};
-    LinearLayout fuelRow = new LinearLayout(a);
-    fuelRow.setOrientation(LinearLayout.HORIZONTAL);
-    fuelRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    for (int f : fuel) {
-      fuelRow.addView(smallButton(a, f + "L/100", p.getInt("fuel_l100", 8) == f ? GREEN : PANEL2,
-          () -> { p.edit().putInt("fuel_l100", f).apply(); openPreferences(a); }), weight(a));
-    }
-    s.results.addView(fuelRow, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 48)));
-
-    EditText fuelPrice = input(a, "قیمت هر لیتر سوخت (تومان)");
-    fuelPrice.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-    fuelPrice.setText(String.valueOf(p.getInt("fuel_price_toman", 3000)));
-    s.results.addView(fuelPrice, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 58)));
-
-    EditText taxiBase = input(a, "هزینه پایه تاکسی (تومان)");
-    taxiBase.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-    taxiBase.setText(String.valueOf(p.getInt("taxi_base_toman", 30000)));
-    s.results.addView(taxiBase, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 58)));
-
-    EditText taxiKm = input(a, "هزینه تقریبی تاکسی به ازای هر کیلومتر (تومان)");
-    taxiKm.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-    taxiKm.setText(String.valueOf(p.getInt("taxi_km_toman", 10000)));
-    s.results.addView(taxiKm, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 58)));
-
-    EditText metroFare = input(a, "کرایه تقریبی مترو (تومان)");
-    metroFare.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-    metroFare.setText(String.valueOf(p.getInt("metro_fare_toman", 6000)));
-    s.results.addView(metroFare, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 58)));
-
-    s.results.addView(button(a, "ذخیره هزینه‌ها", GREEN, () -> {
-      try {
-        p.edit()
-            .putInt("fuel_price_toman", Integer.parseInt(fuelPrice.getText().toString().trim()))
-            .putInt("taxi_base_toman", Integer.parseInt(taxiBase.getText().toString().trim()))
-            .putInt("taxi_km_toman", Integer.parseInt(taxiKm.getText().toString().trim()))
-            .putInt("metro_fare_toman", Integer.parseInt(metroFare.getText().toString().trim()))
-            .apply();
-        Toast.makeText(a, "تنظیمات هزینه ذخیره شد", Toast.LENGTH_SHORT).show();
-      } catch (Throwable e1) {
-        Toast.makeText(a, "مقادیر هزینه باید عدد صحیح باشند", Toast.LENGTH_LONG).show();
-      }
-    }));
-
-    s.results.addView(text(a,
-        "هزینه تاکسی و مترو برآوردی است و فقط بر اساس مقادیر شما محاسبه می‌شود؛ قیمت لحظه‌ای جعل نمی‌شود.",
-        11, MUTED, Typeface.NORMAL));
+    s.results.addView(sectionText(a, "نوع سفر"));
+    s.results.addView(togglePreference(a, p, "use_metro", true,
+        "استفاده از مترو", "در پیشنهادهای ترکیبی، مترو بررسی شود."));
+    s.results.addView(togglePreference(a, p, "use_taxi", true,
+        "استفاده از تاکسی", "در بخش‌های دسترسی به ایستگاه یا مقصد، تاکسی قابل پیشنهاد باشد."));
+    s.results.addView(togglePreference(a, p, "less_walking", false,
+        "پیاده‌روی کمتر", "در سفر ترکیبی، مسیرهایی با پیاده‌روی کمتر ترجیح داده شوند."));
+    s.results.addView(togglePreference(a, p, "avoid_highways", false,
+        "اجتناب از بزرگراه", "برای مسیریابی خودرو، در صورت پشتیبانی موتور نقشه از بزرگراه اجتناب شود."));
+    s.results.addView(togglePreference(a, p, "safer_route", true,
+        "اجتناب از جاده خاکی/نامناسب", "گزینه قابل پشتیبانی موتور نقشه برای جاده‌های خاکی فعال می‌شود."));
 
     s.results.addView(sectionText(a, "هشدارها"));
     s.results.addView(button(a, "تنظیم هشدار سرعت و GPS", BLUE, () -> openRouteAlerts(a)));
@@ -1546,33 +1504,50 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
   }
 
   private static List<Place> geocodeRanked(String query, Location origin) throws Exception {
-    List<Place> out = new ArrayList<>();
-    Exception firstError = null;
-    try { out.addAll(geocodeNominatim(query, origin)); }
-    catch (Exception e) { firstError = e; }
+    final List<Place> nominatim = Collections.synchronizedList(new ArrayList<>());
+    final List<Place> photon = Collections.synchronizedList(new ArrayList<>());
+    final Exception[] errors = new Exception[2];
 
-    if (out.size() < 4) {
-      try {
-        List<Place> fallback = geocodePhoton(query, origin);
-        Set<String> seen = new HashSet<>();
-        for (Place p : out) seen.add(String.format(Locale.US, "%.5f,%.5f", p.lat, p.lon));
-        for (Place p : fallback) {
-          String key = String.format(Locale.US, "%.5f,%.5f", p.lat, p.lon);
-          if (seen.add(key)) out.add(p);
-        }
-      } catch (Exception ignored) {}
+    Thread n = new Thread(() -> {
+      try { nominatim.addAll(geocodeNominatim(query, origin)); }
+      catch (Exception e) { errors[0] = e; }
+    }, "nv-v033-search-nominatim");
+    Thread p = new Thread(() -> {
+      try { photon.addAll(geocodePhoton(query, origin)); }
+      catch (Exception e) { errors[1] = e; }
+    }, "nv-v033-search-photon");
+
+    n.start();
+    p.start();
+    try { n.join(7000L); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    try { p.join(7000L); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+
+    List<Place> out = new ArrayList<>();
+    Set<String> seen = new HashSet<>();
+    for (Place place : nominatim) {
+      String key = String.format(Locale.US, "%.5f,%.5f", place.lat, place.lon);
+      if (seen.add(key)) out.add(place);
+    }
+    for (Place place : photon) {
+      String key = String.format(Locale.US, "%.5f,%.5f", place.lat, place.lon);
+      if (seen.add(key)) out.add(place);
     }
 
-    if (out.isEmpty() && firstError != null) throw firstError;
+    if (out.isEmpty()) {
+      if (errors[0] != null) throw errors[0];
+      if (errors[1] != null) throw errors[1];
+      throw new IllegalStateException("search unavailable");
+    }
+
     String normalized = normalize(query);
-    for (Place p : out) p.score = scorePlace(normalized, p);
+    for (Place place : out) place.score = scorePlace(normalized, place);
     out.sort((p1,p2)-> {
-      int s1=Integer.compare(p2.score,p1.score);
-      if(s1!=0)return s1;
-      return Double.compare(p1.distanceMeters<0?Double.MAX_VALUE:p1.distanceMeters,
-                            p2.distanceMeters<0?Double.MAX_VALUE:p2.distanceMeters);
+      int score = Integer.compare(p2.score, p1.score);
+      if (score != 0) return score;
+      return Double.compare(p1.distanceMeters < 0 ? Double.MAX_VALUE : p1.distanceMeters,
+                            p2.distanceMeters < 0 ? Double.MAX_VALUE : p2.distanceMeters);
     });
-    if (out.size()>10) return new ArrayList<>(out.subList(0,10));
+    if (out.size() > 10) return new ArrayList<>(out.subList(0,10));
     return out;
   }
 
@@ -1593,7 +1568,7 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
     }
 
     HttpURLConnection conn = (HttpURLConnection)new URL(u.toString()).openConnection();
-    conn.setConnectTimeout(8000); conn.setReadTimeout(12000); conn.setRequestMethod("GET");
+    conn.setConnectTimeout(4000); conn.setReadTimeout(6500); conn.setRequestMethod("GET");
     conn.setRequestProperty("User-Agent", "NV-Android/0.33");
     conn.setRequestProperty("Accept", "application/json");
     if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300)
