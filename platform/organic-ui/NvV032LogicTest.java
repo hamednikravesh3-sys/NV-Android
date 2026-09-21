@@ -20,6 +20,24 @@ public class NvV032LogicTest {
         NvV032TextParser.extractDestination("لطفاً برو به میدان آزادی با مترو"));
   }
 
+  @Test public void extractsExplicitOriginAndDestination() {
+    assertEquals("میدان انقلاب",
+        NvV032TextParser.extractOrigin("میخوام از میدان انقلاب برم میدان ونک"));
+    assertEquals("میدان ونک",
+        NvV032TextParser.extractDestination("میخوام از میدان انقلاب برم میدان ونک"));
+  }
+
+  @Test public void extractsOriginAndDestinationWithBeMarker() {
+    assertEquals("میدان انقلاب",
+        NvV032TextParser.extractOrigin("از میدان انقلاب به میدان ونک"));
+    assertEquals("میدان ونک",
+        NvV032TextParser.extractDestination("از میدان انقلاب به میدان ونک"));
+  }
+
+  @Test public void noExplicitOriginFallsBackToGps() {
+    assertEquals("", NvV032TextParser.extractOrigin("میخوام برم میدان ونک عجله دارم"));
+  }
+
   @Test public void normalizesArabicAndPersianCharacters() {
     assertEquals("ایستگاه راه آهن یزد",
         NvV032TextParser.normalize("ايستگاه راه‌آهن يزد"));
