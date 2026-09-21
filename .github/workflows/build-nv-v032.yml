@@ -71,13 +71,10 @@ jobs:
           grep -q 'extractOrigin(raw)' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'routeBetween' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'RoutePlannerState' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
-          grep -q 'جستجوی مبدأ' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
-          grep -q 'جستجوی مقصد' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'پرچم نارنجی' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'jumpSearchResultToMap' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
-          grep -q 'نشانگر فوراً روی نتیجه می‌رود' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
-          grep -q 'پرچم فوراً روی نتیجه می‌رود' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'plannerMapSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'pickPlannerPointOnMap(a, state, originPoint);' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'جستجو یا انتخاب روی نقشه' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'MapPointSearchListener' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           grep -q 'جستجوی مبدأ؛ مثال: میدان انقلاب' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
