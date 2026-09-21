@@ -37,7 +37,7 @@ jobs:
           cd organicmaps
           git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
 
-      - name: Integrate NV v0.32 user-friendly layer
+      - name: Integrate NV v0.32.2 simple route planner
         run: |
           set -euo pipefail
           python3 platform/patch_v032.py organicmaps
@@ -46,9 +46,10 @@ jobs:
           grep -q "versionCode = 34" organicmaps/android/build.gradle
           grep -q "versionName = '0.32.2'" organicmaps/android/build.gradle
           grep -q 'NvV032Actions.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
-          grep -q 'NvV032Actions.openSmartSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          grep -q 'NvV032Actions.openRoutePlanner' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'NvV032Actions.openRouteAlerts' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
-          grep -q 'addSmartTravelPill' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          ! grep -q 'addSmartTravelPill' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          ! grep -q 'هوشمند سفر • صفحات ۱۳ تا ۲۲' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'NvAnimatedBrand.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/SplashActivity.java
           test -s organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
           test -s organicmaps/android/app/src/main/java/app/organicmaps/NvAnimatedBrand.java
@@ -65,6 +66,10 @@ jobs:
           grep -q 'NvV032TextParser' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'extractOrigin(raw)' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'routeBetween' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'RoutePlannerState' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'جستجوی مبدأ' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'جستجوی مقصد' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'پرچم نارنجی' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'NvV032Actions.openPreferences' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
 
           grep -q 'ONLINE_ETA_REFRESH_MOVE_M = 500' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
