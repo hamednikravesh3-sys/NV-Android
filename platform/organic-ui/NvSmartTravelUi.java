@@ -80,16 +80,16 @@ public final class NvSmartTravelUi {
     body.setOrientation(LinearLayout.VERTICAL);
     body.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
-    body.addView(card(a, "✦", "چت هوشمند سفر", "مقصد را طبیعی بنویس", BLUE, () -> NvV032Actions.openChat(a)));
-    body.addView(card(a, "⚡", "عجله دارم", "خودرو، ترکیبی و پیاده را مقایسه می‌کند", Color.rgb(255, 78, 91), () -> NvV032Actions.openHurry(a)));
-    body.addView(card(a, "↝", "مسیر ترکیبی", "پیاده/تاکسی + مترو + ادامه تا مقصد", GREEN, () -> NvV032Actions.openMixed(a)));
-    body.addView(card(a, "M", "تعویض هوشمند ایستگاه", "ایستگاه و خروجی مناسب را بررسی می‌کند", CYAN, () -> NvV032Actions.openStationTransfer(a)));
-    body.addView(card(a, "🚇", "مترو و ایستگاه‌ها", "ایستگاه‌های واقعی اطراف؛ بدون جعل قطار زنده", Color.rgb(143, 92, 255), () -> NvV032Actions.openMetroStatus(a)));
-    body.addView(card(a, "🚕", "تاکسی و محل سوارشدن", "نقاط تاکسی ثبت‌شده و مسیر دسترسی", AMBER, () -> NvV032Actions.openTaxi(a)));
-    body.addView(card(a, "◷", "زمان رسیدن", "ETA با منبع و محدودیت مشخص", BLUE, () -> NvV032Actions.openEta(a)));
-    body.addView(card(a, "⇄", "مقایسه زمان و هزینه", "چند مسیر خودرو + ترکیبی + پیاده", GREEN, () -> NvV032Actions.openTimeCost(a)));
-    body.addView(card(a, "🚶", "راهنمای پیاده", "مسیریابی پیاده با موتور نقشه", CYAN, () -> NvV032Actions.openWalk(a)));
-    body.addView(card(a, "⚙", "تنظیمات سفر", "هزینه، مصرف سوخت، حریم خصوصی و هشدارها", BLUE, () -> NvV032Actions.openPreferences(a)));
+    body.addView(card(a, "✦", "چت هوشمند سفر", "مقصد را طبیعی بنویس", BLUE, () -> NvV033Actions.openChat(a)));
+    body.addView(card(a, "⚡", "عجله دارم", "خودرو، ترکیبی و پیاده را مقایسه می‌کند", Color.rgb(255, 78, 91), () -> NvV033Actions.openHurry(a)));
+    body.addView(card(a, "↝", "مسیر ترکیبی", "پیاده/تاکسی + مترو + ادامه تا مقصد", GREEN, () -> NvV033Actions.openMixed(a)));
+    body.addView(card(a, "M", "تعویض هوشمند ایستگاه", "ایستگاه و خروجی مناسب را بررسی می‌کند", CYAN, () -> NvV033Actions.openStationTransfer(a)));
+    body.addView(card(a, "🚇", "مترو و ایستگاه‌ها", "ایستگاه‌های واقعی اطراف؛ بدون جعل قطار زنده", Color.rgb(143, 92, 255), () -> NvV033Actions.openMetroStatus(a)));
+    body.addView(card(a, "🚕", "تاکسی و محل سوارشدن", "نقاط تاکسی ثبت‌شده و مسیر دسترسی", AMBER, () -> NvV033Actions.openTaxi(a)));
+    body.addView(card(a, "◷", "زمان رسیدن", "ETA با منبع و محدودیت مشخص", BLUE, () -> NvV033Actions.openEta(a)));
+    body.addView(card(a, "⇄", "مقایسه مسیرها", "چند مسیر خودرو + ترکیبی + پیاده", GREEN, () -> NvV033Actions.openTimeCost(a)));
+    body.addView(card(a, "🚶", "راهنمای پیاده", "مسیریابی پیاده با موتور نقشه", CYAN, () -> NvV033Actions.openWalk(a)));
+    body.addView(card(a, "⚙", "تنظیمات سفر", "نوع سفر، حریم خصوصی و هشدارها", BLUE, () -> NvV033Actions.openPreferences(a)));
 
     scroll.addView(body);
     column.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
