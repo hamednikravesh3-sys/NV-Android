@@ -58,7 +58,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 
 /**
- * NV v0.32 functional layer.
+ * NV v0.33 modern route and navigation layer.
  *
  * Goals:
  * - rank Persian search results semantically instead of taking the nearest text match;
@@ -2117,7 +2117,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
     HttpURLConnection conn = (HttpURLConnection)new URL(u.toString()).openConnection();
     conn.setConnectTimeout(8000); conn.setReadTimeout(12000); conn.setRequestMethod("GET");
-    conn.setRequestProperty("User-Agent", "NV-Android/0.32");
+    conn.setRequestProperty("User-Agent", "NV-Android/0.33");
     conn.setRequestProperty("Accept", "application/json");
     if (conn.getResponseCode() < 200 || conn.getResponseCode() >= 300)
       throw new IllegalStateException("Nominatim HTTP " + conn.getResponseCode());
@@ -2155,7 +2155,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
     HttpURLConnection conn=(HttpURLConnection)new URL(u.toString()).openConnection();
     conn.setConnectTimeout(8000); conn.setReadTimeout(12000); conn.setRequestMethod("GET");
-    conn.setRequestProperty("User-Agent","NV-Android/0.32");
+    conn.setRequestProperty("User-Agent","NV-Android/0.33");
     conn.setRequestProperty("Accept","application/json");
     if(conn.getResponseCode()<200||conn.getResponseCode()>=300)
       throw new IllegalStateException("Photon HTTP " + conn.getResponseCode());
@@ -2224,7 +2224,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     conn.setConnectTimeout(8000);
     conn.setReadTimeout(12000);
     conn.setRequestMethod("GET");
-    conn.setRequestProperty("User-Agent","NV-Android/0.32");
+    conn.setRequestProperty("User-Agent","NV-Android/0.33");
     if(conn.getResponseCode()<200||conn.getResponseCode()>=300)
       throw new IllegalStateException("HTTP " + conn.getResponseCode());
     JSONObject root=new JSONObject(readAll(conn.getInputStream()));
@@ -2260,7 +2260,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
-        conn.setRequestProperty("User-Agent", "NV-Android/0.32");
+        conn.setRequestProperty("User-Agent", "NV-Android/0.33");
         byte[] body=("data="+URLEncoder.encode(query,"UTF-8")).getBytes(StandardCharsets.UTF_8);
         try(java.io.OutputStream os=conn.getOutputStream()){os.write(body);}
         int code=conn.getResponseCode();
