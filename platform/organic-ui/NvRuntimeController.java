@@ -95,6 +95,9 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
   private static final int GREEN = Color.rgb(42, 214, 113);
   private static final int AMBER = Color.rgb(255, 188, 54);
   private static final int RED = Color.rgb(255, 70, 89);
+  // Route point picker colors: intentionally distinct from route blue and traffic green.
+  private static final int ORIGIN_PICKER = Color.rgb(126, 87, 194);      // purple
+  private static final int DESTINATION_PICKER = Color.rgb(255, 111, 0); // orange
   private static final int WHITE = Color.WHITE;
   private static final int MUTED = Color.rgb(205, 220, 231);
   private static final int OUTLINE = Color.rgb(45, 126, 171);
@@ -804,7 +807,7 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     markerBox.setClickable(false);
 
     final TextView bubble = label(originPoint ? "مبدأ" : "مقصد", 14, WHITE, Typeface.BOLD, Gravity.CENTER);
-    final int markerColor = originPoint ? BLUE : GREEN;
+    final int markerColor = originPoint ? ORIGIN_PICKER : DESTINATION_PICKER;
     bubble.setBackground(round(markerColor, markerColor, 16));
     bubble.setPadding(dp(12), dp(5), dp(12), dp(5));
     markerBox.addView(bubble, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34)));
@@ -835,7 +838,7 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
         TextUtils.isEmpty(confirmLabel)
             ? (originPoint ? "تأیید مبدأ" : "تأیید مقصد")
             : confirmLabel,
-        originPoint ? BLUE : GREEN,
+        originPoint ? ORIGIN_PICKER : DESTINATION_PICKER,
         () -> {
           try
           {
