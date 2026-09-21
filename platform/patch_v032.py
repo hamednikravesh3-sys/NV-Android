@@ -25,8 +25,8 @@ for name in ['NvMapMenuOverlay.java', 'NvRuntimeController.java', 'NvCodeCodec.j
 f = root / 'android/build.gradle'
 t = f.read_text(encoding='utf-8')
 t = t.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation'")
-t = t.replace("versionCode = ver.V1", "versionCode = 37")
-t = t.replace("versionName = ver.V2", "versionName = '0.33.1'")
+t = t.replace("versionCode = ver.V1", "versionCode = 38")
+t = t.replace("versionName = ver.V2", "versionName = '0.34.0'")
 if "appId = 'ir.nv.navigation'" not in t:
     raise SystemExit('app id patch failed')
 f.write_text(t, encoding='utf-8')
@@ -102,53 +102,11 @@ t = t.replace('mainHandler.postDelayed(this::ensureTehranMap, 1600L);', 'mainHan
 method_re = re.compile(r'  private void ensureTehranMap\(\)\n  \{.*?\n  \}\n\n  private void refreshLocationChip', re.S)
 method_new = '''  private void ensureCurrentRegionMap()
   {
-    if (destroyed)
-      return;
-    try
-    {
-      final Location loc = locationHelper.getSavedLocation();
-      if (loc == null || System.currentTimeMillis() - loc.getTime() > 180000L)
-        return;
-      final String id = MapManager.nativeFindCountry(loc.getLatitude(), loc.getLongitude());
-      if (TextUtils.isEmpty(id))
-        return;
-      final int status = MapManager.nativeGetStatus(id);
-      if (status != CountryItem.STATUS_DOWNLOADABLE
-          && status != CountryItem.STATUS_PARTLY
-          && status != CountryItem.STATUS_FAILED
-          && status != CountryItem.STATUS_UPDATABLE)
-        return;
-
-      final android.content.SharedPreferences prefs =
-          activity.getSharedPreferences("nv_v032", android.content.Context.MODE_PRIVATE);
-      final String prompted = prefs.getString("map_prompted_region", "");
-      if (id.equals(prompted))
-        return;
-
-      prefs.edit().putString("map_prompted_region", id).apply();
-      new android.app.AlertDialog.Builder(activity)
-          .setTitle("نقشه آفلاین منطقه")
-          .setMessage("برای استفاده بهتر بدون اینترنت، نقشه منطقه فعلی دانلود یا به‌روزرسانی شود؟")
-          .setNegativeButton("فعلاً نه", null)
-          .setPositiveButton("دانلود", (dialog, which) -> {
-            try
-            {
-              final int now = MapManager.nativeGetStatus(id);
-              if (now == CountryItem.STATUS_FAILED)
-                MapManager.retryDownload(id);
-              else if (now == CountryItem.STATUS_UPDATABLE)
-                MapManager.startUpdate(id);
-              else
-                MapManager.startDownload(id);
-            }
-            catch (Throwable ignored) {}
-          })
-          .show();
-    }
-    catch (Throwable ignored) {}
+    // NV v0.34 is online-first. Opening the app never prompts for, starts,
+    // or requires a regional offline-map download. Offline maps remain a
+    // deliberate user action in the native downloader.
   }
-
-  private void refreshLocationChip'''
+'''
 t2, n = method_re.subn(method_new, t, count=1)
 if n != 1:
     raise SystemExit('current-region map patch failed')
@@ -308,11 +266,21 @@ assert 'extractOrigin(raw)' in (dst / 'NvV032Actions.java').read_text(encoding='
 assert 'routeBetween' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
 assert 'mode == Mode.AUTO' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
 assert 'extractOrigin' in (dst / 'NvV032TextParser.java').read_text(encoding='utf-8')
-assert 'map_prompted_region' in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
+assert 'map_prompted_region' not in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert (dst / 'NvLocationPolicy.java').exists()
 assert (dst / 'NvV032TextParser.java').exists()
 assert 'ensureCurrentRegionMap' in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert 'ensureTehranMap' not in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
+actions_text = (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'MAP_ROUTE_CHOICES_TAG' in actions_text
+assert 'startNvRecommended' in actions_text
+assert 'MapStyle.Dark' in actions_text
+assert 'nv-v034-search-nominatim' in actions_text
+assert 'nv-v034-search-photon' in actions_text
+assert 'fuel_l100' not in actions_text
+assert 'fuel_price_toman' not in actions_text
+assert 'estimateMixedCostToman' not in actions_text
+assert 'هزینه تقریبی کل' not in actions_text
 assert (icon_dir / 'nv_launcher.webp').stat().st_size > 0
 assert (splash_dir / 'nv_splash_logo.webp').stat().st_size > 0
-print('NV v0.33.1 Snapp-style map picker integration applied')
+print('NV v0.34 map-first online integration applied')
