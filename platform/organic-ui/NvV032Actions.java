@@ -704,9 +704,9 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     Screen s = screen(
         a,
         originPoint ? "جستجوی مبدأ" : "جستجوی مقصد",
-        originPoint ? "نام مکان یا آدرس مبدأ را وارد کنید" : "نام مکان یا آدرس مقصد را وارد کنید");
+        originPoint ? "جستجو کنید؛ نشانگر فوراً روی نتیجه می‌رود" : "جستجو کنید؛ پرچم فوراً روی نتیجه می‌رود");
 
-    EditText input = input(a, originPoint ? "مثال: میدان انقلاب" : "مثال: میدان ونک");
+    EditText input = input(a, originPoint ? "مثال: میدان انقلاب" : "مثال: میدان تجریش");
     s.controls.addView(input, new LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 64)));
 
@@ -735,7 +735,12 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
               setStatus(s, "نتیجه‌ای پیدا نشد.", AMBER);
               return;
             }
-            setStatus(s, "نتیجه مناسب را انتخاب کنید.", GREEN);
+            if (destinationConfident(found, q)) {
+              jumpSearchResultToMap(a, state, originPoint, found.get(0));
+              return;
+            }
+
+            setStatus(s, "چند نتیجه مشابه پیدا شد؛ مورد درست را انتخاب کنید.", AMBER);
             int count = Math.min(8, found.size());
             for (int i = 0; i < count; i++) {
               Place p = found.get(i);
@@ -748,15 +753,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
                   p.title,
                   details,
                   originPoint ? PURPLE : AMBER,
-                  () -> {
-                    if (originPoint) {
-                      state.origin = locationFromPlace(p);
-                      state.originLabel = p.title;
-                    } else {
-                      state.destination = p;
-                    }
-                    renderRoutePlanner(a, state);
-                  }));
+                  () -> jumpSearchResultToMap(a, state, originPoint, p)));
             }
           });
         } catch (Throwable e) {
@@ -780,6 +777,44 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       return false;
     });
     input.requestFocus();
+  }
+
+  private static void jumpSearchResultToMap(MwmActivity a, RoutePlannerState state,
+                                            boolean originPoint, Place p) {
+    removeScreen(a);
+    try {
+      Framework.nativeSetViewportCenter(p.lat, p.lon, 17);
+    } catch (Throwable ignored) {}
+
+    // Give the map one frame to move before drawing the fixed center marker/flag.
+    new Handler(Looper.getMainLooper()).postDelayed(() ->
+        NvRuntimeController.selectPointOnMap(
+            a,
+            originPoint ? "تأیید مبدأ" : "تأیید مقصد",
+            (originPoint ? "نشانگر بنفش روی «" : "پرچم نارنجی روی «")
+                + p.title + "» قرار گرفت؛ در صورت نیاز نقشه را کمی جابه‌جا کنید",
+            originPoint ? "تأیید این مبدأ" : "تأیید این مقصد",
+            originPoint,
+            (lat, lon, address) -> {
+              String fallback = !TextUtils.isEmpty(p.title)
+                  ? p.title
+                  : (originPoint ? "مبدأ جستجوشده" : "مقصد جستجوشده");
+              String label = TextUtils.isEmpty(address) ? fallback : address;
+
+              if (originPoint) {
+                state.origin = mapSelectionLocation(lat, lon, label);
+                state.originLabel = fallback;
+              } else {
+                double d = state.origin == null ? -1d
+                    : haversine(state.origin.getLatitude(), state.origin.getLongitude(), lat, lon);
+                state.destination = new Place(
+                    fallback,
+                    TextUtils.isEmpty(address) ? p.address : address,
+                    lat, lon, d, "search-map", "confirmed", 1000);
+              }
+              renderRoutePlanner(a, state);
+            }),
+        120L);
   }
 
   private static void pickPlannerPointOnMap(MwmActivity a, RoutePlannerState state, boolean originPoint) {
