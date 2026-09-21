@@ -174,12 +174,17 @@ jobs:
           AVDMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name avdmanager | sort | tail -n 1)
           test -x "$SDKMANAGER"
           test -x "$AVDMANAGER"
+          export ANDROID_USER_HOME="$GITHUB_WORKSPACE/.android"
+          export ANDROID_AVD_HOME="$ANDROID_USER_HOME/avd"
+          mkdir -p "$ANDROID_AVD_HOME"
           set +o pipefail
           yes | "$SDKMANAGER" "system-images;android-36;default;x86_64" >/tmp/nv-v032-sdkmanager.txt 2>&1
           SDK_RC=${PIPESTATUS[1]}
           set -o pipefail
           test "$SDK_RC" -eq 0
           echo "no" | "$AVDMANAGER" create avd -f -n nv_api36 -k "system-images;android-36;default;x86_64" -d pixel_6 >/tmp/nv-v032-avd-create.txt 2>&1
+          "$ANDROID_SDK_ROOT/emulator/emulator" -list-avds | tee /tmp/nv-v032-avd-list.txt
+          grep -qx 'nv_api36' /tmp/nv-v032-avd-list.txt
 
           "$ANDROID_SDK_ROOT/emulator/emulator" -avd nv_api36 -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -accel off > /tmp/nv-v032-emulator.txt 2>&1 &
           EMU_PID=$!
@@ -241,6 +246,7 @@ jobs:
             /tmp/nv-v032-adb-devices.txt
             /tmp/nv-v032-sdkmanager.txt
             /tmp/nv-v032-avd-create.txt
+            /tmp/nv-v032-avd-list.txt
           if-no-files-found: ignore
           retention-days: 3
 
