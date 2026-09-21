@@ -2441,6 +2441,200 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
   private static SharedPreferences prefs(Context c){return c.getSharedPreferences(PREFS,Context.MODE_PRIVATE);}
 
+  private static Screen plannerScreen(MwmActivity a, String title, String subtitle) {
+    removeScreen(a);
+    ViewGroup host = a.findViewById(android.R.id.content);
+
+    FrameLayout root = new FrameLayout(a);
+    root.setTag(SCREEN_TAG);
+    root.setBackgroundColor(PLANNER_BG);
+    root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    host.addView(root, new ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+    LinearLayout col = new LinearLayout(a);
+    col.setOrientation(LinearLayout.VERTICAL);
+    col.setPadding(dp(a, 16), dp(a, 32), dp(a, 16), dp(a, 16));
+
+    LinearLayout head = new LinearLayout(a);
+    head.setOrientation(LinearLayout.HORIZONTAL);
+    head.setGravity(Gravity.CENTER_VERTICAL);
+    head.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+
+    LinearLayout titles = new LinearLayout(a);
+    titles.setOrientation(LinearLayout.VERTICAL);
+    titles.addView(text(a, title, 24, PLANNER_TEXT, Typeface.BOLD));
+    TextView sub = text(a, subtitle, 12, PLANNER_MUTED, Typeface.NORMAL);
+    sub.setMaxLines(2);
+    titles.addView(sub);
+    head.addView(titles, new LinearLayout.LayoutParams(
+        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+    TextView close = text(a, "×", 28, PLANNER_TEXT, Typeface.NORMAL);
+    close.setGravity(Gravity.CENTER);
+    close.setBackground(round(a, PLANNER_SOFT, PLANNER_BORDER, 24));
+    close.setOnClickListener(v -> removeScreen(a));
+    head.addView(close, new LinearLayout.LayoutParams(dp(a, 46), dp(a, 46)));
+    col.addView(head);
+
+    TextView status = text(a, "", 13, PLANNER_BLUE, Typeface.BOLD);
+    status.setPadding(dp(a, 12), dp(a, 10), dp(a, 12), dp(a, 10));
+    status.setBackground(round(a, PLANNER_SOFT, Color.TRANSPARENT, 14));
+    LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    sp.setMargins(0, dp(a, 12), 0, dp(a, 6));
+    col.addView(status, sp);
+
+    LinearLayout controls = new LinearLayout(a);
+    controls.setOrientation(LinearLayout.VERTICAL);
+    col.addView(controls);
+
+    ScrollView sv = new ScrollView(a);
+    sv.setVerticalScrollBarEnabled(false);
+    LinearLayout results = new LinearLayout(a);
+    results.setOrientation(LinearLayout.VERTICAL);
+    results.setPadding(0, dp(a, 6), 0, dp(a, 28));
+    sv.addView(results);
+    col.addView(sv, new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+    root.addView(col, new FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    return new Screen(root, status, controls, results);
+  }
+
+  private static EditText plannerInput(MwmActivity a, String hint) {
+    EditText v = new EditText(a);
+    v.setSingleLine(true);
+    v.setHint(hint);
+    v.setHintTextColor(Color.rgb(148, 163, 184));
+    v.setTextColor(PLANNER_TEXT);
+    v.setTextSize(17);
+    v.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+    v.setPadding(dp(a, 16), 0, dp(a, 16), 0);
+    v.setBackground(round(a, PLANNER_CARD, PLANNER_BORDER, 18));
+    v.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+    v.setElevation(dp(a, 1));
+    return v;
+  }
+
+  private static TextView plannerPrimaryButton(MwmActivity a, String label, int color, Runnable action) {
+    TextView v = text(a, label, 14, Color.WHITE, Typeface.BOLD);
+    v.setGravity(Gravity.CENTER);
+    v.setBackground(round(a, color, color, 17));
+    v.setOnClickListener(x -> action.run());
+    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 54));
+    p.setMargins(dp(a, 2), dp(a, 6), dp(a, 2), dp(a, 4));
+    v.setLayoutParams(p);
+    return v;
+  }
+
+  private static TextView plannerSecondaryButton(MwmActivity a, String label, Runnable action) {
+    TextView v = text(a, label, 14, PLANNER_TEXT, Typeface.BOLD);
+    v.setGravity(Gravity.CENTER);
+    v.setBackground(round(a, PLANNER_SOFT, PLANNER_BORDER, 17));
+    v.setOnClickListener(x -> action.run());
+    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 52));
+    p.setMargins(dp(a, 2), dp(a, 4), dp(a, 2), dp(a, 4));
+    v.setLayoutParams(p);
+    return v;
+  }
+
+  private static TextView plannerMiniButton(MwmActivity a, String label, int color,
+                                            boolean filled, Runnable action) {
+    TextView v = text(a, label, 12, filled ? Color.WHITE : color, Typeface.BOLD);
+    v.setGravity(Gravity.CENTER);
+    v.setBackground(round(a, filled ? color : PLANNER_SOFT,
+        filled ? color : PLANNER_BORDER, 14));
+    v.setOnClickListener(x -> action.run());
+    return v;
+  }
+
+  private static View plannerOptionCard(MwmActivity a, String title, String subtitle,
+                                        int accent, Runnable action) {
+    LinearLayout card = new LinearLayout(a);
+    card.setOrientation(LinearLayout.HORIZONTAL);
+    card.setGravity(Gravity.CENTER_VERTICAL);
+    card.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+    card.setPadding(dp(a, 14), dp(a, 11), dp(a, 14), dp(a, 11));
+    card.setBackground(round(a, PLANNER_CARD, PLANNER_BORDER, 18));
+    card.setElevation(dp(a, 1));
+    card.setClickable(true);
+    card.setOnClickListener(v -> action.run());
+
+    TextView dot = text(a, "●", 19, accent, Typeface.BOLD);
+    dot.setGravity(Gravity.CENTER);
+    card.addView(dot, new LinearLayout.LayoutParams(dp(a, 36), dp(a, 44)));
+
+    LinearLayout copy = new LinearLayout(a);
+    copy.setOrientation(LinearLayout.VERTICAL);
+    copy.setPadding(dp(a, 8), 0, dp(a, 8), 0);
+    copy.addView(text(a, title, 15, PLANNER_TEXT, Typeface.BOLD));
+    TextView sub = text(a, subtitle, 11, PLANNER_MUTED, Typeface.NORMAL);
+    sub.setMaxLines(2);
+    copy.addView(sub);
+    card.addView(copy, new LinearLayout.LayoutParams(
+        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+    TextView arrow = text(a, "‹", 26, PLANNER_MUTED, Typeface.NORMAL);
+    arrow.setGravity(Gravity.CENTER);
+    card.addView(arrow, new LinearLayout.LayoutParams(dp(a, 34), dp(a, 44)));
+
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(dp(a, 2), dp(a, 5), dp(a, 2), dp(a, 5));
+    card.setLayoutParams(lp);
+    return card;
+  }
+
+  private static View routeOptionCard(MwmActivity a, String title, String subtitle,
+                                      int accent, boolean recommended, Runnable action) {
+    LinearLayout card = new LinearLayout(a);
+    card.setOrientation(LinearLayout.VERTICAL);
+    card.setPadding(dp(a, 15), dp(a, 13), dp(a, 15), dp(a, 12));
+    card.setBackground(round(a, PLANNER_CARD, recommended ? accent : PLANNER_BORDER, 20));
+    card.setElevation(dp(a, recommended ? 4 : 1));
+
+    LinearLayout top = new LinearLayout(a);
+    top.setOrientation(LinearLayout.HORIZONTAL);
+    top.setGravity(Gravity.CENTER_VERTICAL);
+    top.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+
+    TextView t = text(a, title, 16, PLANNER_TEXT, Typeface.BOLD);
+    top.addView(t, new LinearLayout.LayoutParams(
+        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+    if (recommended) {
+      TextView badge = text(a, "پیشنهاد NV", 10, Color.WHITE, Typeface.BOLD);
+      badge.setGravity(Gravity.CENTER);
+      badge.setBackground(round(a, accent, accent, 12));
+      top.addView(badge, new LinearLayout.LayoutParams(dp(a, 82), dp(a, 30)));
+    }
+    card.addView(top);
+
+    TextView sub = text(a, subtitle, 12, PLANNER_MUTED, Typeface.NORMAL);
+    sub.setPadding(0, dp(a, 6), 0, dp(a, 8));
+    sub.setLineSpacing(0f, 1.15f);
+    card.addView(sub);
+
+    TextView choose = text(a, "انتخاب این مسیر", 13, accent, Typeface.BOLD);
+    choose.setGravity(Gravity.CENTER);
+    choose.setBackground(round(a,
+        Color.argb(16, Color.red(accent), Color.green(accent), Color.blue(accent)),
+        Color.TRANSPARENT, 14));
+    choose.setOnClickListener(v -> action.run());
+    card.addView(choose, new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 44)));
+
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    lp.setMargins(dp(a, 2), dp(a, 6), dp(a, 2), dp(a, 6));
+    card.setLayoutParams(lp);
+    return card;
+  }
+
   private static Screen screen(MwmActivity a, String title, String subtitle) {
     removeScreen(a);
     ViewGroup host = a.findViewById(android.R.id.content);
