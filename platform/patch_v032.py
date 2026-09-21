@@ -280,8 +280,13 @@ assert 'addRouteCard' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf
 assert 'addBottomDock' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'انتخاب این مسیر' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
 assert 'card.setElevation' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'private static Screen plannerScreen' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'routeOptionCard' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'PLANNER_BG' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'SHEET_BG' in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert 'NvV032Actions.openRouteAlerts' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
-assert 'case 1 -> NvV032Actions.openRoutePlanner(activity);' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')\nassert 'case 12 -> NvV032Actions.goHome(activity);' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert 'case 1 -> NvV032Actions.openRoutePlanner(activity);' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert 'case 12 -> NvV032Actions.goHome(activity);' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'addSmartTravelPill' not in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'هوشمند سفر • صفحات ۱۳ تا ۲۲' not in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'openRoutePlanner' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
@@ -307,4 +312,4 @@ assert 'ensureCurrentRegionMap' in (dst / 'NvRuntimeController.java').read_text(
 assert 'ensureTehranMap' not in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert (icon_dir / 'nv_launcher.webp').stat().st_size > 0
 assert (splash_dir / 'nv_splash_logo.webp').stat().st_size > 0
-print('NV v0.33.0 simple route planner integration applied')
+print('NV v0.33.0 modern UI integration applied')
