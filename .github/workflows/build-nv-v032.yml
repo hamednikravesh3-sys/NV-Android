@@ -1,4 +1,4 @@
-name: Build NV v0.33.0 Modern UI APK
+name: Build NV v0.33.1 Snapp Map Picker APK
 # v0.32 user-friendly CI
 
 concurrency:
@@ -37,14 +37,14 @@ jobs:
           cd organicmaps
           git submodule update --depth 1 --init --recursive --jobs=$(($(nproc) * 8))
 
-      - name: Integrate NV v0.33.0 modern route UI
+      - name: Integrate NV v0.33.1 Snapp-style map picker
         run: |
           set -euo pipefail
           python3 platform/patch_v032.py organicmaps
           python3 platform/patch_v027_resources.py organicmaps
           grep -q "appId = 'ir.nv.navigation'" organicmaps/android/build.gradle
-          grep -q "versionCode = 36" organicmaps/android/build.gradle
-          grep -q "versionName = '0.33.0'" organicmaps/android/build.gradle
+          grep -q "versionCode = 37" organicmaps/android/build.gradle
+          grep -q "versionName = '0.33.1'" organicmaps/android/build.gradle
           grep -q 'NvV032Actions.install(this);' organicmaps/android/app/src/main/java/app/organicmaps/MwmActivity.java
           grep -q 'NvV032Actions.openRoutePlanner' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           grep -q 'Modern map-first NV home overlay' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
@@ -77,6 +77,12 @@ jobs:
           grep -q 'jumpSearchResultToMap' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'نشانگر فوراً روی نتیجه می‌رود' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
           grep -q 'پرچم فوراً روی نتیجه می‌رود' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'plannerMapSearch' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'جستجو یا انتخاب روی نقشه' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
+          grep -q 'MapPointSearchListener' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          grep -q 'جستجوی مبدأ؛ مثال: میدان انقلاب' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          grep -q 'جستجوی مقصد؛ مثال: میدان تجریش' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
+          grep -q 'نشانگر وسط صفحه ثابت می‌ماند' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           grep -q 'NvV032Actions.openPreferences' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
 
           grep -q 'ONLINE_ETA_REFRESH_MOVE_M = 500' organicmaps/android/app/src/main/java/app/organicmaps/NvV032Actions.java
@@ -152,8 +158,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v032-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.33.0-modern-ui-arm64-profileable.apk
-          sha256sum dist/NV-v0.33.0-modern-ui-arm64-profileable.apk | tee dist/NV-v0.33.0-modern-ui-arm64-profileable.apk.sha256
+          cp "$APK" dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk
+          sha256sum dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk | tee dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk.sha256
           grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v032-badging.txt
           grep -q "application-label:'NV'" /tmp/nv-v032-badging.txt
           grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v032-badging.txt
@@ -178,18 +184,18 @@ jobs:
       - name: Upload Android 16 x86_64 smoke APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.33.0-android16-x86-smoke
-          path: organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-36-web-debug.apk
+          name: NV-v0.33.1-android16-x86-smoke
+          path: organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-37-web-debug.apk
           if-no-files-found: error
           retention-days: 3
 
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.33.0-modern-ui-arm64-profileable
+          name: NV-v0.33.1-snapp-map-picker-arm64-profileable
           path: |
-            dist/NV-v0.33.0-modern-ui-arm64-profileable.apk
-            dist/NV-v0.33.0-modern-ui-arm64-profileable.apk.sha256
+            dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk
+            dist/NV-v0.33.1-snapp-map-picker-arm64-profileable.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -204,7 +210,7 @@ jobs:
       - name: Download x86_64 smoke APK
         uses: actions/download-artifact@v4
         with:
-          name: NV-v0.33.0-android16-x86-smoke
+          name: NV-v0.33.1-android16-x86-smoke
           path: smoke-apk
 
       - name: Android 16 install and launch smoke test
@@ -225,7 +231,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.33.0-android16-smoke-diagnostics
+          name: NV-v0.33.1-android16-smoke-diagnostics
           path: |
             /tmp/nv-v0321-smoke.txt
             /tmp/nv-v0321-logcat.txt
