@@ -172,7 +172,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NV-v0.32.2-android16-x86-smoke
-          path: organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-33-web-debug.apk
+          path: organicmaps/android/app/build/outputs/apk/web/debug/OrganicMaps-34-web-debug.apk
           if-no-files-found: error
           retention-days: 3
 
