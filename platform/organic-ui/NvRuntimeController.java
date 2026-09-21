@@ -101,6 +101,11 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
   private static final int WHITE = Color.WHITE;
   private static final int MUTED = Color.rgb(205, 220, 231);
   private static final int OUTLINE = Color.rgb(71, 85, 105);
+  private static final int SHEET_BG = Color.WHITE;
+  private static final int SHEET_SOFT = Color.rgb(244, 247, 250);
+  private static final int SHEET_TEXT = Color.rgb(20, 29, 43);
+  private static final int SHEET_MUTED = Color.rgb(100, 116, 139);
+  private static final int SHEET_BORDER = Color.rgb(226, 232, 240);
 
   private static final double TEHRAN_LAT = 35.6892;
   private static final double TEHRAN_LON = 51.3890;
@@ -751,7 +756,7 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     beginTransparent();
 
     final TextView marker = label("▼", 42, RED, Typeface.BOLD, Gravity.CENTER);
-    marker.setShadowLayer(7f, 0f, 2f, Color.BLACK);
+    marker.setShadowLayer(9f, 0f, 3f, Color.argb(150, 0, 0, 0));
     FrameLayout.LayoutParams mp = new FrameLayout.LayoutParams(dp(64), dp(76), Gravity.CENTER);
     mp.setMargins(0, 0, 0, dp(34));
     customLayer.addView(marker, mp);
@@ -834,7 +839,7 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
         originPoint
             ? "نشانگر بنفش، مبدأ سفر خواهد بود."
             : "پرچم نارنجی، مقصد سفر خواهد بود.",
-        MUTED));
+        SHEET_MUTED));
 
     panel.addView(primary(
         TextUtils.isEmpty(confirmLabel)
@@ -1139,14 +1144,15 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
 
     final LinearLayout texts = new LinearLayout(activity);
     texts.setOrientation(LinearLayout.VERTICAL);
-    final TextView t = label(title, 19, WHITE, Typeface.BOLD, Gravity.RIGHT);
-    final TextView s = label(subtitle == null ? "" : subtitle, 12, MUTED, Typeface.NORMAL, Gravity.RIGHT);
+    final TextView t = label(title, 20, SHEET_TEXT, Typeface.BOLD, Gravity.RIGHT);
+    final TextView s = label(subtitle == null ? "" : subtitle, 12, SHEET_MUTED, Typeface.NORMAL, Gravity.RIGHT);
     s.setMaxLines(2);
     texts.addView(t);
     texts.addView(s);
     row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-    final TextView x = label("×", 28, WHITE, Typeface.NORMAL, Gravity.CENTER);
+    final TextView x = label("×", 28, SHEET_TEXT, Typeface.NORMAL, Gravity.CENTER);
+    x.setBackground(round(SHEET_SOFT, SHEET_BORDER, 22));
     x.setClickable(true);
     x.setOnClickListener(v -> close.run());
     row.addView(x, new LinearLayout.LayoutParams(dp(46), dp(46)));
@@ -1192,8 +1198,8 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
 
   private View actionCard(String text, Runnable action)
   {
-    final TextView v = label(text, 14, WHITE, Typeface.BOLD, Gravity.CENTER);
-    v.setBackground(round(PANEL_2, OUTLINE, 14));
+    final TextView v = label(text, 14, SHEET_TEXT, Typeface.BOLD, Gravity.CENTER);
+    v.setBackground(round(SHEET_SOFT, SHEET_BORDER, 16));
     v.setClickable(true);
     v.setOnClickListener(x -> action.run());
     final LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
