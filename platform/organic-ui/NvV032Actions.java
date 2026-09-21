@@ -81,6 +81,14 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   private static final int GREEN = Color.rgb(34, 197, 94);
   private static final int AMBER = Color.rgb(249, 115, 22);
   private static final int RED = Color.rgb(239, 68, 68);
+  private static final int PLANNER_BG = Color.rgb(246, 248, 251);
+  private static final int PLANNER_CARD = Color.WHITE;
+  private static final int PLANNER_SOFT = Color.rgb(239, 243, 248);
+  private static final int PLANNER_TEXT = Color.rgb(20, 29, 43);
+  private static final int PLANNER_MUTED = Color.rgb(100, 116, 139);
+  private static final int PLANNER_BORDER = Color.rgb(224, 230, 238);
+  private static final int PLANNER_BLUE = Color.rgb(45, 110, 245);
+  private static final int PLANNER_ORANGE = Color.rgb(255, 111, 0);
   private static final String SCREEN_TAG = "nv-v032-screen";
   private static final String ETA_TAG = "nv-v032-eta-chip";
   private static final String PREFS = "nv_v032";
