@@ -27,6 +27,13 @@ public class NvV032LogicTest {
         NvV032TextParser.extractDestination("میخوام از میدان انقلاب برم میدان ونک"));
   }
 
+  @Test public void extractsCompactOriginExactlyLikeUserInput() {
+    assertEquals("میدان انقلاب",
+        NvV032TextParser.extractOrigin("میخوام ازمیدان انقلاب برم میدان ونک"));
+    assertEquals("میدان ونک",
+        NvV032TextParser.extractDestination("میخوام ازمیدان انقلاب برم میدان ونک"));
+  }
+
   @Test public void extractsOriginAndDestinationWithBeMarker() {
     assertEquals("میدان انقلاب",
         NvV032TextParser.extractOrigin("از میدان انقلاب به میدان ونک"));
