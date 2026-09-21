@@ -655,7 +655,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
   }
 
   private static void renderRoutePlanner(MwmActivity a, RoutePlannerState state) {
-    Screen s = screen(a, "مسیریابی", "ابتدا مبدأ و مقصد را مشخص کنید");
+    Screen s = plannerScreen(a, "مسیریابی", "دو نقطه را مشخص کنید؛ NV بقیه مسیرها را مقایسه می‌کند");
     s.results.removeAllViews();
 
     s.results.addView(endpointCard(
@@ -670,7 +670,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
         a,
         "مقصد",
         state.destination == null ? "هنوز انتخاب نشده" : state.destination.title,
-        AMBER,
+        PLANNER_ORANGE,
         () -> openEndpointSearch(a, state, false),
         () -> pickPlannerPointOnMap(a, state, false)));
 
@@ -687,9 +687,9 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
                                    Runnable searchAction, Runnable mapAction) {
     LinearLayout card = new LinearLayout(a);
     card.setOrientation(LinearLayout.VERTICAL);
-    card.setPadding(dp(a, 14), dp(a, 12), dp(a, 14), dp(a, 12));
-    card.setBackground(round(a, PANEL, OUTLINE, 22));
-    card.setElevation(dp(a, 5));
+    card.setPadding(dp(a, 14), dp(a, 13), dp(a, 14), dp(a, 12));
+    card.setBackground(round(a, PLANNER_CARD, PLANNER_BORDER, 22));
+    card.setElevation(dp(a, 2));
 
     LinearLayout head = new LinearLayout(a);
     head.setOrientation(LinearLayout.HORIZONTAL);
@@ -697,45 +697,53 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     head.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
     String icon = "مبدأ".equals(title) ? "●" : "⚑";
-    TextView badge = text(a, icon, "مبدأ".equals(title) ? 23 : 27, accent, Typeface.BOLD);
+    TextView badge = text(a, icon, "مبدأ".equals(title) ? 25 : 30, accent, Typeface.BOLD);
     badge.setGravity(Gravity.CENTER);
     badge.setBackground(round(a,
-        Color.argb(32, Color.red(accent), Color.green(accent), Color.blue(accent)),
-        Color.argb(105, Color.red(accent), Color.green(accent), Color.blue(accent)), 18));
-    head.addView(badge, new LinearLayout.LayoutParams(dp(a, 44), dp(a, 44)));
+        Color.argb(18, Color.red(accent), Color.green(accent), Color.blue(accent)),
+        Color.TRANSPARENT, 24));
+    head.addView(badge, new LinearLayout.LayoutParams(dp(a, 48), dp(a, 48)));
 
-    LinearLayout tx = new LinearLayout(a);
-    tx.setOrientation(LinearLayout.VERTICAL);
-    tx.setPadding(dp(a, 10), 0, dp(a, 10), 0);
-    tx.addView(text(a, title, 14, MUTED, Typeface.BOLD));
-    TextView valueView = text(a, value, 16, WHITE, Typeface.BOLD);
-    valueView.setMaxLines(2);
-    tx.addView(valueView);
-    head.addView(tx, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    LinearLayout copy = new LinearLayout(a);
+    copy.setOrientation(LinearLayout.VERTICAL);
+    copy.setPadding(dp(a, 10), 0, dp(a, 10), 0);
+    copy.addView(text(a, title, 12, PLANNER_MUTED, Typeface.BOLD));
+    TextView valueText = text(a, value, 16, PLANNER_TEXT, Typeface.BOLD);
+    valueText.setMaxLines(2);
+    copy.addView(valueText);
+    head.addView(copy, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+    TextView state = text(a,
+        ("هنوز انتخاب نشده".equals(value) ? "انتخاب" : "تغییر"),
+        11, accent, Typeface.BOLD);
+    state.setGravity(Gravity.CENTER);
+    head.addView(state, new LinearLayout.LayoutParams(dp(a, 54), dp(a, 44)));
     card.addView(head);
 
     LinearLayout row = new LinearLayout(a);
     row.setOrientation(LinearLayout.HORIZONTAL);
     row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-    row.setPadding(0, dp(a, 8), 0, 0);
-    row.addView(smallButton(a, "⌕  جستجو", accent, searchAction), weight(a));
-    row.addView(smallButton(a, "⌖  انتخاب روی نقشه", PANEL2, mapAction), weight(a));
-    card.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 50)));
+    row.addView(plannerMiniButton(a, "⌕  جستجو", accent, true, searchAction), weight(a));
+    row.addView(plannerMiniButton(a, "⌖  روی نقشه", PLANNER_TEXT, false, mapAction), weight(a));
+    LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 46));
+    rp.setMargins(0, dp(a, 8), 0, 0);
+    card.addView(row, rp);
 
     LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-    lp.setMargins(0, dp(a, 7), 0, dp(a, 7));
+    lp.setMargins(dp(a, 2), dp(a, 7), dp(a, 2), dp(a, 7));
     card.setLayoutParams(lp);
     return card;
   }
 
   private static void openEndpointSearch(MwmActivity a, RoutePlannerState state, boolean originPoint) {
-    Screen s = screen(
+    Screen s = plannerScreen(
         a,
         originPoint ? "جستجوی مبدأ" : "جستجوی مقصد",
         originPoint ? "جستجو کنید؛ نشانگر فوراً روی نتیجه می‌رود" : "جستجو کنید؛ پرچم فوراً روی نتیجه می‌رود");
 
-    EditText input = input(a, originPoint ? "مثال: میدان انقلاب" : "مثال: میدان تجریش");
+    EditText input = plannerInput(a, originPoint ? "میدان انقلاب" : "میدان تجریش");
     s.controls.addView(input, new LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, dp(a, 64)));
 
@@ -777,11 +785,11 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
               if (p.distanceMeters >= 0 && Double.isFinite(p.distanceMeters))
                 details += (details.isEmpty() ? "" : " • ") + formatDistance(p.distanceMeters);
 
-              s.results.addView(optionCard(
+              s.results.addView(plannerOptionCard(
                   a,
                   p.title,
                   details,
-                  originPoint ? PURPLE : AMBER,
+                  originPoint ? PURPLE : PLANNER_ORANGE,
                   () -> jumpSearchResultToMap(a, state, originPoint, p)));
             }
           });
@@ -794,8 +802,8 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
       }, originPoint ? "nv-origin-search" : "nv-destination-search").start();
     };
 
-    s.controls.addView(button(a, "جستجو", originPoint ? PURPLE : AMBER, search));
-    s.controls.addView(button(a, "انتخاب روی نقشه", PANEL2,
+    s.controls.addView(plannerPrimaryButton(a, "جستجو", originPoint ? PURPLE : PLANNER_ORANGE, search));
+    s.controls.addView(plannerSecondaryButton(a, "انتخاب روی نقشه",
         () -> pickPlannerPointOnMap(a, state, originPoint)));
 
     input.setOnEditorActionListener((v, actionId, event) -> {
