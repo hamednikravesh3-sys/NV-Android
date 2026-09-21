@@ -281,7 +281,7 @@ assert 'addBottomDock' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='ut
 assert 'انتخاب این مسیر' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
 assert 'card.setElevation' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
 assert 'NvV032Actions.openRouteAlerts' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
-assert 'case 1 -> NvV032Actions.goHome(activity);' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert 'case 1 -> NvV032Actions.openRoutePlanner(activity);' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')\nassert 'case 12 -> NvV032Actions.goHome(activity);' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'addSmartTravelPill' not in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'هوشمند سفر • صفحات ۱۳ تا ۲۲' not in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'openRoutePlanner' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
