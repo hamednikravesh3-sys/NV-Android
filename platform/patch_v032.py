@@ -25,8 +25,8 @@ for name in ['NvMapMenuOverlay.java', 'NvRuntimeController.java', 'NvCodeCodec.j
 f = root / 'android/build.gradle'
 t = f.read_text(encoding='utf-8')
 t = t.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation'")
-t = t.replace("versionCode = ver.V1", "versionCode = 33")
-t = t.replace("versionName = ver.V2", "versionName = '0.32.1'")
+t = t.replace("versionCode = ver.V1", "versionCode = 34")
+t = t.replace("versionName = ver.V2", "versionName = '0.32.2'")
 if "appId = 'ir.nv.navigation'" not in t:
     raise SystemExit('app id patch failed')
 f.write_text(t, encoding='utf-8')
@@ -45,45 +45,14 @@ if anchor not in t:
 t = t.replace(anchor, anchor + "  implementation 'com.google.zxing:core:3.5.3'\n", 1)
 f.write_text(t, encoding='utf-8')
 
-# Distinct menu actions + semantic search from the home bar.
+# Route menu is defined directly in NvMapMenuOverlay.java.
+# Keep the single origin/destination planner intact; do not rewrite it here.
 f = dst / 'NvMapMenuOverlay.java'
 t = f.read_text(encoding='utf-8')
-t = t.replace('bar.setOnClickListener(v -> NvRuntimeController.openSearch(activity, ""));',
-              'bar.setOnClickListener(v -> NvV032Actions.openSmartSearch(activity));', 1)
-pattern = re.compile(r'    private void handleMenu\(int id\) \{.*?\n    \}\n\n    private void showNearby\(\)', re.S)
-replacement = '''    private void handleMenu(int id) {
-      switch (id) {
-        case 1 -> NvV032Actions.goHome(activity);
-        case 2 -> showNearby();
-        case 3 -> NvSmartActions.openNearby(activity, "اورژانس");
-        case 4 -> NvV032Actions.openPlaceDetails(activity);
-        case 5 -> NvV032Actions.openRouteMode(activity);
-        case 6 -> NvV032Actions.openRouteAlerts(activity);
-        case 7 -> NvSmartActions.openNearby(activity, "داروخانه");
-        case 8 -> NvSmartActions.openNearby(activity, "پارک");
-        case 9 -> NvV032Actions.openSmartSearch(activity);
-        case 10 -> NvV032Actions.openCompareRoutes(activity);
-        case 11 -> NvV032Actions.openRadius(activity);
-        case 12 -> showSOS();
-        case 13 -> NvV032Actions.openChat(activity);
-        case 14 -> NvV032Actions.openHurry(activity);
-        case 15 -> NvV032Actions.openMixed(activity);
-        case 16 -> NvV032Actions.openStationTransfer(activity);
-        case 17 -> NvV032Actions.openMetroStatus(activity);
-        case 18 -> NvV032Actions.openTaxi(activity);
-        case 19 -> NvV032Actions.openEta(activity);
-        case 20 -> NvV032Actions.openTimeCost(activity);
-        case 21 -> NvV032Actions.openWalk(activity);
-        case 22 -> NvV032Actions.openPreferences(activity);
-        default -> NvV032Actions.openRouteMode(activity);
-      }
-    }
-
-    private void showNearby()'''
-t2, n = pattern.subn(replacement, t, count=1)
-if n != 1:
-    raise SystemExit('menu switch patch failed')
-f.write_text(t2, encoding='utf-8')
+if 'NvV032Actions.openRoutePlanner(activity)' not in t:
+    raise SystemExit('route planner entry missing')
+if 'هوشمند سفر • صفحات ۱۳ تا ۲۲' in t or '✦  هوشمند سفر' in t:
+    raise SystemExit('legacy smart travel menu is still visible')
 
 # User-selected nearby radius applies to real nearby queries.
 f = dst / 'NvSmartActions.java'
@@ -301,15 +270,20 @@ app_fa.mkdir(parents=True, exist_ok=True)
 ''', encoding='utf-8')
 
 (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text(
-    'NV v0.32.1 uses Organic Maps/OpenStreetMap. Smart online services are user-controllable; ETA is smoothed and shows a no-live-traffic range; metro station pairs are evaluated for connectivity; map downloads require explicit consent; no live traffic, train, taxi availability, or price data is fabricated.\n',
+    'NV v0.32.2 uses Organic Maps/OpenStreetMap. Smart online services are user-controllable; ETA is smoothed and shows a no-live-traffic range; metro station pairs are evaluated for connectivity; map downloads require explicit consent; no live traffic, train, taxi availability, or price data is fabricated.\n',
     encoding='utf-8')
 
-# Build-time assertions.
-assert 'NvV032Actions.openSmartSearch' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+# Build-time assertions for the simplified route planner.
+assert 'NvV032Actions.openRoutePlanner(activity)' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'NvV032Actions.openRouteAlerts' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
-assert 'NvV032Actions.openHurry(activity)' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
 assert 'case 1 -> NvV032Actions.goHome(activity);' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
-assert 'addSmartTravelPill' in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert 'addSmartTravelPill' not in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert 'هوشمند سفر • صفحات ۱۳ تا ۲۲' not in (dst / 'NvMapMenuOverlay.java').read_text(encoding='utf-8')
+assert 'openRoutePlanner' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'RoutePlannerState' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'جستجوی مبدأ' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'جستجوی مقصد' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'پرچم نارنجی' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
 assert (dst / 'NvAnimatedBrand.java').exists()
 assert (dst / 'NvSmartTravelUi.java').exists()
 assert 'getSearchRadius' in (dst / 'NvSmartActions.java').read_text(encoding='utf-8')
@@ -325,4 +299,4 @@ assert 'ensureCurrentRegionMap' in (dst / 'NvRuntimeController.java').read_text(
 assert 'ensureTehranMap' not in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert (icon_dir / 'nv_launcher.webp').stat().st_size > 0
 assert (splash_dir / 'nv_splash_logo.webp').stat().st_size > 0
-print('NV v0.32.1 smart-route fix integration applied')
+print('NV v0.32.2 simple route planner integration applied')
