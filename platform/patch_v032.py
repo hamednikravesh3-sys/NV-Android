@@ -25,8 +25,8 @@ for name in ['NvMapMenuOverlay.java', 'NvRuntimeController.java', 'NvCodeCodec.j
 f = root / 'android/build.gradle'
 t = f.read_text(encoding='utf-8')
 t = t.replace("appId = 'app.organicmaps'", "appId = 'ir.nv.navigation'")
-t = t.replace("versionCode = ver.V1", "versionCode = 32")
-t = t.replace("versionName = ver.V2", "versionName = '0.32.0'")
+t = t.replace("versionCode = ver.V1", "versionCode = 33")
+t = t.replace("versionName = ver.V2", "versionName = '0.32.1'")
 if "appId = 'ir.nv.navigation'" not in t:
     raise SystemExit('app id patch failed')
 f.write_text(t, encoding='utf-8')
@@ -301,7 +301,7 @@ app_fa.mkdir(parents=True, exist_ok=True)
 ''', encoding='utf-8')
 
 (root / 'NV_ENGINE_ATTRIBUTION.txt').write_text(
-    'NV v0.32 uses Organic Maps/OpenStreetMap. Smart online services are user-controllable; ETA is smoothed and shows a no-live-traffic range; metro station pairs are evaluated for connectivity; map downloads require explicit consent; no live traffic, train, taxi availability, or price data is fabricated.\n',
+    'NV v0.32.1 uses Organic Maps/OpenStreetMap. Smart online services are user-controllable; ETA is smoothed and shows a no-live-traffic range; metro station pairs are evaluated for connectivity; map downloads require explicit consent; no live traffic, train, taxi availability, or price data is fabricated.\n',
     encoding='utf-8')
 
 # Build-time assertions.
@@ -314,6 +314,10 @@ assert (dst / 'NvAnimatedBrand.java').exists()
 assert (dst / 'NvSmartTravelUi.java').exists()
 assert 'getSearchRadius' in (dst / 'NvSmartActions.java').read_text(encoding='utf-8')
 assert 'online_services' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'extractOrigin(raw)' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'routeBetween' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'mode == Mode.AUTO' in (dst / 'NvV032Actions.java').read_text(encoding='utf-8')
+assert 'extractOrigin' in (dst / 'NvV032TextParser.java').read_text(encoding='utf-8')
 assert 'map_prompted_region' in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert (dst / 'NvLocationPolicy.java').exists()
 assert (dst / 'NvV032TextParser.java').exists()
@@ -321,4 +325,4 @@ assert 'ensureCurrentRegionMap' in (dst / 'NvRuntimeController.java').read_text(
 assert 'ensureTehranMap' not in (dst / 'NvRuntimeController.java').read_text(encoding='utf-8')
 assert (icon_dir / 'nv_launcher.webp').stat().st_size > 0
 assert (splash_dir / 'nv_splash_logo.webp').stat().st_size > 0
-print('NV v0.32 user-friendly integration applied')
+print('NV v0.32.1 smart-route fix integration applied')
