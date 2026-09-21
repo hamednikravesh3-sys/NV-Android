@@ -1858,9 +1858,9 @@ public final class NvV033Actions implements DefaultLifecycleObserver {
         && (!l.hasAccuracy() || l.getAccuracy()<=NvLocationPolicy.WARN_ACCURACY_M);
   }
   private static boolean looksLikeTrip(String s){return containsAny(normalize(s),"میخوام","می خوام","می‌خوام","برم","برو","عجله","مسیر ترکیبی","پیاده","با مترو");}
-  static String extractDestination(String raw) { return NvV032TextParser.extractDestination(raw); }
+  static String extractDestination(String raw) { return NvV033TextParser.extractDestination(raw); }
 
-  static String normalize(String s) { return NvV032TextParser.normalize(s); }
+  static String normalize(String s) { return NvV033TextParser.normalize(s); }
 
   private static boolean containsAny(String s,String...v){String n=normalize(s);for(String x:v)if(n.contains(normalize(x)))return true;return false;}
   private static String formatDistance(double m){return m<1000?Math.round(m)+" متر":String.format(Locale.US,"%.1f کیلومتر",m/1000d);}
