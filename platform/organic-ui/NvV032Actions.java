@@ -835,7 +835,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
 
     if (mode == Mode.WALK || containsAny(raw, "پیاده", "قدم")) {
       setStatus(s, "مقصد: " + best.title + " • مسیر پیاده", GREEN);
-      routeTo(a, best, Router.Pedestrian);
+      routeBetween(a, origin, best, Router.Pedestrian);
       return;
     }
 
@@ -908,7 +908,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
           return;
         }
 
-        setStatus(s, "سریع‌ترین برآورد فعلی: " + bestName + " • " + formatMinutes(best), GREEN);
+        setStatus(s, "مبدأ: " + originTitle(origin) + " • مقصد: " + dest.title + "\nسریع‌ترین برآورد فعلی: " + bestName + " • " + formatMinutes(best), GREEN);
 
         if (finalCar != null) {
           s.results.addView(optionCard(a,
@@ -1392,7 +1392,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
         s.results.removeAllViews();
         if (metroOk) {
           setStatus(s, "ایستگاه مترو در هر دو سمت پیدا شد. مسیر ترکیبی قابل بررسی است.", GREEN);
-          s.results.addView(button(a, "شروع مسیر مترو/پیاده", GREEN, () -> routeTo(a, dest, Router.Transit)));
+          s.results.addView(button(a, "شروع مسیر مترو/پیاده", GREEN, () -> routeBetween(a, origin, dest, Router.Transit)));
           s.results.addView(button(a, "مقایسه با خودرو", BLUE, () -> previewVehicle(a, s, origin, dest, true)));
         } else {
           setStatus(s, "مترو مناسب نزدیک مبدا یا مقصد وجود ندارد؛ به‌جای خطای «No metro route» گزینه‌های عملی نمایش داده شد.", AMBER);
@@ -2021,7 +2021,7 @@ public final class NvV032Actions implements DefaultLifecycleObserver {
     return l!=null && System.currentTimeMillis()-l.getTime()<=NvLocationPolicy.MAX_AGE_MS
         && (!l.hasAccuracy() || l.getAccuracy()<=NvLocationPolicy.WARN_ACCURACY_M);
   }
-  private static boolean looksLikeTrip(String s){return containsAny(normalize(s),"میخوام","می خوام","می‌خوام","برم","برو","عجله","مسیر ترکیبی","پیاده","با مترو");}
+  private static boolean looksLikeTrip(String s){return (!extractOrigin(s).isEmpty() && !extractDestination(s).isEmpty()) || containsAny(normalize(s),"میخوام","می خوام","می‌خوام","برم","برو","عجله","مسیر ترکیبی","پیاده","با مترو");}
   static String extractDestination(String raw) { return NvV032TextParser.extractDestination(raw); }
   static String extractOrigin(String raw) { return NvV032TextParser.extractOrigin(raw); }
 
