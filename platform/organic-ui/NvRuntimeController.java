@@ -812,7 +812,7 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
     bubble.setPadding(dp(12), dp(5), dp(12), dp(5));
     markerBox.addView(bubble, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34)));
 
-    final TextView marker = label(originPoint ? "●" : "■", 34, markerColor, Typeface.BOLD, Gravity.CENTER);
+    final TextView marker = label(originPoint ? "●" : "⚑", originPoint ? 34 : 40, markerColor, Typeface.BOLD, Gravity.CENTER);
     marker.setShadowLayer(7f, 0f, 2f, Color.BLACK);
     markerBox.addView(marker, new LinearLayout.LayoutParams(dp(52), dp(48)));
 
@@ -830,8 +830,8 @@ public final class NvRuntimeController implements DefaultLifecycleObserver, Loca
 
     panel.addView(body(
         originPoint
-            ? "نقطه آبی، مبدأ سفر خواهد بود."
-            : "نقطه سبز، مقصد سفر خواهد بود.",
+            ? "نشانگر بنفش، مبدأ سفر خواهد بود."
+            : "پرچم نارنجی، مقصد سفر خواهد بود.",
         MUTED));
 
     panel.addView(primary(
