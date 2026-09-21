@@ -11,7 +11,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/** Compact, user-facing Smart Travel hub. Every card opens a real v0.32 action directly. */
+/** Compact, map-first Smart Travel hub. Every card opens a real NV route action. */
 public final class NvSmartTravelUi {
   private static final String TAG = "nv-smart-travel-v032";
   private static final int BG = Color.rgb(3, 17, 29);
@@ -87,9 +87,9 @@ public final class NvSmartTravelUi {
     body.addView(card(a, "🚇", "مترو و ایستگاه‌ها", "ایستگاه‌های واقعی اطراف؛ بدون جعل قطار زنده", Color.rgb(143, 92, 255), () -> NvV032Actions.openMetroStatus(a)));
     body.addView(card(a, "🚕", "تاکسی و محل سوارشدن", "نقاط تاکسی ثبت‌شده و مسیر دسترسی", AMBER, () -> NvV032Actions.openTaxi(a)));
     body.addView(card(a, "◷", "زمان رسیدن", "ETA با منبع و محدودیت مشخص", BLUE, () -> NvV032Actions.openEta(a)));
-    body.addView(card(a, "⇄", "مقایسه زمان و هزینه", "چند مسیر خودرو + ترکیبی + پیاده", GREEN, () -> NvV032Actions.openTimeCost(a)));
+    body.addView(card(a, "⇄", "مقایسه روش‌های سفر", "خودرو، پیاده، مترو و مسیر ترکیبی روی نقشه", GREEN, () -> NvV032Actions.openTimeCost(a)));
     body.addView(card(a, "🚶", "راهنمای پیاده", "مسیریابی پیاده با موتور نقشه", CYAN, () -> NvV032Actions.openWalk(a)));
-    body.addView(card(a, "⚙", "تنظیمات سفر", "هزینه، مصرف سوخت، حریم خصوصی و هشدارها", BLUE, () -> NvV032Actions.openPreferences(a)));
+    body.addView(card(a, "⚙", "تنظیمات سفر", "روز/شب نقشه، حریم خصوصی، نوع سفر و هشدارها", BLUE, () -> NvV032Actions.openPreferences(a)));
 
     scroll.addView(body);
     column.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
