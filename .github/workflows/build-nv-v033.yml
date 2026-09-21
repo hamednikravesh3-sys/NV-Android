@@ -2,13 +2,13 @@ name: Build NV v0.33 Online First APK
 # v0.33 online-first CI
 
 concurrency:
-  group: nv-v033-user-friendly-${{ github.ref }}
+  group: nv-v033-online-first-${{ github.ref }}
   cancel-in-progress: true
 
 on:
   push:
     branches:
-      - nv-v033-user-friendly
+      - nv-v033-online-first
   workflow_dispatch:
 
 jobs:
@@ -79,7 +79,9 @@ jobs:
           ! grep -q 'estimateMixedCostToman' organicmaps/android/app/src/main/java/app/organicmaps/NvV033Actions.java
           ! grep -q 'map_prompted_region' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
           ! grep -q 'NvV031Actions' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
+          ! grep -q 'NvV032Actions' organicmaps/android/app/src/main/java/app/organicmaps/NvMapMenuOverlay.java
           ! grep -q 'NvV031Actions' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
+          ! grep -q 'NvV032Actions' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartTravelUi.java
           ! grep -q 'ensureTehranMap' organicmaps/android/app/src/main/java/app/organicmaps/NvRuntimeController.java
 
           ! grep -q 'MAX_ROUTE_ACCURACY_M = 250' organicmaps/android/app/src/main/java/app/organicmaps/NvSmartActions.java
@@ -107,7 +109,7 @@ jobs:
       - name: Configure ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: nv-v033-user-friendly-arm64
+          key: nv-v033-online-first-arm64
           max-size: 2G
 
       - name: Build and test
@@ -146,8 +148,8 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK"
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee /tmp/nv-v033-badging.txt
           mkdir -p dist
-          cp "$APK" dist/NV-v0.33.0-user-friendly-arm64-profileable.apk
-          sha256sum dist/NV-v0.33.0-user-friendly-arm64-profileable.apk | tee dist/NV-v0.33.0-user-friendly-arm64-profileable.apk.sha256
+          cp "$APK" dist/NV-v0.33.0-online-first-arm64-profileable.apk
+          sha256sum dist/NV-v0.33.0-online-first-arm64-profileable.apk | tee dist/NV-v0.33.0-online-first-arm64-profileable.apk.sha256
           grep -q "package: name='ir.nv.navigation.web.profileable'" /tmp/nv-v033-badging.txt
           grep -q "application-label:'NV'" /tmp/nv-v033-badging.txt
           grep -q "launchable-activity: name='app.organicmaps.SplashActivity'" /tmp/nv-v033-badging.txt
@@ -167,9 +169,9 @@ jobs:
       - name: Upload final APK
         uses: actions/upload-artifact@v4
         with:
-          name: NV-v0.33.0-user-friendly-arm64-profileable
+          name: NV-v0.33.0-online-first-arm64-profileable
           path: |
-            dist/NV-v0.33.0-user-friendly-arm64-profileable.apk
-            dist/NV-v0.33.0-user-friendly-arm64-profileable.apk.sha256
+            dist/NV-v0.33.0-online-first-arm64-profileable.apk
+            dist/NV-v0.33.0-online-first-arm64-profileable.apk.sha256
           if-no-files-found: error
           retention-days: 14
