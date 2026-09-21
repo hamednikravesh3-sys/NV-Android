@@ -22,11 +22,11 @@ final class NvV032TextParser {
       if (go >= 0) q = q.substring(go + (q.startsWith(" بروم ", go) ? 6 : 5)).trim();
     }
 
-    if (q.startsWith("از ")) {
+    if (q.startsWith("از")) {
       int viaTo = q.lastIndexOf(" به ");
       int viaUntil = q.lastIndexOf(" تا ");
       int marker = Math.max(viaTo, viaUntil);
-      if (marker > 2)
+      if (marker > 1)
         q = q.substring(marker + 4).trim();
     }
 
@@ -58,8 +58,19 @@ final class NvV032TextParser {
     if (q.isEmpty()) return "";
 
     int from = q.indexOf("از ");
+    int prefixLength = 3;
+    if (from < 0) {
+      int compact = q.indexOf(" از");
+      if (compact >= 0) {
+        from = compact + 1;
+        prefixLength = 2;
+      } else if (q.startsWith("از")) {
+        from = 0;
+        prefixLength = 2;
+      }
+    }
     if (from < 0) return "";
-    String tail = q.substring(from + 3).trim();
+    String tail = q.substring(from + prefixLength).trim();
     if (tail.isEmpty()) return "";
 
     String[] separators = {
